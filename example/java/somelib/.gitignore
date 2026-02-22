@@ -1,0 +1,9 @@
+*.dylib
+*.dll
+*.so
+.idea/
+.gradle/
+build/
+gradle/
+gradlew
+gradlew.bat

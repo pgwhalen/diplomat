@@ -10,6 +10,7 @@ pub mod c;
 mod cpp;
 mod dart;
 mod demo_gen;
+mod java;
 mod js;
 mod kotlin;
 mod nanobind;
@@ -76,6 +77,7 @@ pub fn gen(
             attr_validator.other_backend_names = vec!["js".to_string()];
             demo_gen::attr_support()
         }
+        "java" => java::attr_support(),
         "kotlin" => kotlin::attr_support(),
         "py-nanobind" | "nanobind" => nanobind::attr_support(),
         o => panic!("Unknown target: {}", o),
@@ -128,6 +130,7 @@ pub fn gen(
             }
             demo_gen::run(entry, &tcx, docs_url_gen, config.clone())
         }
+        "java" => java::run(&tcx, config.clone(), docs_url_gen),
         "kotlin" => kotlin::run(&tcx, config.clone(), docs_url_gen),
         o => panic!("Unknown target: {}", o),
     };

@@ -235,6 +235,31 @@ cd feature_tests/kotlin/somelib
 exec --fail-on-error mvn test
 '''
 
+[tasks.copy-java-example.mac]
+env = { "OUT_FILE" = "dylib" }
+
+[tasks.copy-java-example.linux]
+env = { "OUT_FILE" = "so", "LD_LIBRARY_PATH" = "./" }
+
+[tasks.copy-java-example]
+category = "Tests"
+script_runner = "@duckscript"
+dependencies = ["build-example"]
+script = '''
+exit_on_error true
+cp target/debug/libdiplomat_example.${OUT_FILE} example/java/somelib/libdiplomat_example.${OUT_FILE}
+'''
+
+[tasks.test-java-example]
+category = "Tests"
+script_runner = "@duckscript"
+dependencies = ["copy-java-example"]
+script = '''
+exit_on_error true
+cd example/java/somelib
+exec --fail-on-error gradle test --warning-mode all
+'''
+
 [tasks.test-nanobind-feature]
 category = "Tests"
 dependencies = ["build-feature", "fetch-nanobind"]
@@ -403,6 +428,7 @@ dependencies = [
     "gen-demo-example",
     "gen-dart-example",
     "gen-kotlin-example",
+    "gen-java-example",
 ]
 
 
@@ -536,6 +562,23 @@ exit_on_error true
 !include_files ./support/functions.ds
 generate_generic example kotlin somelib "--config kotlin.scaffold=false" /src/main/kotlin
 '''
+
+[tasks.gen-java-example]
+category = "Code generation"
+script_runner = "@duckscript"
+script = '''
+exit_on_error true
+!include_files ./support/functions.ds
+generate_generic example java somelib "" /src/main/java
+'''
+
+[tasks.gen-java]
+category = "Code generation"
+dependencies = ["gen-java-example"]
+
+[tasks.test-java]
+category = "Tests"
+dependencies = ["test-java-example"]
 
 [tasks.gen-nanobind-feature]
 category = "Code generation"

@@ -7,5 +7,9 @@ lib-name = "icu4x"
 domain = "dev.diplomattest"
 dylib-name = "diplomat_example"
 
+[java]
+domain = "dev.diplomattest"
+dylib-name = "diplomat_example"
+
 [demo-gen]
 relative-js-path = "../../js/lib/api/"

@@ -1,0 +1,51 @@
+package {{domain}}.{{lib_name}};
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class {{type_name}} implements AutoCloseable {
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    private static final MethodHandle DESTROY;
+    {%- for m in native_methods %}
+    private static final MethodHandle {{m.handle_name}};
+    {%- endfor %}
+
+    static {
+        System.loadLibrary("{{dylib_name}}");
+        LIB = SymbolLookup.loaderLookup();
+        DESTROY = LINKER.downcallHandle(
+            LIB.find("{{dtor_abi_name}}").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        {%- for m in native_methods %}
+        {{m.handle_name}} = LINKER.downcallHandle(
+            LIB.find("{{m.abi_name}}").orElseThrow(),
+            {{m.descriptor}}
+        );
+        {%- endfor %}
+    }
+
+    final MemorySegment handle;
+
+    {{type_name}}(MemorySegment handle) {
+        this.handle = handle;
+    }
+
+    @Override
+    public void close() {
+        try { DESTROY.invokeExact(handle); }
+        catch (Throwable e) { throw new RuntimeException(e); }
+    }
+    {%- for m in companion_methods %}
+
+    {{m.definition}}
+    {%- endfor %}
+    {%- for m in self_methods %}
+
+    {{m.definition}}
+    {%- endfor %}
+}

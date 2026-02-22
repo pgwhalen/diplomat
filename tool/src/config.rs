@@ -12,7 +12,7 @@ use syn::{
 };
 use toml::{value::Table, Value};
 
-use crate::{cpp::CppConfig, demo_gen::DemoConfig, js::JsConfig, kotlin::KotlinConfig};
+use crate::{cpp::CppConfig, demo_gen::DemoConfig, java::JavaConfig, js::JsConfig, kotlin::KotlinConfig};
 use diplomat_core::hir::LoweringConfig;
 
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
@@ -108,6 +108,8 @@ impl SharedConfig {
 pub struct Config {
     #[serde(flatten)]
     pub shared_config: SharedConfig,
+    #[serde(rename = "java")]
+    pub java_config: JavaConfig,
     #[serde(rename = "kotlin")]
     pub kotlin_config: KotlinConfig,
     #[serde(rename = "demo_gen")]
@@ -123,7 +125,13 @@ pub struct Config {
 
 impl Config {
     pub fn set(&mut self, key: &str, value: Value) {
-        if key.starts_with("kotlin.") {
+        if key.starts_with("java.") {
+            if SharedConfig::overrides_shared(key) {
+                self.language_overrides.insert(key.to_string(), value);
+            } else {
+                self.java_config.set(&key.replace("java.", ""), value);
+            }
+        } else if key.starts_with("kotlin.") {
             if SharedConfig::overrides_shared(key) {
                 self.language_overrides.insert(key.to_string(), value);
             } else {
