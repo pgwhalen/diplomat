@@ -1,6 +1,6 @@
 ---
 source: tool/src/java/mod.rs
-assertion_line: 571
+assertion_line: 597
 expression: gen_opaque_for_test(tk_stream)
 ---
 package dev.diplomattest.somelib;
@@ -38,8 +38,11 @@ public class Locale implements AutoCloseable {
 
     @Override
     public void close() {
-        try { DESTROY.invokeExact(handle); }
-        catch (Throwable e) { throw new RuntimeException(e); }
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static Locale new_(String name) {
@@ -47,9 +50,9 @@ public class Locale implements AutoCloseable {
             byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
 
             var nameSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, nameBytes);
-
             return new Locale((MemorySegment) ICU4X_LOCALE_NEW_MV1.invokeExact(nameSeg, (long) nameBytes.length));
-
-        } catch (Throwable e) { throw new RuntimeException(e); }
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 }

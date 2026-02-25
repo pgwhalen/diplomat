@@ -37,8 +37,11 @@ public class {{type_name}} implements AutoCloseable {
 
     @Override
     public void close() {
-        try { DESTROY.invokeExact(handle); }
-        catch (Throwable e) { throw new RuntimeException(e); }
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
     {%- for m in companion_methods %}
 

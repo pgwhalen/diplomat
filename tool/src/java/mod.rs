@@ -422,17 +422,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                      \n            var {sp}Seg = arena.allocateFrom(ValueLayout.JAVA_BYTE, {sp}Bytes);\n"
                 ));
             }
-            format!(
-                "        try (var arena = Arena.ofConfined()) {{\n\
-                 {setup_lines}\
-                 \n            {return_stmt}\n\
-                 \n        }} catch (Throwable e) {{ throw new RuntimeException(e); }}"
-            )
+            format!("        try (var arena = Arena.ofConfined()) {{\n{setup_lines}            {return_stmt}\n        }} catch (Throwable e) {{\n            throw new RuntimeException(e);\n        }}")
         } else {
-            format!(
-                "        try {{ {return_stmt} }}\n\
-                 \n        catch (Throwable e) {{ throw new RuntimeException(e); }}"
-            )
+            format!("        try {{\n            {return_stmt}\n        }} catch (Throwable e) {{\n            throw new RuntimeException(e);\n        }}")
         };
 
         let static_kw = if is_static { "static " } else { "" };

@@ -1,6 +1,6 @@
 ---
 source: tool/src/java/mod.rs
-assertion_line: 598
+assertion_line: 624
 expression: gen_opaque_for_test(tk_stream)
 ---
 package dev.diplomattest.somelib;
@@ -48,25 +48,34 @@ public class Counter implements AutoCloseable {
 
     @Override
     public void close() {
-        try { DESTROY.invokeExact(handle); }
-        catch (Throwable e) { throw new RuntimeException(e); }
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static Counter new_(int start) {
-        try { return new Counter((MemorySegment) COUNTER_NEW.invokeExact(start)); }
-
-        catch (Throwable e) { throw new RuntimeException(e); }
+        try {
+            return new Counter((MemorySegment) COUNTER_NEW.invokeExact(start));
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public int getValue() {
-        try { return (int) COUNTER_GET_VALUE.invokeExact(handle); }
-
-        catch (Throwable e) { throw new RuntimeException(e); }
+        try {
+            return (int) COUNTER_GET_VALUE.invokeExact(handle);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public void add(int amount) {
-        try { COUNTER_ADD.invokeExact(handle, amount); }
-
-        catch (Throwable e) { throw new RuntimeException(e); }
+        try {
+            COUNTER_ADD.invokeExact(handle, amount);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 }
