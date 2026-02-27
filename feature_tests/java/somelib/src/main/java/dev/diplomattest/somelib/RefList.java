@@ -1,37 +1,33 @@
-package {{domain}}.{{lib_name}};
+package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
-public class {{type_name}} implements AutoCloseable {
+public class RefList implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
 
     private static final MethodHandle DESTROY;
-    {%- for m in native_methods %}
-    private static final MethodHandle {{m.handle_name}};
-    {%- endfor %}
+    private static final MethodHandle REFLIST_NODE;
 
     static {
-        System.loadLibrary("{{dylib_name}}");
+        System.loadLibrary("diplomat_feature_tests");
         LIB = SymbolLookup.loaderLookup();
         DESTROY = LINKER.downcallHandle(
-            LIB.find("{{dtor_abi_name}}").orElseThrow(),
+            LIB.find("RefList_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        {%- for m in native_methods %}
-        {{m.handle_name}} = LINKER.downcallHandle(
-            LIB.find("{{m.abi_name}}").orElseThrow(),
-            {{m.descriptor}}
+        REFLIST_NODE = LINKER.downcallHandle(
+            LIB.find("RefList_node").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        {%- endfor %}
     }
 
     final MemorySegment handle;
 
-    {{type_name}}(MemorySegment handle) {
+    RefList(MemorySegment handle) {
         this.handle = handle;
     }
 
@@ -43,12 +39,12 @@ public class {{type_name}} implements AutoCloseable {
             throw new RuntimeException(ex);
         }
     }
-    {%- for m in companion_methods %}
 
-    {{m.definition}}
-    {%- endfor %}
-    {%- for m in self_methods %}
-
-    {{m.definition}}
-    {%- endfor %}
+    public static RefList node(RefListParameter data) {
+        try {
+            return new RefList((MemorySegment) REFLIST_NODE.invokeExact(data.handle));
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
 }

@@ -4,25 +4,30 @@ import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
-public class FixedDecimalFormatter implements AutoCloseable {
+public class OpaqueThinIter implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
 
     private static final MethodHandle DESTROY;
+    private static final MethodHandle OPAQUETHINITER_NEXT;
 
     static {
-        System.loadLibrary("diplomat_example");
+        System.loadLibrary("diplomat_feature_tests");
         LIB = SymbolLookup.loaderLookup();
         DESTROY = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimalFormatter_destroy_mv1").orElseThrow(),
+            LIB.find("OpaqueThinIter_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        OPAQUETHINITER_NEXT = LINKER.downcallHandle(
+            LIB.find("OpaqueThinIter_next").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }
 
     final MemorySegment handle;
 
-    FixedDecimalFormatter(MemorySegment handle) {
+    OpaqueThinIter(MemorySegment handle) {
         this.handle = handle;
     }
 
@@ -30,6 +35,14 @@ public class FixedDecimalFormatter implements AutoCloseable {
     public void close() {
         try {
             DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public OpaqueThin next() {
+        try {
+            return new OpaqueThin((MemorySegment) OPAQUETHINITER_NEXT.invokeExact(handle));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

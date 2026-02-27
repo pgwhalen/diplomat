@@ -1,37 +1,33 @@
----
-source: tool/src/java/mod.rs
-expression: gen_opaque_for_test(tk_stream)
----
 package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
-public class Locale implements AutoCloseable {
+public class OptionString implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
 
     private static final MethodHandle DESTROY;
-    private static final MethodHandle ICU4X_LOCALE_NEW_MV1;
+    private static final MethodHandle OPTIONSTRING_NEW;
 
     static {
-        System.loadLibrary("diplomat_example");
+        System.loadLibrary("diplomat_feature_tests");
         LIB = SymbolLookup.loaderLookup();
         DESTROY = LINKER.downcallHandle(
-            LIB.find("icu4x_Locale_destroy_mv1").orElseThrow(),
+            LIB.find("OptionString_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        ICU4X_LOCALE_NEW_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_Locale_new_mv1").orElseThrow(),
+        OPTIONSTRING_NEW = LINKER.downcallHandle(
+            LIB.find("OptionString_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
     }
 
     final MemorySegment handle;
 
-    Locale(MemorySegment handle) {
+    OptionString(MemorySegment handle) {
         this.handle = handle;
     }
 
@@ -44,12 +40,12 @@ public class Locale implements AutoCloseable {
         }
     }
 
-    public static Locale new_(String name) {
+    public static OptionString new_(String diplomatStr) {
         try (var arena = Arena.ofConfined()) {
-            byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+            byte[] diplomatStrBytes = diplomatStr.getBytes(StandardCharsets.UTF_8);
 
-            var nameSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, nameBytes);
-            return new Locale((MemorySegment) ICU4X_LOCALE_NEW_MV1.invokeExact(nameSeg, (long) nameBytes.length));
+            var diplomatStrSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, diplomatStrBytes);
+            return new OptionString((MemorySegment) OPTIONSTRING_NEW.invokeExact(diplomatStrSeg, (long) diplomatStrBytes.length));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

@@ -33,13 +33,18 @@ public class DataProvider implements AutoCloseable {
 
     @Override
     public void close() {
-        try { DESTROY.invokeExact(handle); }
-        catch (Throwable e) { throw new RuntimeException(e); }
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     public static DataProvider newStatic() {
-        try { return new DataProvider((MemorySegment) ICU4X_DATAPROVIDER_NEW_STATIC_MV1.invokeExact()); }
-
-        catch (Throwable e) { throw new RuntimeException(e); }
+        try {
+            return new DataProvider((MemorySegment) ICU4X_DATAPROVIDER_NEW_STATIC_MV1.invokeExact());
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 }

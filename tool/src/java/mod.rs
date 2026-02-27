@@ -96,14 +96,14 @@ pub(crate) fn run<'tcx>(
         domain: &domain,
     };
 
-    for (_id, ty) in tcx.all_types() {
+    for (id, ty) in tcx.all_types() {
         let _guard = ty_gen_cx.errors.set_context_ty(ty.name().as_str().into());
         if ty.attrs().disable {
             continue;
         }
         match ty {
             TypeDef::Opaque(o) => {
-                let type_name = o.name.to_string();
+                let type_name = formatter.fmt_type_name(id);
                 let (file_name, body) = ty_gen_cx.gen_opaque_def(o, &type_name);
                 files.add_file(file_name, body);
             }
@@ -422,9 +422,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                      \n            var {sp}Seg = arena.allocateFrom(ValueLayout.JAVA_BYTE, {sp}Bytes);\n"
                 ));
             }
-            format!("        try (var arena = Arena.ofConfined()) {{\n{setup_lines}            {return_stmt}\n        }} catch (Throwable e) {{\n            throw new RuntimeException(e);\n        }}")
+            format!("        try (var arena = Arena.ofConfined()) {{\n{setup_lines}            {return_stmt}\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
         } else {
-            format!("        try {{\n            {return_stmt}\n        }} catch (Throwable e) {{\n            throw new RuntimeException(e);\n        }}")
+            format!("        try {{\n            {return_stmt}\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
         };
 
         let static_kw = if is_static { "static " } else { "" };

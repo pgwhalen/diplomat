@@ -1,37 +1,33 @@
----
-source: tool/src/java/mod.rs
-expression: gen_opaque_for_test(tk_stream)
----
 package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
-public class Locale implements AutoCloseable {
+public class Utf16Wrap implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
 
     private static final MethodHandle DESTROY;
-    private static final MethodHandle ICU4X_LOCALE_NEW_MV1;
+    private static final MethodHandle UTF16WRAP_FROM_UTF16;
 
     static {
-        System.loadLibrary("diplomat_example");
+        System.loadLibrary("diplomat_feature_tests");
         LIB = SymbolLookup.loaderLookup();
         DESTROY = LINKER.downcallHandle(
-            LIB.find("icu4x_Locale_destroy_mv1").orElseThrow(),
+            LIB.find("Utf16Wrap_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        ICU4X_LOCALE_NEW_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_Locale_new_mv1").orElseThrow(),
+        UTF16WRAP_FROM_UTF16 = LINKER.downcallHandle(
+            LIB.find("Utf16Wrap_from_utf16").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
     }
 
     final MemorySegment handle;
 
-    Locale(MemorySegment handle) {
+    Utf16Wrap(MemorySegment handle) {
         this.handle = handle;
     }
 
@@ -44,12 +40,12 @@ public class Locale implements AutoCloseable {
         }
     }
 
-    public static Locale new_(String name) {
+    public static Utf16Wrap fromUtf16(String input) {
         try (var arena = Arena.ofConfined()) {
-            byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+            byte[] inputBytes = input.getBytes(StandardCharsets.UTF_8);
 
-            var nameSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, nameBytes);
-            return new Locale((MemorySegment) ICU4X_LOCALE_NEW_MV1.invokeExact(nameSeg, (long) nameBytes.length));
+            var inputSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, inputBytes);
+            return new Utf16Wrap((MemorySegment) UTF16WRAP_FROM_UTF16.invokeExact(inputSeg, (long) inputBytes.length));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

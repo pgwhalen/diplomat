@@ -1,37 +1,33 @@
-package {{domain}}.{{lib_name}};
+package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
-public class {{type_name}} implements AutoCloseable {
+public class MyOpaqueEnum implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
 
     private static final MethodHandle DESTROY;
-    {%- for m in native_methods %}
-    private static final MethodHandle {{m.handle_name}};
-    {%- endfor %}
+    private static final MethodHandle MYOPAQUEENUM_NEW;
 
     static {
-        System.loadLibrary("{{dylib_name}}");
+        System.loadLibrary("diplomat_feature_tests");
         LIB = SymbolLookup.loaderLookup();
         DESTROY = LINKER.downcallHandle(
-            LIB.find("{{dtor_abi_name}}").orElseThrow(),
+            LIB.find("MyOpaqueEnum_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        {%- for m in native_methods %}
-        {{m.handle_name}} = LINKER.downcallHandle(
-            LIB.find("{{m.abi_name}}").orElseThrow(),
-            {{m.descriptor}}
+        MYOPAQUEENUM_NEW = LINKER.downcallHandle(
+            LIB.find("MyOpaqueEnum_new").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS)
         );
-        {%- endfor %}
     }
 
     final MemorySegment handle;
 
-    {{type_name}}(MemorySegment handle) {
+    MyOpaqueEnum(MemorySegment handle) {
         this.handle = handle;
     }
 
@@ -43,12 +39,12 @@ public class {{type_name}} implements AutoCloseable {
             throw new RuntimeException(ex);
         }
     }
-    {%- for m in companion_methods %}
 
-    {{m.definition}}
-    {%- endfor %}
-    {%- for m in self_methods %}
-
-    {{m.definition}}
-    {%- endfor %}
+    public static MyOpaqueEnum new_() {
+        try {
+            return new MyOpaqueEnum((MemorySegment) MYOPAQUEENUM_NEW.invokeExact());
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
 }

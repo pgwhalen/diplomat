@@ -33,8 +33,11 @@ public class Locale implements AutoCloseable {
 
     @Override
     public void close() {
-        try { DESTROY.invokeExact(handle); }
-        catch (Throwable e) { throw new RuntimeException(e); }
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     public static Locale new_(String name) {
@@ -42,9 +45,9 @@ public class Locale implements AutoCloseable {
             byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
 
             var nameSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, nameBytes);
-
             return new Locale((MemorySegment) ICU4X_LOCALE_NEW_MV1.invokeExact(nameSeg, (long) nameBytes.length));
-
-        } catch (Throwable e) { throw new RuntimeException(e); }
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 }

@@ -4,35 +4,35 @@ import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
-public class FixedDecimal implements AutoCloseable {
+public class Unnamespaced implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
 
     private static final MethodHandle DESTROY;
-    private static final MethodHandle ICU4X_FIXEDDECIMAL_NEW_MV1;
-    private static final MethodHandle ICU4X_FIXEDDECIMAL_MULTIPLY_POW10_MV1;
+    private static final MethodHandle NAMESPACE_UNNAMESPACED_MAKE;
+    private static final MethodHandle NAMESPACE_UNNAMESPACED_USE_NAMESPACED;
 
     static {
-        System.loadLibrary("diplomat_example");
+        System.loadLibrary("diplomat_feature_tests");
         LIB = SymbolLookup.loaderLookup();
         DESTROY = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimal_destroy_mv1").orElseThrow(),
+            LIB.find("namespace_Unnamespaced_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        ICU4X_FIXEDDECIMAL_NEW_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimal_new_mv1").orElseThrow(),
+        NAMESPACE_UNNAMESPACED_MAKE = LINKER.downcallHandle(
+            LIB.find("namespace_Unnamespaced_make").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
-        ICU4X_FIXEDDECIMAL_MULTIPLY_POW10_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimal_multiply_pow10_mv1").orElseThrow(),
-            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_SHORT)
+        NAMESPACE_UNNAMESPACED_USE_NAMESPACED = LINKER.downcallHandle(
+            LIB.find("namespace_Unnamespaced_use_namespaced").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }
 
     final MemorySegment handle;
 
-    FixedDecimal(MemorySegment handle) {
+    Unnamespaced(MemorySegment handle) {
         this.handle = handle;
     }
 
@@ -45,17 +45,17 @@ public class FixedDecimal implements AutoCloseable {
         }
     }
 
-    public static FixedDecimal new_(int v) {
+    public static Unnamespaced make(int e) {
         try {
-            return new FixedDecimal((MemorySegment) ICU4X_FIXEDDECIMAL_NEW_MV1.invokeExact(v));
+            return new Unnamespaced((MemorySegment) NAMESPACE_UNNAMESPACED_MAKE.invokeExact(e));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public void multiplyPow10(short power) {
+    public void useNamespaced(AttrOpaque1Renamed n) {
         try {
-            ICU4X_FIXEDDECIMAL_MULTIPLY_POW10_MV1.invokeExact(handle, power);
+            NAMESPACE_UNNAMESPACED_USE_NAMESPACED.invokeExact(handle, n.handle);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

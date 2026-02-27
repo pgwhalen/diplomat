@@ -4,7 +4,7 @@ import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
-public class FixedDecimalFormatter implements AutoCloseable {
+public class RenamedNested implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
@@ -12,17 +12,17 @@ public class FixedDecimalFormatter implements AutoCloseable {
     private static final MethodHandle DESTROY;
 
     static {
-        System.loadLibrary("diplomat_example");
+        System.loadLibrary("diplomat_feature_tests");
         LIB = SymbolLookup.loaderLookup();
         DESTROY = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimalFormatter_destroy_mv1").orElseThrow(),
+            LIB.find("namespace_Nested_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
     }
 
     final MemorySegment handle;
 
-    FixedDecimalFormatter(MemorySegment handle) {
+    RenamedNested(MemorySegment handle) {
         this.handle = handle;
     }
 
