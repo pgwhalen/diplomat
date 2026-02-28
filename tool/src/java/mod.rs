@@ -1,7 +1,7 @@
 use askama::Template;
 use diplomat_core::hir::{
     self, BackendAttrSupport, DocsUrlGenerator, Method, OutType, ReturnType, SelfType, Slice,
-    SuccessType, Type, TypeContext, TypeDef,
+    StringEncoding, SuccessType, Type, TypeContext, TypeDef,
 };
 use std::borrow::Cow;
 
@@ -18,10 +18,10 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.memory_sharing = false;
     a.non_exhaustive_structs = false;
     a.method_overloading = true;
-    a.utf8_strings = false;
-    a.utf16_strings = false;
+    a.utf8_strings = true;
+    a.utf16_strings = true;
     a.static_slices = false;
-    a.option = false;
+    a.option = true;
 
     a.constructors = false;
     a.named_constructors = false;
@@ -119,11 +119,13 @@ pub(crate) fn run<'tcx>(
     struct LibTemplate<'a> {
         domain: &'a str,
         lib_name: &'a str,
+        dylib_name: &'a str,
     }
 
     let lib_body = LibTemplate {
         domain: &domain,
         lib_name: &lib_name,
+        dylib_name,
     }
     .render()
     .expect("Failed to render Lib.java");
@@ -171,6 +173,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                         return false;
                     }
                 }
+                SuccessType::Write => {}
                 _ => return false,
             },
             _ => return false, // Fallible/Nullable not supported
@@ -204,6 +207,20 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             .filter(|m| !m.attrs.disable && self.is_method_supported(m))
             .collect();
 
+        let uses_optional = supported_methods.iter().any(|method| {
+            // Check return type for optional opaque
+            if let ReturnType::Infallible(SuccessType::OutType(Type::Opaque(op))) = &method.output {
+                if op.is_optional() {
+                    return true;
+                }
+            }
+            // Check params for optional opaque
+            method
+                .params
+                .iter()
+                .any(|p| matches!(&p.ty, Type::Opaque(op) if op.is_optional()))
+        });
+
         let native_methods: Vec<JavaNativeMethodInfo> = supported_methods
             .iter()
             .map(|method| self.gen_native_method_info(method))
@@ -234,6 +251,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             dylib_name: &'a str,
             type_name: &'a str,
             dtor_abi_name: &'a str,
+            uses_optional: bool,
             native_methods: &'a [JavaNativeMethodInfo],
             companion_methods: &'a [JavaMethodInfo],
             self_methods: &'a [JavaMethodInfo],
@@ -251,6 +269,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 dylib_name: self.dylib_name,
                 type_name,
                 dtor_abi_name: ty.dtor_abi_name.as_str(),
+                uses_optional,
                 native_methods: &native_methods,
                 companion_methods: &companion_methods,
                 self_methods: &self_methods,
@@ -274,6 +293,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         // Regular parameters
         for param in method.params.iter() {
             self.push_param_layouts(&param.ty, &mut param_layouts);
+        }
+
+        // Write returns pass a write buffer pointer as the last parameter
+        if matches!(
+            &method.output,
+            ReturnType::Infallible(SuccessType::Write)
+        ) {
+            param_layouts.push("ValueLayout.ADDRESS".to_string());
         }
 
         // Build the descriptor
@@ -336,11 +363,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         match success {
             SuccessType::Unit => None,
             SuccessType::OutType(ty) => self.get_type_layout(ty),
-            SuccessType::Write => {
-                self.errors
-                    .push_error("Write return type not yet supported in Java backend".into());
-                None
-            }
+            SuccessType::Write => None,
             _ => {
                 self.errors
                     .push_error("Unsupported success type in Java backend".into());
@@ -380,8 +403,10 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let mut java_params = Vec::new();
         // Build invoke arguments (what gets passed to invokeExact)
         let mut invoke_args = Vec::new();
-        // Track string params that need Arena allocation
-        let mut string_params: Vec<String> = Vec::new();
+        // Track string params that need Arena allocation, with their encoding
+        let mut string_params: Vec<(String, StringEncoding)> = Vec::new();
+        // Track nullable opaque params that need local variable setup
+        let mut nullable_setup_lines: Vec<String> = Vec::new();
 
         if self_type.is_some() {
             invoke_args.push("handle".to_string());
@@ -395,36 +420,82 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 &mut java_params,
                 &mut invoke_args,
                 &mut string_params,
+                &mut nullable_setup_lines,
             );
+        }
+
+        let is_write_return = matches!(
+            &method.output,
+            ReturnType::Infallible(SuccessType::Write)
+        );
+
+        if is_write_return {
+            invoke_args.push("write".to_string());
         }
 
         let java_params_str = java_params.join(", ");
         let args_str = invoke_args.join(", ");
         let has_string_param = !string_params.is_empty();
+        let nullable_setup = nullable_setup_lines
+            .iter()
+            .map(|line| format!("            {line}\n"))
+            .collect::<String>();
 
         // Build invoke expression
         let invoke_call = format!("{abi_handle}.invokeExact({args_str})");
-        let return_stmt = match &method.output {
-            ReturnType::Infallible(SuccessType::Unit) => format!("{invoke_call};"),
-            ReturnType::Infallible(SuccessType::OutType(ty)) => {
-                let wrapped = self.wrap_invoke_result(ty, &invoke_call);
-                format!("return {wrapped};")
+        let return_stmt = if is_write_return {
+            format!("{invoke_call};\n            return DiplomatLib.writeToString(write);")
+        } else {
+            match &method.output {
+                ReturnType::Infallible(SuccessType::Unit) => format!("{invoke_call};"),
+                ReturnType::Infallible(SuccessType::OutType(ty)) => {
+                    if let Type::Opaque(op) = ty {
+                        if op.is_optional() {
+                            let type_id = ty.id().expect("opaque must have id");
+                            let type_name = self.formatter.fmt_type_name(type_id);
+                            format!(
+                                "var resultAddr = (MemorySegment) {invoke_call};\n            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new {type_name}(resultAddr));"
+                            )
+                        } else {
+                            let wrapped = self.wrap_invoke_result(ty, &invoke_call);
+                            format!("return {wrapped};")
+                        }
+                    } else {
+                        let wrapped = self.wrap_invoke_result(ty, &invoke_call);
+                        format!("return {wrapped};")
+                    }
+                }
+                _ => "throw new UnsupportedOperationException();".to_string(),
             }
-            _ => "throw new UnsupportedOperationException();".to_string(),
         };
 
         // Build method body
+        let write_setup = if is_write_return {
+            "        var write = DiplomatLib.createWrite();\n"
+        } else {
+            ""
+        };
         let body = if has_string_param {
             let mut setup_lines = String::new();
-            for sp in &string_params {
-                setup_lines.push_str(&format!(
-                    "            byte[] {sp}Bytes = {sp}.getBytes(StandardCharsets.UTF_8);\n\
-                     \n            var {sp}Seg = arena.allocateFrom(ValueLayout.JAVA_BYTE, {sp}Bytes);\n"
-                ));
+            for (sp, encoding) in &string_params {
+                match encoding {
+                    StringEncoding::UnvalidatedUtf16 => {
+                        setup_lines.push_str(&format!(
+                            "            char[] {sp}Chars = {sp}.toCharArray();\n\
+                             \n            var {sp}Seg = arena.allocateFrom(ValueLayout.JAVA_CHAR, {sp}Chars);\n"
+                        ));
+                    }
+                    _ => {
+                        setup_lines.push_str(&format!(
+                            "            byte[] {sp}Bytes = {sp}.getBytes(StandardCharsets.UTF_8);\n\
+                             \n            var {sp}Seg = arena.allocateFrom(ValueLayout.JAVA_BYTE, {sp}Bytes);\n"
+                        ));
+                    }
+                }
             }
-            format!("        try (var arena = Arena.ofConfined()) {{\n{setup_lines}            {return_stmt}\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
+            format!("{write_setup}        try (var arena = Arena.ofConfined()) {{\n{setup_lines}{nullable_setup}            {return_stmt}\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
         } else {
-            format!("        try {{\n            {return_stmt}\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
+            format!("{write_setup}        try {{\n{nullable_setup}            {return_stmt}\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
         };
 
         let static_kw = if is_static { "static " } else { "" };
@@ -442,7 +513,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         param_name: &str,
         java_params: &mut Vec<String>,
         invoke_args: &mut Vec<String>,
-        string_params: &mut Vec<String>,
+        string_params: &mut Vec<(String, StringEncoding)>,
+        nullable_setup_lines: &mut Vec<String>,
     ) {
         match ty {
             Type::Primitive(prim) => {
@@ -450,20 +522,35 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 java_params.push(format!("{java_type} {param_name}"));
                 invoke_args.push(param_name.to_string());
             }
-            Type::Opaque(_) => {
+            Type::Opaque(op) => {
                 let type_name: Cow<str> = ty
                     .id()
                     .map(|id| self.formatter.fmt_type_name(id))
                     .unwrap_or("MemorySegment".into());
                 java_params.push(format!("{type_name} {param_name}"));
-                invoke_args.push(format!("{param_name}.handle"));
+                if op.is_optional() {
+                    let local_var = format!("{param_name}Addr");
+                    nullable_setup_lines.push(format!(
+                        "MemorySegment {local_var} = {param_name} == null ? MemorySegment.NULL : {param_name}.handle;"
+                    ));
+                    invoke_args.push(local_var);
+                } else {
+                    invoke_args.push(format!("{param_name}.handle"));
+                }
             }
-            Type::Slice(Slice::Str(_, _)) => {
-                // DiplomatStr → Java String param, passed as (data_ptr, len) to native
+            Type::Slice(Slice::Str(_, encoding)) => {
                 java_params.push(format!("String {param_name}"));
-                string_params.push(param_name.to_string());
-                invoke_args.push(format!("{param_name}Seg"));
-                invoke_args.push(format!("(long) {param_name}Bytes.length"));
+                string_params.push((param_name.to_string(), *encoding));
+                match encoding {
+                    StringEncoding::UnvalidatedUtf16 => {
+                        invoke_args.push(format!("{param_name}Seg"));
+                        invoke_args.push(format!("(long) {param_name}Chars.length"));
+                    }
+                    _ => {
+                        invoke_args.push(format!("{param_name}Seg"));
+                        invoke_args.push(format!("(long) {param_name}Bytes.length"));
+                    }
+                }
             }
             Type::Enum(_) => {
                 java_params.push(format!("int {param_name}"));
@@ -506,7 +593,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let type_id = ty.id().expect("opaque must have id");
                 let type_name = self.formatter.fmt_type_name(type_id);
                 if op.is_optional() {
-                    type_name.to_string()
+                    format!("Optional<{type_name}>")
                 } else {
                     type_name.to_string()
                 }
@@ -615,6 +702,77 @@ mod test {
                     }
 
                     pub fn add(&self, amount: i32) {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_opaque_with_utf16_string() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::opaque]
+                struct Utf16Wrap(());
+
+                impl Utf16Wrap {
+                    pub fn from_utf16(input: &DiplomatStr16) -> Box<Utf16Wrap> {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_opaque_with_optional_return() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::opaque]
+                struct MyData(());
+
+                impl MyData {
+                    pub fn create(v: i32) -> Option<Box<MyData>> {
+                        unimplemented!()
+                    }
+
+                    pub fn get_value(&self) -> i32 {
+                        unimplemented!()
+                    }
+
+                    pub fn check(data: Option<&MyData>) -> bool {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_opaque_with_write_return() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                use diplomat_runtime::DiplomatWrite;
+
+                #[diplomat::opaque]
+                struct MyString(());
+
+                impl MyString {
+                    pub fn get_str(&self, write: &mut DiplomatWrite) {
+                        unimplemented!()
+                    }
+
+                    pub fn string_transform(foo: &DiplomatStr, write: &mut DiplomatWrite) {
                         unimplemented!()
                     }
                 }

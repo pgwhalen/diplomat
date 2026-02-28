@@ -3,6 +3,7 @@ package dev.diplomattest.somelib;
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 public class OpaqueThinIter implements AutoCloseable {
 
@@ -40,9 +41,10 @@ public class OpaqueThinIter implements AutoCloseable {
         }
     }
 
-    public OpaqueThin next() {
+    public Optional<OpaqueThin> next() {
         try {
-            return new OpaqueThin((MemorySegment) OPAQUETHINITER_NEXT.invokeExact(handle));
+            var resultAddr = (MemorySegment) OPAQUETHINITER_NEXT.invokeExact(handle);
+            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OpaqueThin(resultAddr));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

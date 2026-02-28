@@ -3,6 +3,9 @@ package {{domain}}.{{lib_name}};
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
+{%- if uses_optional %}
+import java.util.Optional;
+{%- endif %}
 
 public class {{type_name}} implements AutoCloseable {
 

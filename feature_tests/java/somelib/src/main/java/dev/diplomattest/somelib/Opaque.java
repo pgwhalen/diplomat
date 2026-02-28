@@ -3,6 +3,7 @@ package dev.diplomattest.somelib;
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 public class Opaque implements AutoCloseable {
 
@@ -13,6 +14,7 @@ public class Opaque implements AutoCloseable {
     private static final MethodHandle OPAQUE_NEW;
     private static final MethodHandle OPAQUE_TRY_FROM_UTF8;
     private static final MethodHandle OPAQUE_FROM_STR;
+    private static final MethodHandle OPAQUE_GET_DEBUG_STR;
     private static final MethodHandle OPAQUE_RETURNS_USIZE;
     private static final MethodHandle OPAQUE_CMP;
 
@@ -34,6 +36,10 @@ public class Opaque implements AutoCloseable {
         OPAQUE_FROM_STR = LINKER.downcallHandle(
             LIB.find("Opaque_from_str").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+        );
+        OPAQUE_GET_DEBUG_STR = LINKER.downcallHandle(
+            LIB.find("Opaque_get_debug_str").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
         OPAQUE_RETURNS_USIZE = LINKER.downcallHandle(
             LIB.find("Opaque_returns_usize").orElseThrow(),
@@ -68,12 +74,13 @@ public class Opaque implements AutoCloseable {
         }
     }
 
-    public static Opaque tryFromUtf8(String input) {
+    public static Optional<Opaque> tryFromUtf8(String input) {
         try (var arena = Arena.ofConfined()) {
             byte[] inputBytes = input.getBytes(StandardCharsets.UTF_8);
 
             var inputSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, inputBytes);
-            return new Opaque((MemorySegment) OPAQUE_TRY_FROM_UTF8.invokeExact(inputSeg, (long) inputBytes.length));
+            var resultAddr = (MemorySegment) OPAQUE_TRY_FROM_UTF8.invokeExact(inputSeg, (long) inputBytes.length);
+            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new Opaque(resultAddr));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -101,6 +108,16 @@ public class Opaque implements AutoCloseable {
     public static byte cmp() {
         try {
             return (byte) OPAQUE_CMP.invokeExact();
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public String getDebugStr() {
+        var write = DiplomatLib.createWrite();
+        try {
+            OPAQUE_GET_DEBUG_STR.invokeExact(handle, write);
+            return DiplomatLib.writeToString(write);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

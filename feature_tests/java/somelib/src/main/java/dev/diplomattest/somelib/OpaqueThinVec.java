@@ -3,6 +3,7 @@ package dev.diplomattest.somelib;
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 public class OpaqueThinVec implements AutoCloseable {
 
@@ -71,17 +72,19 @@ public class OpaqueThinVec implements AutoCloseable {
         }
     }
 
-    public OpaqueThin get(long idx) {
+    public Optional<OpaqueThin> get(long idx) {
         try {
-            return new OpaqueThin((MemorySegment) OPAQUETHINVEC_GET.invokeExact(handle, idx));
+            var resultAddr = (MemorySegment) OPAQUETHINVEC_GET.invokeExact(handle, idx);
+            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OpaqueThin(resultAddr));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public OpaqueThin first() {
+    public Optional<OpaqueThin> first() {
         try {
-            return new OpaqueThin((MemorySegment) OPAQUETHINVEC_FIRST.invokeExact(handle));
+            var resultAddr = (MemorySegment) OPAQUETHINVEC_FIRST.invokeExact(handle);
+            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OpaqueThin(resultAddr));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

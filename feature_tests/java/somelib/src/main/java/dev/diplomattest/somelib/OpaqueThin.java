@@ -12,6 +12,7 @@ public class OpaqueThin implements AutoCloseable {
     private static final MethodHandle DESTROY;
     private static final MethodHandle OPAQUETHIN_A;
     private static final MethodHandle OPAQUETHIN_B;
+    private static final MethodHandle OPAQUETHIN_C;
 
     static {
         System.loadLibrary("diplomat_feature_tests");
@@ -27,6 +28,10 @@ public class OpaqueThin implements AutoCloseable {
         OPAQUETHIN_B = LINKER.downcallHandle(
             LIB.find("OpaqueThin_b").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_FLOAT, ValueLayout.ADDRESS)
+        );
+        OPAQUETHIN_C = LINKER.downcallHandle(
+            LIB.find("OpaqueThin_c").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }
 
@@ -56,6 +61,16 @@ public class OpaqueThin implements AutoCloseable {
     public float b() {
         try {
             return (float) OPAQUETHIN_B.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public String c() {
+        var write = DiplomatLib.createWrite();
+        try {
+            OPAQUETHIN_C.invokeExact(handle, write);
+            return DiplomatLib.writeToString(write);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

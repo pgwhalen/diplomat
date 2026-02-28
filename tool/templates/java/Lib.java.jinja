@@ -1,6 +1,8 @@
 package {{domain}}.{{lib_name}};
 
 import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
 
 /** Diplomat runtime support. */
 public final class DiplomatLib {
@@ -10,4 +12,58 @@ public final class DiplomatLib {
         ValueLayout.ADDRESS.withName("data"),
         ValueLayout.JAVA_LONG.withName("len")
     );
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    private static final MethodHandle DIPLOMAT_BUFFER_WRITE_CREATE;
+    private static final MethodHandle DIPLOMAT_BUFFER_WRITE_GET_BYTES;
+    private static final MethodHandle DIPLOMAT_BUFFER_WRITE_LEN;
+    private static final MethodHandle DIPLOMAT_BUFFER_WRITE_DESTROY;
+
+    static {
+        System.loadLibrary("{{dylib_name}}");
+        LIB = SymbolLookup.loaderLookup();
+        DIPLOMAT_BUFFER_WRITE_CREATE = LINKER.downcallHandle(
+            LIB.find("diplomat_buffer_write_create").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+        );
+        DIPLOMAT_BUFFER_WRITE_GET_BYTES = LINKER.downcallHandle(
+            LIB.find("diplomat_buffer_write_get_bytes").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+        );
+        DIPLOMAT_BUFFER_WRITE_LEN = LINKER.downcallHandle(
+            LIB.find("diplomat_buffer_write_len").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS)
+        );
+        DIPLOMAT_BUFFER_WRITE_DESTROY = LINKER.downcallHandle(
+            LIB.find("diplomat_buffer_write_destroy").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+    }
+
+    static MemorySegment createWrite() {
+        try {
+            return (MemorySegment) DIPLOMAT_BUFFER_WRITE_CREATE.invokeExact(0L);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    static String writeToString(MemorySegment write) {
+        try {
+            var bytes = (MemorySegment) DIPLOMAT_BUFFER_WRITE_GET_BYTES.invokeExact(write);
+            long len = (long) DIPLOMAT_BUFFER_WRITE_LEN.invokeExact(write);
+            byte[] byteArray = bytes.reinterpret(len).toArray(ValueLayout.JAVA_BYTE);
+            return new String(byteArray, StandardCharsets.UTF_8);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        } finally {
+            try {
+                DIPLOMAT_BUFFER_WRITE_DESTROY.invokeExact(write);
+            } catch (Throwable ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+    }
 }

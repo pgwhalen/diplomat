@@ -1,3 +1,7 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_opaque_for_test(tk_stream)
+---
 package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
@@ -11,10 +15,9 @@ public class Utf16Wrap implements AutoCloseable {
 
     private static final MethodHandle DESTROY;
     private static final MethodHandle UTF16WRAP_FROM_UTF16;
-    private static final MethodHandle UTF16WRAP_GET_DEBUG_STR;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
+        System.loadLibrary("diplomat_example");
         LIB = SymbolLookup.loaderLookup();
         DESTROY = LINKER.downcallHandle(
             LIB.find("Utf16Wrap_destroy").orElseThrow(),
@@ -23,10 +26,6 @@ public class Utf16Wrap implements AutoCloseable {
         UTF16WRAP_FROM_UTF16 = LINKER.downcallHandle(
             LIB.find("Utf16Wrap_from_utf16").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
-        );
-        UTF16WRAP_GET_DEBUG_STR = LINKER.downcallHandle(
-            LIB.find("Utf16Wrap_get_debug_str").orElseThrow(),
-            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }
 
@@ -51,16 +50,6 @@ public class Utf16Wrap implements AutoCloseable {
 
             var inputSeg = arena.allocateFrom(ValueLayout.JAVA_CHAR, inputChars);
             return new Utf16Wrap((MemorySegment) UTF16WRAP_FROM_UTF16.invokeExact(inputSeg, (long) inputChars.length));
-        } catch (Throwable ex) {
-            throw new RuntimeException(ex);
-        }
-    }
-
-    public String getDebugStr() {
-        var write = DiplomatLib.createWrite();
-        try {
-            UTF16WRAP_GET_DEBUG_STR.invokeExact(handle, write);
-            return DiplomatLib.writeToString(write);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

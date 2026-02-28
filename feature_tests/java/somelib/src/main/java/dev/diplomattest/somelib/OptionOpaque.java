@@ -3,6 +3,7 @@ package dev.diplomattest.somelib;
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 public class OptionOpaque implements AutoCloseable {
 
@@ -46,7 +47,7 @@ public class OptionOpaque implements AutoCloseable {
         );
         OPTIONOPAQUE_OPTION_OPAQUE_ARGUMENT = LINKER.downcallHandle(
             LIB.find("OptionOpaque_option_opaque_argument").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.JAVA_BYTE, ValueLayout.ADDRESS)
+            FunctionDescriptor.of(ValueLayout.JAVA_BOOLEAN, ValueLayout.ADDRESS)
         );
     }
 
@@ -65,17 +66,19 @@ public class OptionOpaque implements AutoCloseable {
         }
     }
 
-    public static OptionOpaque new_(int i) {
+    public static Optional<OptionOpaque> new_(int i) {
         try {
-            return new OptionOpaque((MemorySegment) OPTIONOPAQUE_NEW.invokeExact(i));
+            var resultAddr = (MemorySegment) OPTIONOPAQUE_NEW.invokeExact(i);
+            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OptionOpaque(resultAddr));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public static OptionOpaque newNone() {
+    public static Optional<OptionOpaque> newNone() {
         try {
-            return new OptionOpaque((MemorySegment) OPTIONOPAQUE_NEW_NONE.invokeExact());
+            var resultAddr = (MemorySegment) OPTIONOPAQUE_NEW_NONE.invokeExact();
+            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OptionOpaque(resultAddr));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -83,23 +86,26 @@ public class OptionOpaque implements AutoCloseable {
 
     public static boolean optionOpaqueArgument(OptionOpaque arg) {
         try {
-            return (boolean) OPTIONOPAQUE_OPTION_OPAQUE_ARGUMENT.invokeExact(arg.handle);
+            MemorySegment argAddr = arg == null ? MemorySegment.NULL : arg.handle;
+            return (boolean) OPTIONOPAQUE_OPTION_OPAQUE_ARGUMENT.invokeExact(argAddr);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public OptionOpaque returnsNoneSelf() {
+    public Optional<OptionOpaque> returnsNoneSelf() {
         try {
-            return new OptionOpaque((MemorySegment) OPTIONOPAQUE_RETURNS_NONE_SELF.invokeExact(handle));
+            var resultAddr = (MemorySegment) OPTIONOPAQUE_RETURNS_NONE_SELF.invokeExact(handle);
+            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OptionOpaque(resultAddr));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public OptionOpaque returnsSomeSelf() {
+    public Optional<OptionOpaque> returnsSomeSelf() {
         try {
-            return new OptionOpaque((MemorySegment) OPTIONOPAQUE_RETURNS_SOME_SELF.invokeExact(handle));
+            var resultAddr = (MemorySegment) OPTIONOPAQUE_RETURNS_SOME_SELF.invokeExact(handle);
+            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OptionOpaque(resultAddr));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

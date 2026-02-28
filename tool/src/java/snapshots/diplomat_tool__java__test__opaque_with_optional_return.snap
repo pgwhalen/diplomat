@@ -1,0 +1,84 @@
+---
+source: tool/src/java/mod.rs
+assertion_line: 757
+expression: gen_opaque_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
+
+public class MyData implements AutoCloseable {
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    private static final MethodHandle DESTROY;
+    private static final MethodHandle MYDATA_CREATE;
+    private static final MethodHandle MYDATA_GET_VALUE;
+    private static final MethodHandle MYDATA_CHECK;
+
+    static {
+        System.loadLibrary("diplomat_example");
+        LIB = SymbolLookup.loaderLookup();
+        DESTROY = LINKER.downcallHandle(
+            LIB.find("MyData_destroy").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        MYDATA_CREATE = LINKER.downcallHandle(
+            LIB.find("MyData_create").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
+        );
+        MYDATA_GET_VALUE = LINKER.downcallHandle(
+            LIB.find("MyData_get_value").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
+        );
+        MYDATA_CHECK = LINKER.downcallHandle(
+            LIB.find("MyData_check").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.JAVA_BOOLEAN, ValueLayout.ADDRESS)
+        );
+    }
+
+    final MemorySegment handle;
+
+    MyData(MemorySegment handle) {
+        this.handle = handle;
+    }
+
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static Optional<MyData> create(int v) {
+        try {
+            var resultAddr = (MemorySegment) MYDATA_CREATE.invokeExact(v);
+            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new MyData(resultAddr));
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static boolean check(MyData data) {
+        try {
+            MemorySegment dataAddr = data == null ? MemorySegment.NULL : data.handle;
+            return (boolean) MYDATA_CHECK.invokeExact(dataAddr);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public int getValue() {
+        try {
+            return (int) MYDATA_GET_VALUE.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+}

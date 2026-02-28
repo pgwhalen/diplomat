@@ -3,6 +3,7 @@ package dev.diplomattest.somelib;
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 public class OptionString implements AutoCloseable {
 
@@ -40,12 +41,13 @@ public class OptionString implements AutoCloseable {
         }
     }
 
-    public static OptionString new_(String diplomatStr) {
+    public static Optional<OptionString> new_(String diplomatStr) {
         try (var arena = Arena.ofConfined()) {
             byte[] diplomatStrBytes = diplomatStr.getBytes(StandardCharsets.UTF_8);
 
             var diplomatStrSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, diplomatStrBytes);
-            return new OptionString((MemorySegment) OPTIONSTRING_NEW.invokeExact(diplomatStrSeg, (long) diplomatStrBytes.length));
+            var resultAddr = (MemorySegment) OPTIONSTRING_NEW.invokeExact(diplomatStrSeg, (long) diplomatStrBytes.length);
+            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OptionString(resultAddr));
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

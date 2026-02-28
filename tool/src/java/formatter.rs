@@ -97,7 +97,7 @@ impl<'tcx> JavaFormatter<'tcx> {
 
     pub fn fmt_primitive_as_ffi(&self, prim: PrimitiveType) -> &'static str {
         match prim {
-            PrimitiveType::Bool => "ValueLayout.JAVA_BYTE",
+            PrimitiveType::Bool => "ValueLayout.JAVA_BOOLEAN",
             PrimitiveType::Char => "ValueLayout.JAVA_INT",
             PrimitiveType::Int(IntType::I8)
             | PrimitiveType::Int(IntType::U8)

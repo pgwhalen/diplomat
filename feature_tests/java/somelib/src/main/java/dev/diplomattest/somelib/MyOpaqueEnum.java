@@ -11,6 +11,7 @@ public class MyOpaqueEnum implements AutoCloseable {
 
     private static final MethodHandle DESTROY;
     private static final MethodHandle MYOPAQUEENUM_NEW;
+    private static final MethodHandle MYOPAQUEENUM_TO_STRING;
 
     static {
         System.loadLibrary("diplomat_feature_tests");
@@ -22,6 +23,10 @@ public class MyOpaqueEnum implements AutoCloseable {
         MYOPAQUEENUM_NEW = LINKER.downcallHandle(
             LIB.find("MyOpaqueEnum_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS)
+        );
+        MYOPAQUEENUM_TO_STRING = LINKER.downcallHandle(
+            LIB.find("MyOpaqueEnum_to_string").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }
 
@@ -43,6 +48,16 @@ public class MyOpaqueEnum implements AutoCloseable {
     public static MyOpaqueEnum new_() {
         try {
             return new MyOpaqueEnum((MemorySegment) MYOPAQUEENUM_NEW.invokeExact());
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public String toString() {
+        var write = DiplomatLib.createWrite();
+        try {
+            MYOPAQUEENUM_TO_STRING.invokeExact(handle, write);
+            return DiplomatLib.writeToString(write);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
