@@ -1,0 +1,43 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_struct_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class SliceFields {
+
+    static final StructLayout LAYOUT = MemoryLayout.structLayout(
+        DiplomatLib.DIPLOMAT_STRING_VIEW.withName("name"),
+        DiplomatLib.DIPLOMAT_STRING_VIEW.withName("data")
+    );
+
+    public String name;
+
+    public short[] data;
+
+    public SliceFields() {
+    }
+
+    SliceFields(String name, short[] data) {
+        this.name = name;
+        this.data = data;
+    }
+
+    static SliceFields fromNative(MemorySegment seg) {
+        var result = new SliceFields();
+        result.name = new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
+        result.data = seg.get(ValueLayout.ADDRESS, 16L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 24L) * 2L).toArray(ValueLayout.JAVA_SHORT);
+        return result;
+    }
+
+    MemorySegment toNative(Arena arena) {
+        var seg = arena.allocate(LAYOUT);
+        { byte[] nameBytes = this.name.getBytes(StandardCharsets.UTF_8); var nameSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, nameBytes); seg.set(ValueLayout.ADDRESS, 0L, nameSeg); seg.set(ValueLayout.JAVA_LONG, 8L, (long) nameBytes.length); }
+        { var dataSeg = arena.allocateFrom(ValueLayout.JAVA_SHORT, this.data); seg.set(ValueLayout.ADDRESS, 16L, dataSeg); seg.set(ValueLayout.JAVA_LONG, 24L, (long) this.data.length); }
+        return seg;
+    }
+}

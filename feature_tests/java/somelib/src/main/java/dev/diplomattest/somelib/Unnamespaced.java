@@ -45,9 +45,9 @@ public class Unnamespaced implements AutoCloseable {
         }
     }
 
-    public static Unnamespaced make(int e) {
+    public static Unnamespaced make(RenamedAttrEnum e) {
         try {
-            return new Unnamespaced((MemorySegment) NAMESPACE_UNNAMESPACED_MAKE.invokeExact(e));
+            return new Unnamespaced((MemorySegment) NAMESPACE_UNNAMESPACED_MAKE.invokeExact(e.toNative()));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

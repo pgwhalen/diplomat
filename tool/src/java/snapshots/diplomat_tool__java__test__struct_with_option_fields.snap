@@ -1,0 +1,73 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_all_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class OptionFields {
+
+    static final StructLayout LAYOUT = MemoryLayout.structLayout(
+        MemoryLayout.structLayout(ValueLayout.JAVA_BYTE, ValueLayout.JAVA_BOOLEAN).withName("a"),
+        MemoryLayout.paddingLayout(2),
+        MemoryLayout.structLayout(ValueLayout.JAVA_INT, ValueLayout.JAVA_BOOLEAN, MemoryLayout.paddingLayout(3)).withName("b")
+    );
+
+    public Byte a;
+
+    public MyEnum b;
+
+    public OptionFields() {
+    }
+
+    OptionFields(Byte a, MyEnum b) {
+        this.a = a;
+        this.b = b;
+    }
+
+    static OptionFields fromNative(MemorySegment seg) {
+        var result = new OptionFields();
+        result.a = seg.get(ValueLayout.JAVA_BOOLEAN, 1L) ? (byte) seg.get(ValueLayout.JAVA_BYTE, 0L) : null;
+        result.b = seg.get(ValueLayout.JAVA_BOOLEAN, 8L) ? MyEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 4L)) : null;
+        return result;
+    }
+
+    MemorySegment toNative(Arena arena) {
+        var seg = arena.allocate(LAYOUT);
+        if (this.a != null) { seg.set(ValueLayout.JAVA_BYTE, 0L, this.a); seg.set(ValueLayout.JAVA_BOOLEAN, 1L, true); } else { seg.set(ValueLayout.JAVA_BOOLEAN, 1L, false); }
+        if (this.b != null) { seg.set(ValueLayout.JAVA_INT, 4L, this.b.toNative()); seg.set(ValueLayout.JAVA_BOOLEAN, 8L, true); } else { seg.set(ValueLayout.JAVA_BOOLEAN, 8L, false); }
+        return seg;
+    }
+}
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public enum MyEnum {
+    A(0),
+    B(1);
+
+    private final int value;
+
+    MyEnum(int value) {
+        this.value = value;
+    }
+
+    public int toNative() {
+        return this.value;
+    }
+
+    public static MyEnum fromNative(int value) {
+        for (var variant : values()) {
+            if (variant.value == value) {
+                return variant;
+            }
+        }
+        throw new IllegalArgumentException("Invalid native value for MyEnum: " + value);
+    }
+}

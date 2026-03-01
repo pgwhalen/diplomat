@@ -1,0 +1,102 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_all_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class Weather implements AutoCloseable {
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    private static final MethodHandle DESTROY;
+    private static final MethodHandle WEATHER_FROM_SEASON;
+    private static final MethodHandle WEATHER_GET_SEASON;
+
+    static {
+        System.loadLibrary("diplomat_example");
+        LIB = SymbolLookup.loaderLookup();
+        DESTROY = LINKER.downcallHandle(
+            LIB.find("Weather_destroy").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        WEATHER_FROM_SEASON = LINKER.downcallHandle(
+            LIB.find("Weather_from_season").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
+        );
+        WEATHER_GET_SEASON = LINKER.downcallHandle(
+            LIB.find("Weather_get_season").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
+        );
+    }
+
+    final MemorySegment handle;
+
+    Weather(MemorySegment handle) {
+        this.handle = handle;
+    }
+
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static Weather fromSeason(Season season) {
+        try {
+            return new Weather((MemorySegment) WEATHER_FROM_SEASON.invokeExact(season.toNative()));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public Season getSeason() {
+        try {
+            return Season.fromNative((int) WEATHER_GET_SEASON.invokeExact(handle));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+}
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public enum Season {
+    SPRING(0),
+    SUMMER(1),
+    AUTUMN(2),
+    WINTER(3);
+
+    private final int value;
+
+    Season(int value) {
+        this.value = value;
+    }
+
+    public int toNative() {
+        return this.value;
+    }
+
+    public static Season fromNative(int value) {
+        for (var variant : values()) {
+            if (variant.value == value) {
+                return variant;
+            }
+        }
+        throw new IllegalArgumentException("Invalid native value for Season: " + value);
+    }
+}

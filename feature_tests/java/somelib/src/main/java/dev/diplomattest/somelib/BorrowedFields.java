@@ -7,9 +7,9 @@ import java.nio.charset.StandardCharsets;
 public class BorrowedFields {
 
     static final StructLayout LAYOUT = MemoryLayout.structLayout(
-        ValueLayout.JAVA_BYTE.withName("a"),
-        ValueLayout.JAVA_BYTE.withName("b"),
-        ValueLayout.JAVA_BYTE.withName("c")
+        DiplomatLib.DIPLOMAT_STRING_VIEW.withName("a"),
+        DiplomatLib.DIPLOMAT_STRING_VIEW.withName("b"),
+        DiplomatLib.DIPLOMAT_STRING_VIEW.withName("c")
     );
 
     private static final Linker LINKER = Linker.nativeLinker();
@@ -25,16 +25,16 @@ public class BorrowedFields {
         );
     }
 
-    public Object a;
+    public String a;
 
-    public Object b;
+    public String b;
 
-    public Object c;
+    public String c;
 
     public BorrowedFields() {
     }
 
-    BorrowedFields(Object a, Object b, Object c) {
+    BorrowedFields(String a, String b, String c) {
         this.a = a;
         this.b = b;
         this.c = c;
@@ -42,17 +42,17 @@ public class BorrowedFields {
 
     static BorrowedFields fromNative(MemorySegment seg) {
         var result = new BorrowedFields();
-        result.a = null /* unsupported field a */;
-        result.b = null /* unsupported field b */;
-        result.c = null /* unsupported field c */;
+        result.a = new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L) * 2).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_16LE);
+        result.b = new String(seg.get(ValueLayout.ADDRESS, 16L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 24L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
+        result.c = new String(seg.get(ValueLayout.ADDRESS, 32L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 40L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
         return result;
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        // unsupported field a
-        // unsupported field b
-        // unsupported field c
+        { byte[] aBytes = this.a.getBytes(StandardCharsets.UTF_16LE); var aSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, aBytes); seg.set(ValueLayout.ADDRESS, 0L, aSeg); seg.set(ValueLayout.JAVA_LONG, 8L, (long) aBytes.length / 2); }
+        { byte[] bBytes = this.b.getBytes(StandardCharsets.UTF_8); var bSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, bBytes); seg.set(ValueLayout.ADDRESS, 16L, bSeg); seg.set(ValueLayout.JAVA_LONG, 24L, (long) bBytes.length); }
+        { byte[] cBytes = this.c.getBytes(StandardCharsets.UTF_8); var cSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, cBytes); seg.set(ValueLayout.ADDRESS, 32L, cSeg); seg.set(ValueLayout.JAVA_LONG, 40L, (long) cBytes.length); }
         return seg;
     }
 

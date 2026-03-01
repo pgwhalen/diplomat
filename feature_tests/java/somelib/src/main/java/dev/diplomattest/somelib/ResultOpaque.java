@@ -163,7 +163,7 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
             if (isOk) {
                 return new ResultOpaque(result.get(ValueLayout.ADDRESS, 0L));
             } else {
-                throw new RuntimeException("Diplomat enum error: " + (int) result.get(ValueLayout.JAVA_INT, 0L));
+                throw new ErrorEnumException(ErrorEnum.fromNative((int) result.get(ValueLayout.JAVA_INT, 0L)));
             }
         } catch (RuntimeException ex) {
             throw ex;
@@ -179,7 +179,7 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
             if (isOk) {
                 return new ResultOpaque(result.get(ValueLayout.ADDRESS, 0L));
             } else {
-                throw new RuntimeException("Diplomat enum error: " + (int) result.get(ValueLayout.JAVA_INT, 0L));
+                throw new ErrorEnumException(ErrorEnum.fromNative((int) result.get(ValueLayout.JAVA_INT, 0L)));
             }
         } catch (RuntimeException ex) {
             throw ex;
@@ -195,7 +195,7 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
             if (isOk) {
                 return new ResultOpaque(result.get(ValueLayout.ADDRESS, 0L));
             } else {
-                throw new RuntimeException("Diplomat enum error: " + (int) result.get(ValueLayout.JAVA_INT, 0L));
+                throw new ErrorEnumException(ErrorEnum.fromNative((int) result.get(ValueLayout.JAVA_INT, 0L)));
             }
         } catch (RuntimeException ex) {
             throw ex;
@@ -284,12 +284,12 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
         }
     }
 
-    public static int newInEnumErr(int i) {
+    public static ErrorEnum newInEnumErr(int i) {
         try (var arena = Arena.ofConfined()) {
             var result = (MemorySegment) RESULTOPAQUE_NEW_IN_ENUM_ERR.invokeExact((SegmentAllocator) arena, i);
             var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 8L);
             if (isOk) {
-                return (int) result.get(ValueLayout.JAVA_INT, 0L);
+                return ErrorEnum.fromNative((int) result.get(ValueLayout.JAVA_INT, 0L));
             } else {
                 throw new ResultOpaque(result.get(ValueLayout.ADDRESS, 0L));
             }

@@ -43,16 +43,16 @@ public class NestedBorrowedFields {
     static NestedBorrowedFields fromNative(MemorySegment seg) {
         var result = new NestedBorrowedFields();
         result.fields = BorrowedFields.fromNative(seg.asSlice(0L, BorrowedFields.LAYOUT.byteSize()));
-        result.bounds = BorrowedFieldsWithBounds.fromNative(seg.asSlice(0L, BorrowedFieldsWithBounds.LAYOUT.byteSize()));
-        result.bounds2 = BorrowedFieldsWithBounds.fromNative(seg.asSlice(0L, BorrowedFieldsWithBounds.LAYOUT.byteSize()));
+        result.bounds = BorrowedFieldsWithBounds.fromNative(seg.asSlice(48L, BorrowedFieldsWithBounds.LAYOUT.byteSize()));
+        result.bounds2 = BorrowedFieldsWithBounds.fromNative(seg.asSlice(96L, BorrowedFieldsWithBounds.LAYOUT.byteSize()));
         return result;
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
         seg.asSlice(0L, BorrowedFields.LAYOUT.byteSize()).copyFrom(this.fields.toNative(arena));
-        seg.asSlice(0L, BorrowedFieldsWithBounds.LAYOUT.byteSize()).copyFrom(this.bounds.toNative(arena));
-        seg.asSlice(0L, BorrowedFieldsWithBounds.LAYOUT.byteSize()).copyFrom(this.bounds2.toNative(arena));
+        seg.asSlice(48L, BorrowedFieldsWithBounds.LAYOUT.byteSize()).copyFrom(this.bounds.toNative(arena));
+        seg.asSlice(96L, BorrowedFieldsWithBounds.LAYOUT.byteSize()).copyFrom(this.bounds2.toNative(arena));
         return seg;
     }
 

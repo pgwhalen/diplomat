@@ -7,9 +7,9 @@ import java.nio.charset.StandardCharsets;
 public class BorrowedFieldsWithBounds {
 
     static final StructLayout LAYOUT = MemoryLayout.structLayout(
-        ValueLayout.JAVA_BYTE.withName("fieldA"),
-        ValueLayout.JAVA_BYTE.withName("fieldB"),
-        ValueLayout.JAVA_BYTE.withName("fieldC")
+        DiplomatLib.DIPLOMAT_STRING_VIEW.withName("fieldA"),
+        DiplomatLib.DIPLOMAT_STRING_VIEW.withName("fieldB"),
+        DiplomatLib.DIPLOMAT_STRING_VIEW.withName("fieldC")
     );
 
     private static final Linker LINKER = Linker.nativeLinker();
@@ -25,16 +25,16 @@ public class BorrowedFieldsWithBounds {
         );
     }
 
-    public Object fieldA;
+    public String fieldA;
 
-    public Object fieldB;
+    public String fieldB;
 
-    public Object fieldC;
+    public String fieldC;
 
     public BorrowedFieldsWithBounds() {
     }
 
-    BorrowedFieldsWithBounds(Object fieldA, Object fieldB, Object fieldC) {
+    BorrowedFieldsWithBounds(String fieldA, String fieldB, String fieldC) {
         this.fieldA = fieldA;
         this.fieldB = fieldB;
         this.fieldC = fieldC;
@@ -42,17 +42,17 @@ public class BorrowedFieldsWithBounds {
 
     static BorrowedFieldsWithBounds fromNative(MemorySegment seg) {
         var result = new BorrowedFieldsWithBounds();
-        result.fieldA = null /* unsupported field fieldA */;
-        result.fieldB = null /* unsupported field fieldB */;
-        result.fieldC = null /* unsupported field fieldC */;
+        result.fieldA = new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L) * 2).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_16LE);
+        result.fieldB = new String(seg.get(ValueLayout.ADDRESS, 16L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 24L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
+        result.fieldC = new String(seg.get(ValueLayout.ADDRESS, 32L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 40L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
         return result;
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        // unsupported field fieldA
-        // unsupported field fieldB
-        // unsupported field fieldC
+        { byte[] fieldABytes = this.fieldA.getBytes(StandardCharsets.UTF_16LE); var fieldASeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, fieldABytes); seg.set(ValueLayout.ADDRESS, 0L, fieldASeg); seg.set(ValueLayout.JAVA_LONG, 8L, (long) fieldABytes.length / 2); }
+        { byte[] fieldBBytes = this.fieldB.getBytes(StandardCharsets.UTF_8); var fieldBSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, fieldBBytes); seg.set(ValueLayout.ADDRESS, 16L, fieldBSeg); seg.set(ValueLayout.JAVA_LONG, 24L, (long) fieldBBytes.length); }
+        { byte[] fieldCBytes = this.fieldC.getBytes(StandardCharsets.UTF_8); var fieldCSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, fieldCBytes); seg.set(ValueLayout.ADDRESS, 32L, fieldCSeg); seg.set(ValueLayout.JAVA_LONG, 40L, (long) fieldCBytes.length); }
         return seg;
     }
 

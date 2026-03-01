@@ -1,0 +1,81 @@
+package {{domain}}.{{lib_name}};
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+{%- if uses_optional %}
+import java.util.Optional;
+{%- endif %}
+
+public enum {{type_name}} {
+    {%- for v in variants %}
+    {{v.variant_name}}({{v.discriminant}}){% if !loop.last %},{% else %};{% endif %}
+    {%- endfor %}
+
+    private final int value;
+
+    {{type_name}}(int value) {
+        this.value = value;
+    }
+
+    public int toNative() {
+        return this.value;
+    }
+
+    public static {{type_name}} fromNative(int value) {
+        for (var variant : values()) {
+            if (variant.value == value) {
+                return variant;
+            }
+        }
+        throw new IllegalArgumentException("Invalid native value for {{type_name}}: " + value);
+    }
+    {%- if !native_methods.is_empty() %}
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    {%- for m in native_methods %}
+    private static final MethodHandle {{m.handle_name}};
+    {%- endfor %}
+    {%- for m in native_methods %}
+    {%- if let Some(layout) = &m.result_layout %}
+    static final StructLayout {{m.result_layout_name.as_ref().unwrap()}} = {{layout}};
+    {%- endif %}
+    {%- endfor %}
+
+    static {
+        System.loadLibrary("{{dylib_name}}");
+        LIB = SymbolLookup.loaderLookup();
+        {%- for m in native_methods %}
+        {{m.handle_name}} = LINKER.downcallHandle(
+            LIB.find("{{m.abi_name}}").orElseThrow(),
+            {{m.descriptor}}
+        );
+        {%- endfor %}
+    }
+    {%- endif %}
+    {%- for m in companion_methods %}
+
+    {{m.definition}}
+    {%- endfor %}
+    {%- for m in self_methods %}
+
+    {{m.definition}}
+    {%- endfor %}
+}
+{%- if is_error %}
+
+class {{type_name}}Exception extends RuntimeException {
+    private final {{type_name}} value;
+
+    {{type_name}}Exception({{type_name}} value) {
+        super("{{type_name}} error: " + value);
+        this.value = value;
+    }
+
+    public {{type_name}} getValue() {
+        return value;
+    }
+}
+{%- endif %}

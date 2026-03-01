@@ -64,12 +64,12 @@ public class MyStruct {
 
     public int f;
 
-    public int g;
+    public MyEnum g;
 
     public MyStruct() {
     }
 
-    MyStruct(byte a, boolean b, byte c, long d, int e, int f, int g) {
+    MyStruct(byte a, boolean b, byte c, long d, int e, int f, MyEnum g) {
         this.a = a;
         this.b = b;
         this.c = c;
@@ -87,7 +87,7 @@ public class MyStruct {
         result.d = (long) seg.get(ValueLayout.JAVA_LONG, 8L);
         result.e = (int) seg.get(ValueLayout.JAVA_INT, 16L);
         result.f = (int) seg.get(ValueLayout.JAVA_INT, 20L);
-        result.g = (int) seg.get(ValueLayout.JAVA_INT, 24L);
+        result.g = MyEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 24L));
         return result;
     }
 
@@ -99,7 +99,7 @@ public class MyStruct {
         seg.set(ValueLayout.JAVA_LONG, 8L, this.d);
         seg.set(ValueLayout.JAVA_INT, 16L, this.e);
         seg.set(ValueLayout.JAVA_INT, 20L, this.f);
-        seg.set(ValueLayout.JAVA_INT, 24L, this.g);
+        seg.set(ValueLayout.JAVA_INT, 24L, this.g.toNative());
         return seg;
     }
 

@@ -1,0 +1,75 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_all_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class Movement {
+
+    static final StructLayout LAYOUT = MemoryLayout.structLayout(
+        ValueLayout.JAVA_INT.withName("direction"),
+        MemoryLayout.paddingLayout(4),
+        ValueLayout.JAVA_DOUBLE.withName("distance")
+    );
+
+    public Direction direction;
+
+    public double distance;
+
+    public Movement() {
+    }
+
+    Movement(Direction direction, double distance) {
+        this.direction = direction;
+        this.distance = distance;
+    }
+
+    static Movement fromNative(MemorySegment seg) {
+        var result = new Movement();
+        result.direction = Direction.fromNative((int) seg.get(ValueLayout.JAVA_INT, 0L));
+        result.distance = (double) seg.get(ValueLayout.JAVA_DOUBLE, 8L);
+        return result;
+    }
+
+    MemorySegment toNative(Arena arena) {
+        var seg = arena.allocate(LAYOUT);
+        seg.set(ValueLayout.JAVA_INT, 0L, this.direction.toNative());
+        seg.set(ValueLayout.JAVA_DOUBLE, 8L, this.distance);
+        return seg;
+    }
+}
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public enum Direction {
+    NORTH(0),
+    SOUTH(1),
+    EAST(2),
+    WEST(3);
+
+    private final int value;
+
+    Direction(int value) {
+        this.value = value;
+    }
+
+    public int toNative() {
+        return this.value;
+    }
+
+    public static Direction fromNative(int value) {
+        for (var variant : values()) {
+            if (variant.value == value) {
+                return variant;
+            }
+        }
+        throw new IllegalArgumentException("Invalid native value for Direction: " + value);
+    }
+}

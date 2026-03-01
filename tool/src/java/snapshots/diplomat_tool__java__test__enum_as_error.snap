@@ -1,0 +1,110 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_all_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class Foo implements AutoCloseable {
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    private static final MethodHandle DESTROY;
+    private static final MethodHandle FOO_TRY_NEW;
+    static final StructLayout FOO_TRY_NEW_RESULT = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("union_val"),
+            ValueLayout.JAVA_BOOLEAN.withName("is_ok"),
+            MemoryLayout.paddingLayout(7)
+        );
+
+    static {
+        System.loadLibrary("diplomat_example");
+        LIB = SymbolLookup.loaderLookup();
+        DESTROY = LINKER.downcallHandle(
+            LIB.find("Foo_destroy").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        FOO_TRY_NEW = LINKER.downcallHandle(
+            LIB.find("Foo_try_new").orElseThrow(),
+            FunctionDescriptor.of(FOO_TRY_NEW_RESULT, ValueLayout.JAVA_INT)
+        );
+    }
+
+    final MemorySegment handle;
+
+    Foo(MemorySegment handle) {
+        this.handle = handle;
+    }
+
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static Foo tryNew(int i) {
+        try (var arena = Arena.ofConfined()) {
+            var result = (MemorySegment) FOO_TRY_NEW.invokeExact((SegmentAllocator) arena, i);
+            var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 8L);
+            if (isOk) {
+                return new Foo(result.get(ValueLayout.ADDRESS, 0L));
+            } else {
+                throw new ErrorCodeException(ErrorCode.fromNative((int) result.get(ValueLayout.JAVA_INT, 0L)));
+            }
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+}
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public enum ErrorCode {
+    NOT_FOUND(0),
+    PERMISSION_DENIED(1),
+    INTERNAL(2);
+
+    private final int value;
+
+    ErrorCode(int value) {
+        this.value = value;
+    }
+
+    public int toNative() {
+        return this.value;
+    }
+
+    public static ErrorCode fromNative(int value) {
+        for (var variant : values()) {
+            if (variant.value == value) {
+                return variant;
+            }
+        }
+        throw new IllegalArgumentException("Invalid native value for ErrorCode: " + value);
+    }
+}
+
+class ErrorCodeException extends RuntimeException {
+    private final ErrorCode value;
+
+    ErrorCodeException(ErrorCode value) {
+        super("ErrorCode error: " + value);
+        this.value = value;
+    }
+
+    public ErrorCode getValue() {
+        return value;
+    }
+}

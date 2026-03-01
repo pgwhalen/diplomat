@@ -130,9 +130,9 @@ public class AttrOpaque1Renamed implements AutoCloseable {
         }
     }
 
-    public void useNamespaced(int n) {
+    public void useNamespaced(RenamedAttrEnum n) {
         try {
-            NAMESPACE_ATTROPAQUE1_USE_NAMESPACED.invokeExact(handle, n);
+            NAMESPACE_ATTROPAQUE1_USE_NAMESPACED.invokeExact(handle, n.toNative());
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

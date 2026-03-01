@@ -7,21 +7,22 @@ import java.nio.charset.StandardCharsets;
 public class OptionInputStruct {
 
     static final StructLayout LAYOUT = MemoryLayout.structLayout(
-        ValueLayout.JAVA_BYTE.withName("a"),
-        ValueLayout.JAVA_BYTE.withName("b"),
-        ValueLayout.JAVA_BYTE.withName("c")
+        MemoryLayout.structLayout(ValueLayout.JAVA_BYTE, ValueLayout.JAVA_BOOLEAN).withName("a"),
+        MemoryLayout.paddingLayout(2),
+        MemoryLayout.structLayout(ValueLayout.JAVA_INT, ValueLayout.JAVA_BOOLEAN, MemoryLayout.paddingLayout(3)).withName("b"),
+        MemoryLayout.structLayout(ValueLayout.JAVA_INT, ValueLayout.JAVA_BOOLEAN, MemoryLayout.paddingLayout(3)).withName("c")
     );
 
-    public Object a;
+    public Byte a;
 
-    public Object b;
+    public Integer b;
 
-    public Object c;
+    public OptionEnum c;
 
     public OptionInputStruct() {
     }
 
-    OptionInputStruct(Object a, Object b, Object c) {
+    OptionInputStruct(Byte a, Integer b, OptionEnum c) {
         this.a = a;
         this.b = b;
         this.c = c;
@@ -29,17 +30,17 @@ public class OptionInputStruct {
 
     static OptionInputStruct fromNative(MemorySegment seg) {
         var result = new OptionInputStruct();
-        result.a = null /* unsupported field a */;
-        result.b = null /* unsupported field b */;
-        result.c = null /* unsupported field c */;
+        result.a = seg.get(ValueLayout.JAVA_BOOLEAN, 1L) ? (byte) seg.get(ValueLayout.JAVA_BYTE, 0L) : null;
+        result.b = seg.get(ValueLayout.JAVA_BOOLEAN, 8L) ? (int) seg.get(ValueLayout.JAVA_INT, 4L) : null;
+        result.c = seg.get(ValueLayout.JAVA_BOOLEAN, 16L) ? OptionEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 12L)) : null;
         return result;
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        // unsupported field a
-        // unsupported field b
-        // unsupported field c
+        if (this.a != null) { seg.set(ValueLayout.JAVA_BYTE, 0L, this.a); seg.set(ValueLayout.JAVA_BOOLEAN, 1L, true); } else { seg.set(ValueLayout.JAVA_BOOLEAN, 1L, false); }
+        if (this.b != null) { seg.set(ValueLayout.JAVA_INT, 4L, this.b); seg.set(ValueLayout.JAVA_BOOLEAN, 8L, true); } else { seg.set(ValueLayout.JAVA_BOOLEAN, 8L, false); }
+        if (this.c != null) { seg.set(ValueLayout.JAVA_INT, 12L, this.c.toNative()); seg.set(ValueLayout.JAVA_BOOLEAN, 16L, true); } else { seg.set(ValueLayout.JAVA_BOOLEAN, 16L, false); }
         return seg;
     }
 }

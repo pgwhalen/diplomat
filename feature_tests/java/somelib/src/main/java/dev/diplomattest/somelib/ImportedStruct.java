@@ -12,28 +12,28 @@ public class ImportedStruct {
         MemoryLayout.paddingLayout(3)
     );
 
-    public int foo;
+    public UnimportedEnum foo;
 
     public byte count;
 
     public ImportedStruct() {
     }
 
-    ImportedStruct(int foo, byte count) {
+    ImportedStruct(UnimportedEnum foo, byte count) {
         this.foo = foo;
         this.count = count;
     }
 
     static ImportedStruct fromNative(MemorySegment seg) {
         var result = new ImportedStruct();
-        result.foo = (int) seg.get(ValueLayout.JAVA_INT, 0L);
+        result.foo = UnimportedEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 0L));
         result.count = (byte) seg.get(ValueLayout.JAVA_BYTE, 4L);
         return result;
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        seg.set(ValueLayout.JAVA_INT, 0L, this.foo);
+        seg.set(ValueLayout.JAVA_INT, 0L, this.foo.toNative());
         seg.set(ValueLayout.JAVA_BYTE, 4L, this.count);
         return seg;
     }

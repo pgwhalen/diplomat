@@ -26,7 +26,7 @@ cargo make gen-java-feature    # Regenerate Java bindings for feature_tests/
 cargo make test-java-example   # Build native lib + run Gradle tests
 cargo make test-java-feature   # Build native lib + run Gradle feature tests
 cargo make test-java           # Run both example and feature tests
-cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tests (14 tests)
+cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tests (20 tests)
 ```
 
 ## Current Status
@@ -40,9 +40,12 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 - **Opaque parameters and returns** (passed as `MemorySegment`)
 - **`&DiplomatStr` parameters** (Java `String` converted to UTF-8 bytes via `Arena`)
 - **`&DiplomatStr16` parameters** (Java `String` converted to UTF-16 char array via `Arena`)
-- **Enum parameters and returns** (as raw `int` — no Java enum class generated)
+- **Enum types** — generated as proper Java `enum` classes with `toNative()`/`fromNative()` methods
+  - Enum parameters and returns use the generated enum type
+  - Enum self methods pass `this.toNative()`
+  - Error enums (`#[diplomat::attr(auto, error)]`) generate a companion `*Exception` class
 - **Structs** — generated as POJOs with FFM `StructLayout`, `fromNative`/`toNative` conversion, C ABI padding
-  - Primitive fields (all sizes), nested struct fields, boolean fields
+  - Primitive fields (all sizes), nested struct fields, boolean fields, enum fields, slice fields (str/primitive), `DiplomatOption<T>` fields
   - Structs as method parameters (passed by value via `toNative`)
   - Structs as return types (received via `SegmentAllocator` + `fromNative`)
   - Struct self methods (consuming `self` passed by value)
@@ -50,7 +53,7 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
   - Unit errors (`Result<T, ()>`) → `throw new RuntimeException("Diplomat error")`
   - Struct errors (`Result<T, ErrorStruct>`) → struct `extends RuntimeException`, thrown directly
   - Opaque errors (`Result<T, Box<ErrorOpaque>>`) → opaque `extends RuntimeException`, thrown directly
-  - Enum errors (`Result<T, ErrorEnum>`) → thrown as `RuntimeException` with error value in message
+  - Enum errors (`Result<T, ErrorEnum>`) → thrown as `*Exception` (if `#[diplomat::attr(auto, error)]`) or `RuntimeException` with enum value
   - Primitive error values (`Result<(), i32>`) → thrown as `RuntimeException` with value in message
   - All success types: `Unit`, `OutType` (opaque/struct/primitive), `Write` (string)
 - **Nullable returns** (`Option<T>`) — wrapped in `Optional<T>` with boxed primitives
@@ -65,8 +68,7 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 
 ### What doesn't work yet
 
-- Enums as proper Java enum classes — currently passed as raw `int`
-- Struct fields of unsupported types (enums, slices, `Option<T>`) — emit `null` placeholder
+- Struct fields of certain unsupported types (e.g., struct slices, string view slices) — emit `Object` placeholder
 - Cyclic struct references in result layouts — circular static class initialization in Java (e.g., `CyclicStructA` ↔ `CyclicStructB` when result layouts create cross-type references)
 - Slices other than `&str` / `&DiplomatStr16` — not supported
 - Callbacks / traits
@@ -88,15 +90,15 @@ Copied from `book/src/developer.md` — check off features as they are added to 
   - [x] return a boxed opaque (with `AutoCloseable` / destroy cleanup)
   - [x] as self parameter
   - [x] as another parameter
-- [ ] **structs**:
+- [x] **structs**:
   - [x] basic definition (primitive fields, nested struct fields)
   - [x] as return type
   - [x] as parameter
   - [x] struct self methods
-  - [ ] enum fields
-  - [ ] slice fields
-  - [ ] `Option<T>` fields
-- [ ] **enums** (as proper Java enum classes, not raw `int`)
+  - [x] enum fields
+  - [x] slice fields (str + primitive)
+  - [x] `Option<T>` fields
+- [x] **enums** (as proper Java enum classes with `toNative()`/`fromNative()`)
 - [x] **writeable** (DiplomatWrite / stringifiers)
 - [ ] **slices**:
   - [ ] primitive slices

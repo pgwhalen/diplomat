@@ -1,7 +1,7 @@
 use diplomat_core::hir::{
     self, DocsUrlGenerator, FloatType, IntSizeType, IntType, PrimitiveType, TypeContext, TypeId,
 };
-use heck::ToLowerCamelCase;
+use heck::{ToLowerCamelCase, ToShoutySnakeCase};
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::LazyLock;
@@ -166,6 +166,16 @@ impl<'tcx> JavaFormatter<'tcx> {
             PrimitiveType::Float(FloatType::F32) => "Float",
             PrimitiveType::Float(FloatType::F64) => "Double",
             PrimitiveType::Int128(_) => panic!("i128 not supported in Java"),
+        }
+    }
+
+    pub fn fmt_enum_variant_name<'a>(&self, variant: &'a hir::EnumVariant) -> Cow<'a, str> {
+        let name = variant.name.as_str().to_shouty_snake_case();
+        let name = variant.attrs.rename.apply(name.into());
+        if KEYWORDS.contains(&&*name) {
+            format!("{name}_").into()
+        } else {
+            name
         }
     }
 

@@ -7,8 +7,8 @@ import java.nio.charset.StandardCharsets;
 public class MyStructContainingAnOption {
 
     static final StructLayout LAYOUT = MemoryLayout.structLayout(
-        ValueLayout.JAVA_BYTE.withName("a"),
-        ValueLayout.JAVA_BYTE.withName("b")
+        MemoryLayout.structLayout(MyStruct.LAYOUT, ValueLayout.JAVA_BOOLEAN, MemoryLayout.paddingLayout(7)).withName("a"),
+        MemoryLayout.structLayout(ValueLayout.JAVA_INT, ValueLayout.JAVA_BOOLEAN, MemoryLayout.paddingLayout(3)).withName("b")
     );
 
     private static final Linker LINKER = Linker.nativeLinker();
@@ -29,29 +29,29 @@ public class MyStructContainingAnOption {
         );
     }
 
-    public Object a;
+    public MyStruct a;
 
-    public Object b;
+    public DefaultEnum b;
 
     public MyStructContainingAnOption() {
     }
 
-    MyStructContainingAnOption(Object a, Object b) {
+    MyStructContainingAnOption(MyStruct a, DefaultEnum b) {
         this.a = a;
         this.b = b;
     }
 
     static MyStructContainingAnOption fromNative(MemorySegment seg) {
         var result = new MyStructContainingAnOption();
-        result.a = null /* unsupported field a */;
-        result.b = null /* unsupported field b */;
+        result.a = seg.get(ValueLayout.JAVA_BOOLEAN, 32L) ? MyStruct.fromNative(seg.asSlice(0L, MyStruct.LAYOUT.byteSize())) : null;
+        result.b = seg.get(ValueLayout.JAVA_BOOLEAN, 44L) ? DefaultEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 40L)) : null;
         return result;
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        // unsupported field a
-        // unsupported field b
+        if (this.a != null) { seg.asSlice(0L, MyStruct.LAYOUT.byteSize()).copyFrom(this.a.toNative(arena)); seg.set(ValueLayout.JAVA_BOOLEAN, 32L, true); } else { seg.set(ValueLayout.JAVA_BOOLEAN, 32L, false); }
+        if (this.b != null) { seg.set(ValueLayout.JAVA_INT, 40L, this.b.toNative()); seg.set(ValueLayout.JAVA_BOOLEAN, 44L, true); } else { seg.set(ValueLayout.JAVA_BOOLEAN, 44L, false); }
         return seg;
     }
 

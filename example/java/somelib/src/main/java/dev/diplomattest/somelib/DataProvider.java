@@ -11,6 +11,10 @@ public class DataProvider implements AutoCloseable {
 
     private static final MethodHandle DESTROY;
     private static final MethodHandle ICU4X_DATAPROVIDER_NEW_STATIC_MV1;
+    private static final MethodHandle ICU4X_DATAPROVIDER_RETURNS_RESULT_MV1;
+    static final StructLayout ICU4X_DATAPROVIDER_RETURNS_RESULT_MV1_RESULT = MemoryLayout.structLayout(
+            ValueLayout.JAVA_BOOLEAN.withName("is_ok")
+        );
 
     static {
         System.loadLibrary("diplomat_example");
@@ -22,6 +26,10 @@ public class DataProvider implements AutoCloseable {
         ICU4X_DATAPROVIDER_NEW_STATIC_MV1 = LINKER.downcallHandle(
             LIB.find("icu4x_DataProvider_new_static_mv1").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS)
+        );
+        ICU4X_DATAPROVIDER_RETURNS_RESULT_MV1 = LINKER.downcallHandle(
+            LIB.find("icu4x_DataProvider_returns_result_mv1").orElseThrow(),
+            FunctionDescriptor.of(ICU4X_DATAPROVIDER_RETURNS_RESULT_MV1_RESULT)
         );
     }
 
@@ -43,6 +51,24 @@ public class DataProvider implements AutoCloseable {
     public static DataProvider newStatic() {
         try {
             return new DataProvider((MemorySegment) ICU4X_DATAPROVIDER_NEW_STATIC_MV1.invokeExact());
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static void returnsResult() {
+        try (var arena = Arena.ofConfined()) {
+            var result = (MemorySegment) ICU4X_DATAPROVIDER_RETURNS_RESULT_MV1.invokeExact((SegmentAllocator) arena);
+            var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 0L);
+            if (isOk) {
+                return;
+            } else {
+                throw new RuntimeException("Diplomat error");
+            }
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

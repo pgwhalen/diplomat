@@ -118,8 +118,14 @@ pub(crate) fn run<'tcx>(
                 let (file_name, body) = ty_gen_cx.gen_struct_def(s, &type_name, true);
                 files.add_file(file_name, body);
             }
+            TypeDef::Enum(e) => {
+                let type_name = formatter.fmt_type_name(id);
+                let is_error = e.attrs.custom_errors;
+                let (file_name, body) = ty_gen_cx.gen_enum_def(e, &type_name, is_error);
+                files.add_file(file_name, body);
+            }
             _ => {
-                // Skip unsupported type kinds (enums, etc.)
+                // Skip unsupported type kinds
             }
         }
     }
@@ -181,19 +187,14 @@ struct JavaStructFieldInfo {
     to_native_stmt: String,
 }
 
+struct JavaEnumVariantInfo {
+    variant_name: String,
+    discriminant: isize,
+}
+
 /// Alignment helper: compute (size, alignment) for an OutType in the C ABI.
 fn out_type_size_align(ty: &OutType, formatter: &JavaFormatter) -> (usize, usize) {
-    match ty {
-        Type::Primitive(prim) => formatter.primitive_size_align(*prim),
-        Type::Opaque(_) => (8, 8), // pointer
-        Type::Enum(_) => (4, 4),   // i32
-        Type::Struct(_) => {
-            // Resolve the struct and compute its layout recursively
-            let type_id = ty.id().expect("struct must have id");
-            struct_size_align_by_id(type_id, formatter)
-        }
-        _ => (0, 0),
-    }
+    field_size_align_generic(ty, formatter)
 }
 
 /// Compute (size, alignment) for a type by its TypeId (works for any position).
@@ -231,8 +232,25 @@ fn field_size_align_generic<P: hir::TyPosition>(ty: &Type<P>, formatter: &JavaFo
             let type_id = ty.id().expect("struct must have id");
             struct_size_align_by_id(type_id, formatter)
         }
+        Type::Slice(_) => (16, 8), // { pointer data, size_t len }
+        Type::DiplomatOption(inner) => {
+            let (inner_size, inner_align) = field_size_align_generic(inner, formatter);
+            if inner_align == 0 {
+                return (0, 0);
+            }
+            // DiplomatOption<T> = { T value; bool is_ok; } + trailing padding
+            let total = align_up(inner_size + 1, inner_align);
+            (total, inner_align)
+        }
         _ => (0, 0),
     }
+}
+
+fn align_up(size: usize, align: usize) -> usize {
+    if align == 0 {
+        return size;
+    }
+    (size + align - 1) & !(align - 1)
 }
 
 /// Compute overall (size, alignment) from an iterator of field (size, align) pairs.
@@ -424,6 +442,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     let type_id: TypeId = s.tcx_id.into();
                     let type_name = self.formatter.fmt_type_name(type_id);
                     param_layouts.push(format!("{type_name}.LAYOUT"));
+                }
+                SelfType::Enum(_) => {
+                    param_layouts.push("ValueLayout.JAVA_INT".to_string());
                 }
                 _ => {
                     param_layouts.push("ValueLayout.ADDRESS".to_string());
@@ -690,6 +711,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     has_struct_param = true;
                     invoke_args.push("this.toNative(arena)".to_string());
                 }
+                SelfType::Enum(_) => {
+                    invoke_args.push("this.toNative()".to_string());
+                }
                 _ => {
                     invoke_args.push("handle".to_string());
                 }
@@ -915,7 +939,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 format!("new {type_name}({seg_name}.get(ValueLayout.ADDRESS, 0L))")
             }
             Type::Enum(_) => {
-                format!("(int) {seg_name}.get(ValueLayout.JAVA_INT, 0L)")
+                let type_id = ty.id().expect("enum must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!("{type_name}.fromNative((int) {seg_name}.get(ValueLayout.JAVA_INT, 0L))")
             }
             Type::Struct(_) => {
                 let type_id = ty.id().expect("struct must have id");
@@ -937,7 +963,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             }
             Some(err_ty) => match err_ty {
                 Type::Enum(_) => {
-                    "throw new RuntimeException(\"Diplomat enum error: \" + (int) result.get(ValueLayout.JAVA_INT, 0L));".to_string()
+                    let type_id = err_ty.id().expect("enum must have id");
+                    let type_name = self.formatter.fmt_type_name(type_id);
+                    let resolved = self.formatter.tcx().resolve_type(type_id);
+                    if resolved.attrs().custom_errors {
+                        format!("throw new {type_name}Exception({type_name}.fromNative((int) result.get(ValueLayout.JAVA_INT, 0L)));")
+                    } else {
+                        format!("throw new RuntimeException(\"{type_name} error: \" + {type_name}.fromNative((int) result.get(ValueLayout.JAVA_INT, 0L)));")
+                    }
                 }
                 Type::Opaque(_) => {
                     let type_id = err_ty.id().expect("opaque must have id");
@@ -1011,8 +1044,12 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 }
             }
             Type::Enum(_) => {
-                java_params.push(format!("int {param_name}"));
-                invoke_args.push(param_name.to_string());
+                let type_name: Cow<str> = ty
+                    .id()
+                    .map(|id| self.formatter.fmt_type_name(id))
+                    .unwrap_or("int".into());
+                java_params.push(format!("{type_name} {param_name}"));
+                invoke_args.push(format!("{param_name}.toNative()"));
             }
             Type::Struct(_) => {
                 let type_name: Cow<str> = ty
@@ -1078,7 +1115,10 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     type_name.to_string()
                 }
             }
-            Type::Enum(_) => "int".to_string(),
+            Type::Enum(_) => {
+                let type_id = ty.id().expect("enum must have id");
+                self.formatter.fmt_type_name(type_id).to_string()
+            }
             Type::Struct(_) => {
                 let type_id = ty.id().expect("struct must have id");
                 self.formatter.fmt_type_name(type_id).to_string()
@@ -1114,7 +1154,11 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let type_name = self.formatter.fmt_type_name(type_id);
                 format!("new {type_name}((MemorySegment) {invoke_call})")
             }
-            Type::Enum(_) => format!("(int) {invoke_call}"),
+            Type::Enum(_) => {
+                let type_id = ty.id().expect("enum must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!("{type_name}.fromNative((int) {invoke_call})")
+            }
             Type::Struct(_) => {
                 let type_id = ty.id().expect("struct must have id");
                 let type_name = self.formatter.fmt_type_name(type_id);
@@ -1124,6 +1168,102 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             }
             _ => invoke_call.to_string(),
         }
+    }
+
+    fn gen_enum_def(
+        &self,
+        ty: &'cx hir::EnumDef,
+        type_name: &str,
+        is_error: bool,
+    ) -> (String, String) {
+        let variants: Vec<JavaEnumVariantInfo> = ty
+            .variants
+            .iter()
+            .map(|v| JavaEnumVariantInfo {
+                variant_name: self.formatter.fmt_enum_variant_name(v).to_string(),
+                discriminant: v.discriminant,
+            })
+            .collect();
+
+        let supported_methods: Vec<&Method> = ty
+            .methods
+            .iter()
+            .filter(|m| !m.attrs.disable && self.is_method_supported(m))
+            .collect();
+
+        let uses_optional = supported_methods.iter().any(|method| {
+            if let ReturnType::Infallible(SuccessType::OutType(Type::Opaque(op))) = &method.output {
+                if op.is_optional() {
+                    return true;
+                }
+            }
+            if matches!(&method.output, ReturnType::Nullable(_)) {
+                return true;
+            }
+            method
+                .params
+                .iter()
+                .any(|p| matches!(&p.ty, Type::Opaque(op) if op.is_optional()))
+        });
+
+        let native_methods: Vec<JavaNativeMethodInfo> = supported_methods
+            .iter()
+            .map(|method| self.gen_native_method_info(method))
+            .collect();
+
+        let companion_methods: Vec<JavaMethodInfo> = supported_methods
+            .iter()
+            .filter(|method| method.param_self.is_none())
+            .map(|method| self.gen_method(method, None, type_name))
+            .collect();
+
+        let self_methods: Vec<JavaMethodInfo> = supported_methods
+            .iter()
+            .filter_map(|method| {
+                method
+                    .param_self
+                    .as_ref()
+                    .map(|self_param| (*method, &self_param.ty))
+            })
+            .map(|(method, self_type)| self.gen_method(method, Some(self_type), type_name))
+            .collect();
+
+        #[derive(Template)]
+        #[template(path = "java/Enum.java.jinja", escape = "none")]
+        struct EnumTemplate<'a> {
+            domain: &'a str,
+            lib_name: &'a str,
+            dylib_name: &'a str,
+            type_name: &'a str,
+            is_error: bool,
+            uses_optional: bool,
+            variants: &'a [JavaEnumVariantInfo],
+            native_methods: &'a [JavaNativeMethodInfo],
+            companion_methods: &'a [JavaMethodInfo],
+            self_methods: &'a [JavaMethodInfo],
+        }
+
+        (
+            format!(
+                "src/main/java/{}/{lib_name}/{type_name}.java",
+                self.domain.replace('.', "/"),
+                lib_name = self.lib_name,
+            ),
+            EnumTemplate {
+                domain: self.domain,
+                lib_name: self.lib_name,
+                dylib_name: self.dylib_name,
+                type_name,
+                is_error,
+                uses_optional,
+                variants: &variants,
+                native_methods: &native_methods,
+                companion_methods: &companion_methods,
+                self_methods: &self_methods,
+            }
+            .render()
+            .expect("failed to render enum type"),
+        )
     }
 
     fn gen_struct_def<P: hir::TyPosition + 'cx>(
@@ -1312,16 +1452,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     }
 
     fn get_field_size_align<P: hir::TyPosition>(&self, ty: &Type<P>) -> (usize, usize) {
-        match ty {
-            Type::Primitive(prim) => self.formatter.primitive_size_align(*prim),
-            Type::Opaque(_) => (8, 8),
-            Type::Enum(_) => (4, 4),
-            Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                struct_size_align_by_id(type_id, self.formatter)
-            }
-            _ => (0, 0),
-        }
+        field_size_align_generic(ty, self.formatter)
     }
 
     fn field_layout_element<P: hir::TyPosition>(&self, ty: &Type<P>) -> String {
@@ -1334,6 +1465,17 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let type_name = self.formatter.fmt_type_name(type_id);
                 format!("{type_name}.LAYOUT")
             }
+            Type::Slice(_) => "DiplomatLib.DIPLOMAT_STRING_VIEW".to_string(),
+            Type::DiplomatOption(inner) => {
+                let inner_layout = self.field_layout_element(inner);
+                let (_inner_size, inner_align) = field_size_align_generic(inner.as_ref(), self.formatter);
+                let padding_after_bool = if inner_align > 1 { inner_align - 1 } else { 0 };
+                if padding_after_bool > 0 {
+                    format!("MemoryLayout.structLayout({inner_layout}, ValueLayout.JAVA_BOOLEAN, MemoryLayout.paddingLayout({padding_after_bool}))")
+                } else {
+                    format!("MemoryLayout.structLayout({inner_layout}, ValueLayout.JAVA_BOOLEAN)")
+                }
+            }
             _ => "ValueLayout.JAVA_BYTE".to_string(),
         }
     }
@@ -1345,10 +1487,44 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let type_id = ty.id().expect("opaque must have id");
                 self.formatter.fmt_type_name(type_id).to_string()
             }
-            Type::Enum(_) => "int".to_string(),
+            Type::Enum(_) => {
+                let type_id = ty.id().expect("enum must have id");
+                self.formatter.fmt_type_name(type_id).to_string()
+            }
             Type::Struct(_) => {
                 let type_id = ty.id().expect("struct must have id");
                 self.formatter.fmt_type_name(type_id).to_string()
+            }
+            Type::Slice(slc) => match slc {
+                Slice::Str(_, _) => "String".to_string(),
+                Slice::Primitive(_, prim) => {
+                    format!("{}[]", self.formatter.fmt_primitive_as_java(*prim))
+                }
+                _ => "Object".to_string(),
+            },
+            Type::DiplomatOption(inner) => {
+                // Use boxed/nullable types for optional wrapper
+                match inner.as_ref() {
+                    Type::Primitive(prim) => {
+                        self.formatter.fmt_primitive_as_java_boxed(*prim).to_string()
+                    }
+                    Type::Enum(_) => {
+                        let type_id = inner.id().expect("enum must have id");
+                        self.formatter.fmt_type_name(type_id).to_string()
+                    }
+                    Type::Struct(_) => {
+                        let type_id = inner.id().expect("struct must have id");
+                        self.formatter.fmt_type_name(type_id).to_string()
+                    }
+                    Type::Slice(slc) => match slc {
+                        Slice::Str(_, _) => "String".to_string(),
+                        Slice::Primitive(_, prim) => {
+                            format!("{}[]", self.formatter.fmt_primitive_as_java(*prim))
+                        }
+                        _ => "Object".to_string(),
+                    },
+                    _ => "Object".to_string(),
+                }
             }
             _ => "Object".to_string(),
         }
@@ -1372,7 +1548,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 format!("new {type_name}(seg.get(ValueLayout.ADDRESS, {offset}L))")
             }
             Type::Enum(_) => {
-                format!("(int) seg.get(ValueLayout.JAVA_INT, {offset}L)")
+                let type_id = ty.id().expect("enum must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!("{type_name}.fromNative((int) seg.get(ValueLayout.JAVA_INT, {offset}L))")
             }
             Type::Struct(_) => {
                 let type_id = ty.id().expect("struct must have id");
@@ -1380,6 +1558,39 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 format!(
                     "{type_name}.fromNative(seg.asSlice({offset}L, {type_name}.LAYOUT.byteSize()))"
                 )
+            }
+            Type::Slice(slc) => {
+                let data_offset = offset;
+                let len_offset = offset + 8;
+                match slc {
+                    Slice::Str(_, encoding) => {
+                        let charset = match encoding {
+                            StringEncoding::UnvalidatedUtf16 => "StandardCharsets.UTF_16LE",
+                            _ => "StandardCharsets.UTF_8",
+                        };
+                        let byte_multiplier = match encoding {
+                            StringEncoding::UnvalidatedUtf16 => " * 2",
+                            _ => "",
+                        };
+                        format!(
+                            "new String(seg.get(ValueLayout.ADDRESS, {data_offset}L).reinterpret(seg.get(ValueLayout.JAVA_LONG, {len_offset}L){byte_multiplier}).toArray(ValueLayout.JAVA_BYTE), {charset})"
+                        )
+                    }
+                    Slice::Primitive(_, prim) => {
+                        let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                        let (elem_size, _) = self.formatter.primitive_size_align(*prim);
+                        format!(
+                            "seg.get(ValueLayout.ADDRESS, {data_offset}L).reinterpret(seg.get(ValueLayout.JAVA_LONG, {len_offset}L) * {elem_size}L).toArray({layout})"
+                        )
+                    }
+                    _ => format!("null /* unsupported slice field {field_name} */"),
+                }
+            }
+            Type::DiplomatOption(inner) => {
+                let (inner_size, _inner_align) = field_size_align_generic(inner.as_ref(), self.formatter);
+                let is_ok_offset = offset + inner_size;
+                let inner_expr = self.field_from_native(inner.as_ref(), field_name, offset);
+                format!("seg.get(ValueLayout.JAVA_BOOLEAN, {is_ok_offset}L) ? {inner_expr} : null")
             }
             _ => format!("null /* unsupported field {field_name} */"),
         }
@@ -1401,7 +1612,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 format!("seg.set(ValueLayout.ADDRESS, {offset}L, this.{field_name}.handle);")
             }
             Type::Enum(_) => {
-                format!("seg.set(ValueLayout.JAVA_INT, {offset}L, this.{field_name});")
+                format!("seg.set(ValueLayout.JAVA_INT, {offset}L, this.{field_name}.toNative());")
             }
             Type::Struct(_) => {
                 let type_id = ty.id().expect("struct must have id");
@@ -1410,7 +1621,93 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     "seg.asSlice({offset}L, {type_name}.LAYOUT.byteSize()).copyFrom(this.{field_name}.toNative(arena));"
                 )
             }
+            Type::Slice(slc) => {
+                let data_offset = offset;
+                let len_offset = offset + 8;
+                match slc {
+                    Slice::Str(_, encoding) => {
+                        let (charset, elem_layout) = match encoding {
+                            StringEncoding::UnvalidatedUtf16 => ("StandardCharsets.UTF_16LE", "ValueLayout.JAVA_BYTE"),
+                            _ => ("StandardCharsets.UTF_8", "ValueLayout.JAVA_BYTE"),
+                        };
+                        let len_expr = match encoding {
+                            StringEncoding::UnvalidatedUtf16 => format!("{field_name}Bytes.length / 2"),
+                            _ => format!("{field_name}Bytes.length"),
+                        };
+                        format!(
+                            "{{ byte[] {field_name}Bytes = this.{field_name}.getBytes({charset}); var {field_name}Seg = arena.allocateFrom({elem_layout}, {field_name}Bytes); seg.set(ValueLayout.ADDRESS, {data_offset}L, {field_name}Seg); seg.set(ValueLayout.JAVA_LONG, {len_offset}L, (long) {len_expr}); }}"
+                        )
+                    }
+                    Slice::Primitive(_, prim) => {
+                        let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                        format!(
+                            "{{ var {field_name}Seg = arena.allocateFrom({layout}, this.{field_name}); seg.set(ValueLayout.ADDRESS, {data_offset}L, {field_name}Seg); seg.set(ValueLayout.JAVA_LONG, {len_offset}L, (long) this.{field_name}.length); }}"
+                        )
+                    }
+                    _ => format!("// unsupported slice field {field_name}"),
+                }
+            }
+            Type::DiplomatOption(inner) => {
+                let (inner_size, _inner_align) = field_size_align_generic(inner.as_ref(), self.formatter);
+                let is_ok_offset = offset + inner_size;
+                let inner_to_native = self.field_to_native_value(inner.as_ref(), field_name, offset);
+                format!(
+                    "if (this.{field_name} != null) {{ {inner_to_native} seg.set(ValueLayout.JAVA_BOOLEAN, {is_ok_offset}L, true); }} else {{ seg.set(ValueLayout.JAVA_BOOLEAN, {is_ok_offset}L, false); }}"
+                )
+            }
             _ => format!("// unsupported field {field_name}"),
+        }
+    }
+
+    /// Generate the statement to write a field's inner value to a MemorySegment (for Option unwrapping).
+    fn field_to_native_value<P: hir::TyPosition>(
+        &self,
+        ty: &Type<P>,
+        field_name: &str,
+        offset: usize,
+    ) -> String {
+        match ty {
+            Type::Primitive(prim) => {
+                let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                format!("seg.set({layout}, {offset}L, this.{field_name});")
+            }
+            Type::Enum(_) => {
+                format!("seg.set(ValueLayout.JAVA_INT, {offset}L, this.{field_name}.toNative());")
+            }
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!(
+                    "seg.asSlice({offset}L, {type_name}.LAYOUT.byteSize()).copyFrom(this.{field_name}.toNative(arena));"
+                )
+            }
+            Type::Slice(slc) => {
+                let data_offset = offset;
+                let len_offset = offset + 8;
+                match slc {
+                    Slice::Str(_, encoding) => {
+                        let charset = match encoding {
+                            StringEncoding::UnvalidatedUtf16 => "StandardCharsets.UTF_16LE",
+                            _ => "StandardCharsets.UTF_8",
+                        };
+                        let len_expr = match encoding {
+                            StringEncoding::UnvalidatedUtf16 => format!("{field_name}Bytes.length / 2"),
+                            _ => format!("{field_name}Bytes.length"),
+                        };
+                        format!(
+                            "byte[] {field_name}Bytes = this.{field_name}.getBytes({charset}); var {field_name}Seg = arena.allocateFrom(ValueLayout.JAVA_BYTE, {field_name}Bytes); seg.set(ValueLayout.ADDRESS, {data_offset}L, {field_name}Seg); seg.set(ValueLayout.JAVA_LONG, {len_offset}L, (long) {len_expr});"
+                        )
+                    }
+                    Slice::Primitive(_, prim) => {
+                        let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                        format!(
+                            "var {field_name}Seg = arena.allocateFrom({layout}, this.{field_name}); seg.set(ValueLayout.ADDRESS, {data_offset}L, {field_name}Seg); seg.set(ValueLayout.JAVA_LONG, {len_offset}L, (long) this.{field_name}.length);"
+                        )
+                    }
+                    _ => format!("// unsupported option inner slice field {field_name}"),
+                }
+            }
+            _ => format!("// unsupported option inner field {field_name}"),
         }
     }
 }
@@ -1636,6 +1933,11 @@ mod test {
                     result.push_str(&body);
                     result.push('\n');
                 }
+                TypeDef::Enum(e) => {
+                    let (_file, body) = cx.gen_enum_def(e, e.name.as_str(), e.attrs.custom_errors);
+                    result.push_str(&body);
+                    result.push('\n');
+                }
                 _ => {}
             }
         }
@@ -1839,5 +2141,140 @@ mod test {
         };
 
         insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_simple_enum() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub enum Color {
+                    Red = 0,
+                    Green = 1,
+                    Blue = 2,
+                }
+
+                impl Color {
+                    pub fn flip(&self) -> Color {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_all_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_enum_as_error() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::attr(auto, error)]
+                pub enum ErrorCode {
+                    NotFound = 0,
+                    PermissionDenied = 1,
+                    Internal = 2,
+                }
+
+                #[diplomat::opaque]
+                struct Foo(());
+
+                impl Foo {
+                    pub fn try_new(i: i32) -> Result<Box<Foo>, ErrorCode> {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_all_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_enum_param_and_return() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub enum Season {
+                    Spring = 0,
+                    Summer = 1,
+                    Autumn = 2,
+                    Winter = 3,
+                }
+
+                #[diplomat::opaque]
+                struct Weather(());
+
+                impl Weather {
+                    pub fn from_season(season: Season) -> Box<Weather> {
+                        unimplemented!()
+                    }
+
+                    pub fn get_season(&self) -> Season {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_all_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_struct_with_enum_field() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub enum Direction {
+                    North = 0,
+                    South = 1,
+                    East = 2,
+                    West = 3,
+                }
+
+                pub struct Movement {
+                    direction: Direction,
+                    distance: f64,
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_all_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_struct_with_slice_fields() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub struct SliceFields<'a> {
+                    name: DiplomatStrSlice<'a>,
+                    data: DiplomatSlice<'a, u16>,
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_struct_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_struct_with_option_fields() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub enum MyEnum {
+                    A = 0,
+                    B = 1,
+                }
+
+                pub struct OptionFields {
+                    a: DiplomatOption<u8>,
+                    b: DiplomatOption<MyEnum>,
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_all_for_test(tk_stream));
     }
 }
