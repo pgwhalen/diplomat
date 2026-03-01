@@ -280,60 +280,6 @@ struct JavaIndexerType {
     item_type: String,
 }
 
-/// Alignment helper: compute (size, alignment) for an OutType in the C ABI.
-fn out_type_size_align(ty: &OutType, formatter: &JavaFormatter) -> (usize, usize) {
-    field_size_align_generic(ty, formatter)
-}
-
-/// Compute (size, alignment) for a type by its TypeId (works for any position).
-fn type_size_align_by_id(type_id: TypeId, formatter: &JavaFormatter) -> (usize, usize) {
-    let resolved = formatter.tcx().resolve_type(type_id);
-    match resolved {
-        TypeDef::Struct(s) => {
-            compute_struct_fields_size_align(
-                s.fields.iter().map(|f| field_size_align_generic(&f.ty, formatter)),
-            )
-        }
-        TypeDef::OutStruct(s) => {
-            compute_struct_fields_size_align(
-                s.fields.iter().map(|f| field_size_align_generic(&f.ty, formatter)),
-            )
-        }
-        TypeDef::Opaque(_) => (8, 8), // pointer
-        TypeDef::Enum(_) => (4, 4),   // i32
-        _ => (0, 0),
-    }
-}
-
-/// Alias for backward compat
-fn struct_size_align_by_id(type_id: TypeId, formatter: &JavaFormatter) -> (usize, usize) {
-    type_size_align_by_id(type_id, formatter)
-}
-
-/// Get (size, align) for any Type<P>.
-fn field_size_align_generic<P: hir::TyPosition>(ty: &Type<P>, formatter: &JavaFormatter) -> (usize, usize) {
-    match ty {
-        Type::Primitive(prim) => formatter.primitive_size_align(*prim),
-        Type::Opaque(_) => (8, 8),
-        Type::Enum(_) => (4, 4),
-        Type::Struct(_) => {
-            let type_id = ty.id().expect("struct must have id");
-            struct_size_align_by_id(type_id, formatter)
-        }
-        Type::Slice(_) => (16, 8), // { pointer data, size_t len }
-        Type::DiplomatOption(inner) => {
-            let (inner_size, inner_align) = field_size_align_generic(inner, formatter);
-            if inner_align == 0 {
-                return (0, 0);
-            }
-            // DiplomatOption<T> = { T value; bool is_ok; } + trailing padding
-            let total = align_up(inner_size + 1, inner_align);
-            (total, inner_align)
-        }
-        _ => (0, 0),
-    }
-}
-
 fn align_up(size: usize, align: usize) -> usize {
     if align == 0 {
         return size;
@@ -366,6 +312,113 @@ fn compute_struct_fields_size_align(
 }
 
 impl<'cx> ItemGenContext<'_, 'cx> {
+    /// Resolve a type's id and format its name as a String.
+    fn fmt_type_name_str<P: hir::TyPosition>(&self, ty: &Type<P>) -> String {
+        let type_id = ty.id().expect("type must have id");
+        self.formatter.fmt_type_name(type_id).to_string()
+    }
+
+    /// Get the Java type name for a type (primitives, enums, structs, opaques).
+    fn type_to_java_name<P: hir::TyPosition>(&self, ty: &Type<P>) -> String {
+        match ty {
+            Type::Primitive(prim) => self.formatter.fmt_primitive_as_java(*prim).to_string(),
+            Type::Enum(_) | Type::Struct(_) | Type::Opaque(_) => self.fmt_type_name_str(ty),
+            _ => "Object".to_string(),
+        }
+    }
+
+    /// Check if any methods use Optional (optional opaque return/params, nullable returns).
+    fn methods_use_optional(&self, methods: &[&Method]) -> bool {
+        methods.iter().any(|method| {
+            if let ReturnType::Infallible(SuccessType::OutType(Type::Opaque(op))) = &method.output {
+                if op.is_optional() {
+                    return true;
+                }
+            }
+            if matches!(&method.output, ReturnType::Nullable(_)) {
+                return true;
+            }
+            method
+                .params
+                .iter()
+                .any(|p| matches!(&p.ty, Type::Opaque(op) if op.is_optional()))
+        })
+    }
+
+    /// Get (size, alignment) for any Type<P>.
+    fn field_size_align<P: hir::TyPosition>(&self, ty: &Type<P>) -> (usize, usize) {
+        match ty {
+            Type::Primitive(prim) => self.formatter.primitive_size_align(*prim),
+            Type::Opaque(_) => (8, 8),
+            Type::Enum(_) => (4, 4),
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                self.type_size_align_by_id(type_id)
+            }
+            Type::Slice(_) => (16, 8),
+            Type::DiplomatOption(inner) => {
+                let (inner_size, inner_align) = self.field_size_align(inner);
+                if inner_align == 0 {
+                    return (0, 0);
+                }
+                let total = align_up(inner_size + 1, inner_align);
+                (total, inner_align)
+            }
+            _ => (0, 0),
+        }
+    }
+
+    /// Compute (size, alignment) for a type by its TypeId.
+    fn type_size_align_by_id(&self, type_id: TypeId) -> (usize, usize) {
+        let resolved = self.formatter.tcx().resolve_type(type_id);
+        match resolved {
+            TypeDef::Struct(s) => compute_struct_fields_size_align(
+                s.fields.iter().map(|f| self.field_size_align(&f.ty)),
+            ),
+            TypeDef::OutStruct(s) => compute_struct_fields_size_align(
+                s.fields.iter().map(|f| self.field_size_align(&f.ty)),
+            ),
+            TypeDef::Opaque(_) => (8, 8),
+            TypeDef::Enum(_) => (4, 4),
+            _ => (0, 0),
+        }
+    }
+
+    /// Core type-to-FFI-layout mapping shared by layout computation functions.
+    fn type_to_ffi_layout<P: hir::TyPosition>(&self, ty: &Type<P>) -> Option<String> {
+        match ty {
+            Type::Primitive(prim) => Some(self.formatter.fmt_primitive_as_ffi(*prim).to_string()),
+            Type::Opaque(_) => Some("ValueLayout.ADDRESS".to_string()),
+            Type::Enum(_) => Some("ValueLayout.JAVA_INT".to_string()),
+            Type::Struct(_) => {
+                let type_name = self.fmt_type_name_str(ty);
+                Some(format!("{type_name}.LAYOUT"))
+            }
+            _ => None,
+        }
+    }
+
+    /// Generate the file path for a Java type file.
+    fn java_file_path(&self, type_name: &str) -> String {
+        format!(
+            "src/main/java/{}/{}/{type_name}.java",
+            self.domain.replace('.', "/"),
+            self.lib_name,
+        )
+    }
+
+    /// Get the MethodType class literal for a type.
+    fn type_to_method_type_class<P: hir::TyPosition>(&self, ty: &Type<P>) -> String {
+        match ty {
+            Type::Primitive(prim) => {
+                format!("{}.class", self.formatter.fmt_primitive_as_java(*prim))
+            }
+            Type::Enum(_) => "int.class".to_string(),
+            Type::Struct(_) | Type::Opaque(_) => "MemorySegment.class".to_string(),
+            _ => "MemorySegment.class".to_string(),
+        }
+    }
+
     /// Check if a method uses only supported types
     fn is_method_supported(&self, method: &Method) -> bool {
         // Check return type
@@ -499,27 +552,17 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         // Iterator/indexer internal methods use raw null instead of Optional,
         // so only count non-special nullable methods for uses_optional
-        let uses_optional = supported_methods.iter().any(|method| {
-            let is_special_nullable = matches!(
-                method.attrs.special_method,
-                Some(SpecialMethod::Iterator) | Some(SpecialMethod::Indexer)
-            );
-            // Check return type for optional opaque
-            if let ReturnType::Infallible(SuccessType::OutType(Type::Opaque(op))) = &method.output {
-                if op.is_optional() && !is_special_nullable {
-                    return true;
-                }
-            }
-            // Nullable returns use Optional (unless it's an iterator/indexer special method)
-            if matches!(&method.output, ReturnType::Nullable(_)) && !is_special_nullable {
-                return true;
-            }
-            // Check params for optional opaque
-            method
-                .params
-                .iter()
-                .any(|p| matches!(&p.ty, Type::Opaque(op) if op.is_optional()))
-        });
+        let non_special_methods: Vec<&Method> = supported_methods
+            .iter()
+            .filter(|m| {
+                !matches!(
+                    m.attrs.special_method,
+                    Some(SpecialMethod::Iterator) | Some(SpecialMethod::Indexer)
+                )
+            })
+            .copied()
+            .collect();
+        let uses_optional = self.methods_use_optional(&non_special_methods);
 
         let native_methods: Vec<JavaNativeMethodInfo> = supported_methods
             .iter()
@@ -598,11 +641,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
 
         (
-            format!(
-                "src/main/java/{}/{lib_name}/{type_name}.java",
-                self.domain.replace('.', "/"),
-                lib_name = self.lib_name,
-            ),
+            self.java_file_path(type_name),
             ImplTemplate {
                 domain: self.domain,
                 lib_name: self.lib_name,
@@ -699,25 +738,15 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     }
 
     fn push_param_layouts<P: hir::TyPosition>(&self, ty: &Type<P>, layouts: &mut Vec<String>) {
+        if let Some(layout) = self.type_to_ffi_layout(ty) {
+            layouts.push(layout);
+            return;
+        }
         match ty {
-            Type::Primitive(prim) => {
-                layouts.push(self.formatter.fmt_primitive_as_ffi(*prim).to_string());
-            }
-            Type::Opaque(_) => {
-                layouts.push("ValueLayout.ADDRESS".to_string());
-            }
             Type::Slice(Slice::Str(_, _)) => {
                 // DiplomatStr is passed as { ADDRESS data, JAVA_LONG len }
                 layouts.push("ValueLayout.ADDRESS".to_string());
                 layouts.push("ValueLayout.JAVA_LONG".to_string());
-            }
-            Type::Enum(_) => {
-                layouts.push("ValueLayout.JAVA_INT".to_string());
-            }
-            Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
-                layouts.push(format!("{type_name}.LAYOUT"));
             }
             Type::Callback(_) => {
                 layouts.push("DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT".to_string());
@@ -762,26 +791,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     }
 
     fn get_type_layout(&self, ty: &OutType) -> Option<String> {
-        match ty {
-            Type::Primitive(prim) => Some(self.formatter.fmt_primitive_as_ffi(*prim).to_string()),
-            Type::Opaque(_) => Some("ValueLayout.ADDRESS".to_string()),
-            Type::Enum(_) => Some("ValueLayout.JAVA_INT".to_string()),
-            Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
-                Some(format!("{type_name}.LAYOUT"))
-            }
-            _ => {
+        match self.type_to_ffi_layout(ty) {
+            some @ Some(_) => some,
+            None => {
                 self.errors
                     .push_error(format!("Unsupported return type in Java backend: {ty:?}"));
                 None
             }
         }
-    }
-
-    /// Get the (size, alignment) of the FFI layout for an output type.
-    fn get_out_type_size_align(&self, ty: &OutType) -> (usize, usize) {
-        out_type_size_align(ty, self.formatter)
     }
 
     /// Compute the result struct layout string for a fallible/nullable return.
@@ -794,13 +811,13 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let err_layout = err.as_ref().and_then(|e| self.get_type_layout(e));
 
                 let ok_size_align = match ok {
-                    SuccessType::OutType(ty) => self.get_out_type_size_align(ty),
+                    SuccessType::OutType(ty) => self.field_size_align(ty),
                     SuccessType::Write => (0, 0), // Write is handled separately
                     SuccessType::Unit => (0, 0),
                     _ => (0, 0),
                 };
                 let err_size_align = match err {
-                    Some(ty) => self.get_out_type_size_align(ty),
+                    Some(ty) => self.field_size_align(ty),
                     None => (0, 0),
                 };
 
@@ -814,7 +831,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             ReturnType::Nullable(ok) => {
                 let ok_layout = self.get_success_layout(ok);
                 let ok_size_align = match ok {
-                    SuccessType::OutType(ty) => self.get_out_type_size_align(ty),
+                    SuccessType::OutType(ty) => self.field_size_align(ty),
                     SuccessType::Write => (0, 0),
                     SuccessType::Unit => (0, 0),
                     _ => (0, 0),
@@ -1090,8 +1107,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 ReturnType::Infallible(SuccessType::OutType(ty)) => {
                     if let Type::Opaque(op) = ty {
                         if op.is_optional() {
-                            let type_id = ty.id().expect("opaque must have id");
-                            let type_name = self.formatter.fmt_type_name(type_id);
+                            let type_name = self.fmt_type_name_str(ty);
                             if raw_nullable {
                                 format!(
                                     "var resultAddr = (MemorySegment) {invoke_call};\n            return resultAddr.equals(MemorySegment.NULL) ? null : new {type_name}(resultAddr);"
@@ -1341,8 +1357,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     "this.handle = result.get(ValueLayout.ADDRESS, 0L);".to_string()
                 }
                 Type::Struct(_) => {
-                    let type_id = ty.id().expect("struct must have id");
-                    let type_name = self.formatter.fmt_type_name(type_id);
+                    let type_name = self.fmt_type_name_str(ty);
                     let mut parts = Vec::new();
                     parts.push(format!(
                         "var seg = result.asSlice(0L, {type_name}.LAYOUT.byteSize());"
@@ -1397,18 +1412,15 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 format!("({cast}) {seg_name}.get({layout}, 0L)")
             }
             Type::Opaque(_) => {
-                let type_id = ty.id().expect("opaque must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 format!("new {type_name}({seg_name}.get(ValueLayout.ADDRESS, 0L))")
             }
             Type::Enum(_) => {
-                let type_id = ty.id().expect("enum must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 format!("{type_name}.fromNative((int) {seg_name}.get(ValueLayout.JAVA_INT, 0L))")
             }
             Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 format!(
                     "{type_name}.fromNative({seg_name}.asSlice(0L, {type_name}.LAYOUT.byteSize()))"
                 )
@@ -1426,8 +1438,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             }
             Some(err_ty) => match err_ty {
                 Type::Enum(_) => {
+                    let type_name = self.fmt_type_name_str(err_ty);
                     let type_id = err_ty.id().expect("enum must have id");
-                    let type_name = self.formatter.fmt_type_name(type_id);
                     let resolved = self.formatter.tcx().resolve_type(type_id);
                     if resolved.attrs().custom_errors {
                         format!("throw new {type_name}Exception({type_name}.fromNative((int) result.get(ValueLayout.JAVA_INT, 0L)));")
@@ -1436,15 +1448,13 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     }
                 }
                 Type::Opaque(_) => {
-                    let type_id = err_ty.id().expect("opaque must have id");
-                    let type_name = self.formatter.fmt_type_name(type_id);
+                    let type_name = self.fmt_type_name_str(err_ty);
                     format!(
                         "throw new {type_name}(result.get(ValueLayout.ADDRESS, 0L));"
                     )
                 }
                 Type::Struct(_) => {
-                    let type_id = err_ty.id().expect("struct must have id");
-                    let type_name = self.formatter.fmt_type_name(type_id);
+                    let type_name = self.fmt_type_name_str(err_ty);
                     format!(
                         "throw {type_name}.fromNative(result.asSlice(0L, {type_name}.LAYOUT.byteSize()));"
                     )
@@ -1595,22 +1605,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         match ty {
             Type::Primitive(prim) => self.formatter.fmt_primitive_as_java(*prim).to_string(),
             Type::Opaque(op) => {
-                let type_id = ty.id().expect("opaque must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 if op.is_optional() {
                     format!("Optional<{type_name}>")
                 } else {
-                    type_name.to_string()
+                    type_name
                 }
             }
-            Type::Enum(_) => {
-                let type_id = ty.id().expect("enum must have id");
-                self.formatter.fmt_type_name(type_id).to_string()
-            }
-            Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                self.formatter.fmt_type_name(type_id).to_string()
-            }
+            Type::Enum(_) | Type::Struct(_) => self.fmt_type_name_str(ty),
             _ => {
                 self.errors.push_error(format!(
                     "Unsupported return type in Java backend for {owner_type_name}: {ty:?}"
@@ -1638,18 +1640,15 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 format!("({cast}) {invoke_call}")
             }
             Type::Opaque(_) => {
-                let type_id = ty.id().expect("opaque must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 format!("new {type_name}((MemorySegment) {invoke_call})")
             }
             Type::Enum(_) => {
-                let type_id = ty.id().expect("enum must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 format!("{type_name}.fromNative((int) {invoke_call})")
             }
             Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 format!(
                     "{type_name}.fromNative((MemorySegment) {invoke_call})"
                 )
@@ -1727,8 +1726,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 }
             }
             Type::Enum(_) => {
-                let type_id = ty.id().expect("enum must have id");
-                let type_name = self.formatter.fmt_type_name(type_id).to_string();
+                let type_name = self.fmt_type_name_str(ty);
                 CallbackParamTypeInfo {
                     java_type: type_name.clone(),
                     native_type: "int".to_string(),
@@ -1737,8 +1735,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 }
             }
             Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                let type_name = self.formatter.fmt_type_name(type_id).to_string();
+                let type_name = self.fmt_type_name_str(ty);
                 CallbackParamTypeInfo {
                     java_type: type_name.clone(),
                     native_type: "MemorySegment".to_string(),
@@ -1747,8 +1744,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 }
             }
             Type::Opaque(_) => {
-                let type_id = ty.id().expect("opaque must have id");
-                let type_name = self.formatter.fmt_type_name(type_id).to_string();
+                let type_name = self.fmt_type_name_str(ty);
                 CallbackParamTypeInfo {
                     java_type: type_name.clone(),
                     native_type: "MemorySegment".to_string(),
@@ -1804,18 +1800,13 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     is_void: false,
                 }
             }
-            Type::Enum(_) => {
-                let type_id = ty.id().expect("enum must have id");
-                let type_name = self.formatter.fmt_type_name(type_id).to_string();
-                ReturnTypeInfo {
-                    java_type: type_name,
-                    layout: Some("ValueLayout.JAVA_INT".to_string()),
-                    is_void: false,
-                }
-            }
+            Type::Enum(_) => ReturnTypeInfo {
+                java_type: self.fmt_type_name_str(ty),
+                layout: Some("ValueLayout.JAVA_INT".to_string()),
+                is_void: false,
+            },
             Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                let type_name = self.formatter.fmt_type_name(type_id).to_string();
+                let type_name = self.fmt_type_name_str(ty);
                 ReturnTypeInfo {
                     java_type: type_name.clone(),
                     layout: Some(format!("{type_name}.LAYOUT")),
@@ -1906,7 +1897,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         // Build MethodType parameters (MemorySegment for data, then native param types)
         let mut mt_params = vec!["MemorySegment.class".to_string()];
         for cp in cb_params.iter() {
-            mt_params.push(self.callback_param_method_type_class(&cp.ty));
+            mt_params.push(self.type_to_method_type_class(&cp.ty));
         }
         let mt_params_str = mt_params.join(", ");
 
@@ -1962,33 +1953,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     fn native_return_method_type_class(&self, output: &ReturnType<InputOnly>) -> String {
         match output {
             ReturnType::Infallible(SuccessType::OutType(ty)) => {
-                self.callback_param_method_type_class_input(ty)
+                self.type_to_method_type_class(ty)
             }
             _ => "void.class".to_string(),
-        }
-    }
-
-    /// Get the MethodType class literal for a Type<InputOnly>.
-    fn callback_param_method_type_class_input(&self, ty: &Type<InputOnly>) -> String {
-        match ty {
-            Type::Primitive(prim) => {
-                format!("{}.class", self.formatter.fmt_primitive_as_java(*prim))
-            }
-            Type::Enum(_) => "int.class".to_string(),
-            Type::Struct(_) | Type::Opaque(_) => "MemorySegment.class".to_string(),
-            _ => "MemorySegment.class".to_string(),
-        }
-    }
-
-    /// Get the MethodType class literal for a callback param or return type.
-    fn callback_param_method_type_class(&self, ty: &OutType) -> String {
-        match ty {
-            Type::Primitive(prim) => {
-                format!("{}.class", self.formatter.fmt_primitive_as_java(*prim))
-            }
-            Type::Enum(_) => "int.class".to_string(),
-            Type::Struct(_) | Type::Opaque(_) => "MemorySegment.class".to_string(),
-            _ => "MemorySegment.class".to_string(),
         }
     }
 
@@ -2037,7 +2004,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     .as_ref()
                     .map(|n| n.as_str().to_lower_camel_case())
                     .unwrap_or_else(|| format!("arg{i}"));
-                let java_type = self.callback_param_java_type(&cp.ty);
+                let java_type = self.type_to_java_name(&cp.ty);
                 params.push(format!("{java_type} {arg_name}"));
             }
             let return_type = self.trait_method_return_type(&method.output);
@@ -2128,7 +2095,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             let mut mt_params = vec!["MemorySegment.class".to_string()];
             let mut fd_params = vec!["ValueLayout.ADDRESS".to_string()];
             for cp in method.params.iter() {
-                mt_params.push(self.callback_param_method_type_class(&cp.ty));
+                mt_params.push(self.type_to_method_type_class(&cp.ty));
                 let info = self.callback_param_types(&cp.ty, "x");
                 fd_params.push(info.layout);
             }
@@ -2206,11 +2173,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         body.push_str("}\n");
 
         (
-            format!(
-                "src/main/java/{}/{lib_name}/{trait_name}.java",
-                self.domain.replace('.', "/"),
-                lib_name = self.lib_name,
-            ),
+            self.java_file_path(trait_name),
             body,
         )
     }
@@ -2241,7 +2204,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             runner_params.push(format!("{} {arg_name}", info.native_type));
             arg_conversions.push(info.conversion);
             native_param_layouts.push(info.layout);
-            mt_params.push(self.callback_param_method_type_class(&cp.ty));
+            mt_params.push(self.type_to_method_type_class(&cp.ty));
         }
 
         let native_return_type = if returns_void {
@@ -2281,55 +2244,15 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         (runner, combined_static)
     }
 
-    /// Get the Java type name for a callback parameter type.
-    fn callback_param_java_type(&self, ty: &OutType) -> String {
-        match ty {
-            Type::Primitive(prim) => self.formatter.fmt_primitive_as_java(*prim).to_string(),
-            Type::Enum(_) => {
-                let type_id = ty.id().expect("enum must have id");
-                self.formatter.fmt_type_name(type_id).to_string()
-            }
-            Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                self.formatter.fmt_type_name(type_id).to_string()
-            }
-            Type::Opaque(_) => {
-                let type_id = ty.id().expect("opaque must have id");
-                self.formatter.fmt_type_name(type_id).to_string()
-            }
-            _ => "Object".to_string(),
-        }
-    }
-
     /// Get the Java return type for a trait method.
     fn trait_method_return_type(&self, output: &ReturnType<InputOnly>) -> String {
         match output {
             ReturnType::Infallible(success) => match success {
                 SuccessType::Unit => "void".to_string(),
-                SuccessType::OutType(ty) => self.callback_param_java_type_input(ty),
+                SuccessType::OutType(ty) => self.type_to_java_name(ty),
                 _ => "void".to_string(),
             },
             _ => "void".to_string(),
-        }
-    }
-
-    /// Get the Java type name for a callback parameter type (InputOnly position).
-    fn callback_param_java_type_input(&self, ty: &Type<InputOnly>) -> String {
-        match ty {
-            Type::Primitive(prim) => self.formatter.fmt_primitive_as_java(*prim).to_string(),
-            Type::Enum(_) => {
-                let type_id = ty.id().expect("enum must have id");
-                self.formatter.fmt_type_name(type_id).to_string()
-            }
-            Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                self.formatter.fmt_type_name(type_id).to_string()
-            }
-            Type::Opaque(_) => {
-                let type_id = ty.id().expect("opaque must have id");
-                self.formatter.fmt_type_name(type_id).to_string()
-            }
-            _ => "Object".to_string(),
         }
     }
 
@@ -2354,20 +2277,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             .filter(|m| !m.attrs.disable && self.is_method_supported(m))
             .collect();
 
-        let uses_optional = supported_methods.iter().any(|method| {
-            if let ReturnType::Infallible(SuccessType::OutType(Type::Opaque(op))) = &method.output {
-                if op.is_optional() {
-                    return true;
-                }
-            }
-            if matches!(&method.output, ReturnType::Nullable(_)) {
-                return true;
-            }
-            method
-                .params
-                .iter()
-                .any(|p| matches!(&p.ty, Type::Opaque(op) if op.is_optional()))
-        });
+        let uses_optional = self.methods_use_optional(&supported_methods);
 
         let native_methods: Vec<JavaNativeMethodInfo> = supported_methods
             .iter()
@@ -2407,11 +2317,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
 
         (
-            format!(
-                "src/main/java/{}/{lib_name}/{type_name}.java",
-                self.domain.replace('.', "/"),
-                lib_name = self.lib_name,
-            ),
+            self.java_file_path(type_name),
             EnumTemplate {
                 domain: self.domain,
                 lib_name: self.lib_name,
@@ -2454,20 +2360,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             .filter(|m| !m.attrs.disable && self.is_method_supported(m))
             .collect();
 
-        let uses_optional = supported_methods.iter().any(|method| {
-            if let ReturnType::Infallible(SuccessType::OutType(Type::Opaque(op))) = &method.output {
-                if op.is_optional() {
-                    return true;
-                }
-            }
-            if matches!(&method.output, ReturnType::Nullable(_)) {
-                return true;
-            }
-            method
-                .params
-                .iter()
-                .any(|p| matches!(&p.ty, Type::Opaque(op) if op.is_optional()))
-        });
+        let uses_optional = self.methods_use_optional(&supported_methods);
 
         let native_methods: Vec<JavaNativeMethodInfo> = supported_methods
             .iter()
@@ -2562,11 +2455,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
 
         (
-            format!(
-                "src/main/java/{}/{lib_name}/{type_name}.java",
-                self.domain.replace('.', "/"),
-                lib_name = self.lib_name,
-            ),
+            self.java_file_path(type_name),
             StructTemplate {
                 domain: self.domain,
                 lib_name: self.lib_name,
@@ -2729,7 +2618,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         for field in fields.iter() {
             let field_name = self.formatter.fmt_field_name(field.name.as_str());
-            let (f_size, f_align) = self.get_field_size_align(&field.ty);
+            let (f_size, f_align) = self.field_size_align(&field.ty);
             let layout_element = self.field_layout_element(&field.ty);
 
             if f_align > 0 {
@@ -2763,24 +2652,16 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
     }
 
-    fn get_field_size_align<P: hir::TyPosition>(&self, ty: &Type<P>) -> (usize, usize) {
-        field_size_align_generic(ty, self.formatter)
-    }
 
     fn field_layout_element<P: hir::TyPosition>(&self, ty: &Type<P>) -> String {
+        if let Some(layout) = self.type_to_ffi_layout(ty) {
+            return layout;
+        }
         match ty {
-            Type::Primitive(prim) => self.formatter.fmt_primitive_as_ffi(*prim).to_string(),
-            Type::Opaque(_) => "ValueLayout.ADDRESS".to_string(),
-            Type::Enum(_) => "ValueLayout.JAVA_INT".to_string(),
-            Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
-                format!("{type_name}.LAYOUT")
-            }
             Type::Slice(_) => "DiplomatLib.DIPLOMAT_STRING_VIEW".to_string(),
             Type::DiplomatOption(inner) => {
                 let inner_layout = self.field_layout_element(inner);
-                let (_inner_size, inner_align) = field_size_align_generic(inner.as_ref(), self.formatter);
+                let (_inner_size, inner_align) = self.field_size_align(inner.as_ref());
                 let padding_after_bool = inner_align.saturating_sub(1);
                 if padding_after_bool > 0 {
                     format!("MemoryLayout.structLayout({inner_layout}.withName(\"value\"), ValueLayout.JAVA_BOOLEAN.withName(\"is_ok\"), MemoryLayout.paddingLayout({padding_after_bool}))")
@@ -2794,19 +2675,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
     fn field_java_type<P: hir::TyPosition>(&self, ty: &Type<P>) -> String {
         match ty {
-            Type::Primitive(prim) => self.formatter.fmt_primitive_as_java(*prim).to_string(),
-            Type::Opaque(_) => {
-                let type_id = ty.id().expect("opaque must have id");
-                self.formatter.fmt_type_name(type_id).to_string()
-            }
-            Type::Enum(_) => {
-                let type_id = ty.id().expect("enum must have id");
-                self.formatter.fmt_type_name(type_id).to_string()
-            }
-            Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                self.formatter.fmt_type_name(type_id).to_string()
-            }
             Type::Slice(slc) => match slc {
                 Slice::Str(_, _) => "String".to_string(),
                 Slice::Primitive(_, prim) => {
@@ -2814,31 +2682,20 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 }
                 _ => "Object".to_string(),
             },
-            Type::DiplomatOption(inner) => {
-                // Use boxed/nullable types for optional wrapper
-                match inner.as_ref() {
-                    Type::Primitive(prim) => {
-                        self.formatter.fmt_primitive_as_java_boxed(*prim).to_string()
-                    }
-                    Type::Enum(_) => {
-                        let type_id = inner.id().expect("enum must have id");
-                        self.formatter.fmt_type_name(type_id).to_string()
-                    }
-                    Type::Struct(_) => {
-                        let type_id = inner.id().expect("struct must have id");
-                        self.formatter.fmt_type_name(type_id).to_string()
-                    }
-                    Type::Slice(slc) => match slc {
-                        Slice::Str(_, _) => "String".to_string(),
-                        Slice::Primitive(_, prim) => {
-                            format!("{}[]", self.formatter.fmt_primitive_as_java(*prim))
-                        }
-                        _ => "Object".to_string(),
-                    },
-                    _ => "Object".to_string(),
+            Type::DiplomatOption(inner) => match inner.as_ref() {
+                Type::Primitive(prim) => {
+                    self.formatter.fmt_primitive_as_java_boxed(*prim).to_string()
                 }
-            }
-            _ => "Object".to_string(),
+                Type::Slice(slc) => match slc {
+                    Slice::Str(_, _) => "String".to_string(),
+                    Slice::Primitive(_, prim) => {
+                        format!("{}[]", self.formatter.fmt_primitive_as_java(*prim))
+                    }
+                    _ => "Object".to_string(),
+                },
+                _ => self.type_to_java_name(inner.as_ref()),
+            },
+            _ => self.type_to_java_name(ty),
         }
     }
 
@@ -2857,20 +2714,17 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 format!("({java_type}) {vh}.get(seg, 0L)")
             }
             Type::Opaque(_) => {
-                let type_id = ty.id().expect("opaque must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 let vh = format!("VH_{shouty}");
                 format!("new {type_name}((MemorySegment) {vh}.get(seg, 0L))")
             }
             Type::Enum(_) => {
-                let type_id = ty.id().expect("enum must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 let vh = format!("VH_{shouty}");
                 format!("{type_name}.fromNative((int) {vh}.get(seg, 0L))")
             }
             Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 let offset_const = format!("OFFSET_{shouty}");
                 format!(
                     "{type_name}.fromNative(seg.asSlice({offset_const}, {type_name}.LAYOUT.byteSize()))"
@@ -2908,8 +2762,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let inner_expr = match inner.as_ref() {
                     Type::Struct(_) => {
                         // Nested struct option uses offset + inner struct size
-                        let type_id = inner.id().expect("struct must have id");
-                        let type_name = self.formatter.fmt_type_name(type_id);
+                        let type_name = self.fmt_type_name_str(inner.as_ref());
                         let offset_const = format!("OFFSET_{shouty}");
                         format!(
                             "{type_name}.fromNative(seg.asSlice({offset_const}, {type_name}.LAYOUT.byteSize()))"
@@ -2966,13 +2819,11 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 format!("({java_type}) {vh_name}.get(seg, 0L)")
             }
             Type::Enum(_) => {
-                let type_id = ty.id().expect("enum must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 format!("{type_name}.fromNative((int) {vh_name}.get(seg, 0L))")
             }
             Type::Opaque(_) => {
-                let type_id = ty.id().expect("opaque must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 format!("new {type_name}((MemorySegment) {vh_name}.get(seg, 0L))")
             }
             _ => format!("{vh_name}.get(seg, 0L)"),
@@ -3001,8 +2852,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 format!("{vh}.set(seg, 0L, this.{field_name}.toNative());")
             }
             Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 let offset_const = format!("OFFSET_{shouty}");
                 format!(
                     "seg.asSlice({offset_const}, {type_name}.LAYOUT.byteSize()).copyFrom(this.{field_name}.toNative(arena));"
@@ -3063,8 +2913,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 format!("{vh}.set(seg, 0L, this.{field_name}.toNative());")
             }
             Type::Struct(_) => {
-                let type_id = ty.id().expect("struct must have id");
-                let type_name = self.formatter.fmt_type_name(type_id);
+                let type_name = self.fmt_type_name_str(ty);
                 let offset_const = format!("OFFSET_{shouty}");
                 format!(
                     "seg.asSlice({offset_const}, {type_name}.LAYOUT.byteSize()).copyFrom(this.{field_name}.toNative(arena));"
