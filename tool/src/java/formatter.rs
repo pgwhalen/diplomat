@@ -1,6 +1,6 @@
 use diplomat_core::hir::{
-    self, DocsUrlGenerator, FloatType, IntSizeType, IntType, PrimitiveType, TraitId, TypeContext,
-    TypeId,
+    self, Docs, DocsUrlGenerator, FloatType, IntSizeType, IntType, PrimitiveType, TraitId,
+    TypeContext, TypeId,
 };
 use heck::{ToLowerCamelCase, ToShoutySnakeCase};
 use std::borrow::Cow;
@@ -223,9 +223,31 @@ impl<'tcx> JavaFormatter<'tcx> {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn fmt_docs_url_gen(&self) -> &DocsUrlGenerator {
-        self.docs_url_gen
+    pub fn fmt_docs(&self, docs: &Docs) -> String {
+        docs.to_markdown(hir::DocsTypeReferenceSyntax::AtLink, self.docs_url_gen)
+            .trim()
+            .replace(" \n", "\n")
+            .to_string()
+    }
+
+    /// Format docs as a complete JavaDoc block string (e.g. "/**\n * line\n */")
+    /// with the given indentation prefix. Returns empty string if no docs.
+    pub fn fmt_javadoc_block(&self, docs: &Docs, indent: &str) -> String {
+        let md = self.fmt_docs(docs);
+        if md.is_empty() {
+            return String::new();
+        }
+        let mut block = format!("{indent}/**\n");
+        for line in md.lines() {
+            let trimmed = line.trim_end();
+            if trimmed.is_empty() {
+                block.push_str(&format!("{indent} *\n"));
+            } else {
+                block.push_str(&format!("{indent} * {trimmed}\n"));
+            }
+        }
+        block.push_str(&format!("{indent} */\n"));
+        block
     }
 }
 

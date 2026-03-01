@@ -4,6 +4,11 @@ import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * An  Fixed Decimal Format object, capable of formatting a {@link FixedDecimal} as a string.
+ *
+ * See the [Rust documentation for `FixedDecimalFormatter`](https://docs.rs/icu/latest/icu/decimal/struct.FixedDecimalFormatter.html) for more information.
+ */
 public class FixedDecimalFormatter implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
@@ -50,6 +55,11 @@ public class FixedDecimalFormatter implements AutoCloseable {
         }
     }
 
+    /**
+     * Creates a new {@link FixedDecimalFormatter} from locale data.
+     *
+     * See the [Rust documentation for `try_new`](https://docs.rs/icu/latest/icu/decimal/struct.FixedDecimalFormatter.html#method.try_new) for more information.
+     */
     public static FixedDecimalFormatter tryNew(Locale locale, DataProvider provider, FixedDecimalFormatterOptions options) {
         try (var arena = Arena.ofConfined()) {
             var result = (MemorySegment) ICU4X_FIXEDDECIMALFORMATTER_TRY_NEW_MV1.invokeExact((SegmentAllocator) arena, locale.handle, provider.handle, options.toNative(arena));
@@ -66,6 +76,11 @@ public class FixedDecimalFormatter implements AutoCloseable {
         }
     }
 
+    /**
+     * Formats a {@link FixedDecimal} to a string.
+     *
+     * See the [Rust documentation for `format`](https://docs.rs/icu/latest/icu/decimal/struct.FixedDecimalFormatter.html#method.format) for more information.
+     */
     public String formatWrite(FixedDecimal value) {
         var write = DiplomatLib.createWrite();
         try {

@@ -6,6 +6,10 @@ import java.nio.charset.StandardCharsets;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 
+/**
+ * Some example docs
+ * Back to all docs
+ */
 public class AttrOpaque1Renamed implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
@@ -95,6 +99,9 @@ public class AttrOpaque1Renamed implements AutoCloseable {
         this.handle = handle;
     }
 
+    /**
+     * More example docs
+     */
     public AttrOpaque1Renamed() {
         try {
             this.handle = (MemorySegment) NAMESPACE_ATTROPAQUE1_NEW.invokeExact();

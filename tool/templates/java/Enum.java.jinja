@@ -7,9 +7,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 {%- endif %}
 
-public enum {{type_name}} {
+{{docs}}public enum {{type_name}} {
     {%- for v in variants %}
-    {{v.variant_name}}({{v.discriminant}}){% if !loop.last %},{% else %};{% endif %}
+{{v.docs}}    {{v.variant_name}}({{v.discriminant}}){% if !loop.last %},{% else %};{% endif %}
     {%- endfor %}
 
     private final int value;
@@ -57,11 +57,11 @@ public enum {{type_name}} {
     {%- endif %}
     {%- for m in companion_methods %}
 
-    {{m.definition}}
+{{m.docs}}    {{m.definition}}
     {%- endfor %}
     {%- for m in self_methods %}
 
-    {{m.definition}}
+{{m.docs}}    {{m.definition}}
     {%- endfor %}
 }
 {%- if is_error %}

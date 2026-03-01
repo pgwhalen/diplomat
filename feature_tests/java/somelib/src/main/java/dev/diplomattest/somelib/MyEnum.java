@@ -9,6 +9,9 @@ public enum MyEnum {
     B(-1),
     C(0),
     D(1),
+    /**
+     * EEEEEEE
+     */
     E(2),
     F(3);
 

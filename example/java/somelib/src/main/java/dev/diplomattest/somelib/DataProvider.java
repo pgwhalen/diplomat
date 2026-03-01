@@ -4,6 +4,11 @@ import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * An  data provider, capable of loading  data keys from some source.
+ *
+ * See the [Rust documentation for `icu_provider`](https://docs.rs/icu_provider/latest/icu_provider/index.html) for more information.
+ */
 public class DataProvider implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
@@ -48,6 +53,9 @@ public class DataProvider implements AutoCloseable {
         }
     }
 
+    /**
+     * See the [Rust documentation for `get_static_provider`](https://docs.rs/icu_testdata/latest/icu_testdata/fn.get_static_provider.html) for more information.
+     */
     public static DataProvider static_() {
         try {
             return new DataProvider((MemorySegment) ICU4X_DATAPROVIDER_NEW_STATIC_MV1.invokeExact());
@@ -58,6 +66,9 @@ public class DataProvider implements AutoCloseable {
         }
     }
 
+    /**
+     * This exists as a regression test for https://github.com/rust-diplomat/diplomat/issues/155
+     */
     public static void returnsResult() {
         try (var arena = Arena.ofConfined()) {
             var result = (MemorySegment) ICU4X_DATAPROVIDER_RETURNS_RESULT_MV1.invokeExact((SegmentAllocator) arena);

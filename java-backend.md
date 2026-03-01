@@ -77,6 +77,7 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 - **Traits** — Diplomat trait definitions generate Java `interface` files with vtable layouts, a `Statics` inner class for upcall stubs, and a `createNative()` factory method. Users implement the interface and pass it to methods accepting `impl Trait`.
   - Trait methods with primitive, void, and struct params/returns
   - **Disabled for Java**: trait methods returning `Result`
+- **JavaDoc documentation** — `/// doc comments` from Rust source are rendered as `/** ... */` JavaDoc blocks on types, methods, struct fields, enum variants, and trait interfaces/methods. Uses `{@link TypeName}` syntax for cross-type references.
 - **Feature tests** — `feature_tests/java/somelib/` Gradle project with JUnit 5 tests
 
 ### What doesn't work yet

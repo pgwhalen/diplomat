@@ -4,6 +4,11 @@ import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * An  Locale, capable of representing strings like `"en-US"`.
+ *
+ * See the [Rust documentation for `Locale`](https://docs.rs/icu/latest/icu/locid/struct.Locale.html) for more information.
+ */
 public class Locale implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
@@ -31,6 +36,9 @@ public class Locale implements AutoCloseable {
         this.handle = handle;
     }
 
+    /**
+     * Construct an {@link Locale} from a locale identifier represented as a string.
+     */
     public Locale(String name) {
         try (var arena = Arena.ofConfined()) {
             byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);

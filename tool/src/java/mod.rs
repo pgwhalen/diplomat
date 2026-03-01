@@ -184,6 +184,7 @@ struct ItemGenContext<'a, 'cx> {
 }
 
 struct JavaMethodInfo {
+    docs: String,
     definition: String,
     /// Callback functional interface declarations to put at class level
     callback_interfaces: Vec<String>,
@@ -202,6 +203,7 @@ struct JavaNativeMethodInfo {
 }
 
 struct JavaStructFieldInfo {
+    docs: String,
     field_name: String,
     java_type: String,
     from_native_expr: String,
@@ -259,6 +261,7 @@ struct JavaCallbackInfo {
 }
 
 struct JavaEnumVariantInfo {
+    docs: String,
     variant_name: String,
     discriminant: isize,
 }
@@ -626,6 +629,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             lib_name: &'a str,
             dylib_name: &'a str,
             type_name: &'a str,
+            docs: &'a str,
             dtor_abi_name: &'a str,
             is_error: bool,
             uses_optional: bool,
@@ -640,6 +644,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             callback_statics: &'a [String],
         }
 
+        let docs = self.formatter.fmt_javadoc_block(&ty.docs, "");
+
         (
             self.java_file_path(type_name),
             ImplTemplate {
@@ -647,6 +653,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 lib_name: self.lib_name,
                 dylib_name: self.dylib_name,
                 type_name,
+                docs: &docs,
                 dtor_abi_name: ty.dtor_abi_name.as_str(),
                 is_error,
                 uses_optional,
@@ -1222,7 +1229,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             }
         }
 
+        let docs = if is_iterator || is_indexer || is_iterable {
+            String::new()
+        } else {
+            self.formatter.fmt_javadoc_block(&method.docs, "    ")
+        };
+
         JavaMethodInfo {
+            docs,
             definition,
             callback_interfaces: cb_interfaces,
             callback_runners: cb_runners,
@@ -2009,7 +2023,26 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             }
             let return_type = self.trait_method_return_type(&method.output);
             let params_str = params.join(", ");
-            interface_methods.push(format!("    {return_type} {method_name}({params_str});"));
+            let method_docs = method
+                .docs
+                .as_ref()
+                .map(|d| self.formatter.fmt_docs(d))
+                .unwrap_or_default();
+            let mut entry = String::new();
+            if !method_docs.is_empty() {
+                entry.push_str("    /**\n");
+                for line in method_docs.lines() {
+                    let trimmed = line.trim_end();
+                    if trimmed.is_empty() {
+                        entry.push_str("     *\n");
+                    } else {
+                        entry.push_str(&format!("     * {trimmed}\n"));
+                    }
+                }
+                entry.push_str("     */\n");
+            }
+            entry.push_str(&format!("    {return_type} {method_name}({params_str});"));
+            interface_methods.push(entry);
         }
 
         // Build vtable layout fields: destructor, size, alignment, then per-method callback
@@ -2141,6 +2174,19 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         body.push_str("import java.lang.invoke.MethodHandles;\n");
         body.push_str("import java.lang.invoke.MethodType;\n");
         body.push_str("import java.lang.invoke.VarHandle;\n\n");
+        let docs = self.formatter.fmt_docs(&trt.docs);
+        if !docs.is_empty() {
+            body.push_str("/**\n");
+            for line in docs.lines() {
+                let trimmed = line.trim_end();
+                if trimmed.is_empty() {
+                    body.push_str(" *\n");
+                } else {
+                    body.push_str(&format!(" * {trimmed}\n"));
+                }
+            }
+            body.push_str(" */\n");
+        }
         body.push_str(&format!("public interface {trait_name} {{\n"));
         for m in &interface_methods {
             body.push_str(&format!("{m}\n"));
@@ -2266,6 +2312,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             .variants
             .iter()
             .map(|v| JavaEnumVariantInfo {
+                docs: self.formatter.fmt_javadoc_block(&v.docs, "    "),
                 variant_name: self.formatter.fmt_enum_variant_name(v).to_string(),
                 discriminant: v.discriminant,
             })
@@ -2308,6 +2355,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             lib_name: &'a str,
             dylib_name: &'a str,
             type_name: &'a str,
+            docs: &'a str,
             is_error: bool,
             uses_optional: bool,
             variants: &'a [JavaEnumVariantInfo],
@@ -2316,6 +2364,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             self_methods: &'a [JavaMethodInfo],
         }
 
+        let docs = self.formatter.fmt_javadoc_block(&ty.docs, "");
+
         (
             self.java_file_path(type_name),
             EnumTemplate {
@@ -2323,6 +2373,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 lib_name: self.lib_name,
                 dylib_name: self.dylib_name,
                 type_name,
+                docs: &docs,
                 is_error,
                 uses_optional,
                 variants: &variants,
@@ -2435,6 +2486,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             lib_name: &'a str,
             dylib_name: &'a str,
             type_name: &'a str,
+            docs: &'a str,
             is_error: bool,
             is_out_struct: bool,
             uses_optional: bool,
@@ -2454,6 +2506,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             callback_statics: &'a [String],
         }
 
+        let docs = self.formatter.fmt_javadoc_block(&ty.docs, "");
+
         (
             self.java_file_path(type_name),
             StructTemplate {
@@ -2461,6 +2515,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 lib_name: self.lib_name,
                 dylib_name: self.dylib_name,
                 type_name,
+                docs: &docs,
                 is_error,
                 is_out_struct,
                 uses_optional,
@@ -2597,6 +2652,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let to_native_stmt = self.field_to_native(&field.ty, &field_name, &shouty);
 
                 JavaStructFieldInfo {
+                    docs: self.formatter.fmt_javadoc_block(&field.docs, "    "),
                     field_name,
                     java_type,
                     from_native_expr,

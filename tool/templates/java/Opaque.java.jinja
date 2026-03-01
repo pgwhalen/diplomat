@@ -17,7 +17,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 {%- endif %}
 
-public class {{type_name}}
+{{docs}}public class {{type_name}}
     {%- if is_error %} extends RuntimeException{% endif %} implements AutoCloseable
     {%- if let Some(t) = special_methods.iterator_type.as_deref() %}, Iterator<{{t}}>{% endif %}
     {%- if let Some(t) = special_methods.iterable_item_type.as_deref() %}, Iterable<{{t}}>{% endif %} {
@@ -78,7 +78,7 @@ public class {{type_name}}
     }
     {%- for m in constructor_methods %}
 
-    {{m.definition}}
+{{m.docs}}    {{m.definition}}
     {%- endfor %}
 
     @Override
@@ -91,11 +91,11 @@ public class {{type_name}}
     }
     {%- for m in companion_methods %}
 
-    {{m.definition}}
+{{m.docs}}    {{m.definition}}
     {%- endfor %}
     {%- for m in self_methods %}
 
-    {{m.definition}}
+{{m.docs}}    {{m.definition}}
     {%- endfor %}
 {%- if let Some(iter_ty) = special_methods.iterator_type.as_deref() %}
 

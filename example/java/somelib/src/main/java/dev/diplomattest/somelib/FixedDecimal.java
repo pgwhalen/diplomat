@@ -4,6 +4,9 @@ import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * See the [Rust documentation for `FixedDecimal`](https://docs.rs/fixed_decimal/latest/fixed_decimal/struct.FixedDecimal.html) for more information.
+ */
 public class FixedDecimal implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
@@ -44,6 +47,9 @@ public class FixedDecimal implements AutoCloseable {
         this.handle = handle;
     }
 
+    /**
+     * Construct an {@link FixedDecimal} from an integer.
+     */
     public FixedDecimal(int v) {
         try {
             this.handle = (MemorySegment) ICU4X_FIXEDDECIMAL_NEW_MV1.invokeExact(v);
@@ -63,6 +69,11 @@ public class FixedDecimal implements AutoCloseable {
         }
     }
 
+    /**
+     * Multiply the {@link FixedDecimal} by a given power of ten.
+     *
+     * See the [Rust documentation for `multiply_pow10`](https://docs.rs/fixed_decimal/latest/fixed_decimal/struct.FixedDecimal.html#method.multiply_pow10) for more information.
+     */
     public void multiplyPow10(short power) {
         try {
             ICU4X_FIXEDDECIMAL_MULTIPLY_POW10_MV1.invokeExact(handle, power);
@@ -73,6 +84,11 @@ public class FixedDecimal implements AutoCloseable {
         }
     }
 
+    /**
+     * Format the {@link FixedDecimal} as a string.
+     *
+     * See the [Rust documentation for `write_to`](https://docs.rs/fixed_decimal/latest/fixed_decimal/struct.FixedDecimal.html#method.write_to) for more information.
+     */
     public String toString() {
         var write = DiplomatLib.createWrite();
         try (var arena = Arena.ofConfined()) {

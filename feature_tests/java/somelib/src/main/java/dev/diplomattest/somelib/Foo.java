@@ -83,6 +83,9 @@ public class Foo implements AutoCloseable {
         }
     }
 
+    /**
+     * Test that the extraction logic correctly pins the right fields
+     */
     public static Foo extractFromBounds(BorrowedFieldsWithBounds bounds, String anotherString) {
         try (var arena = Arena.ofConfined()) {
             byte[] anotherStringBytes = anotherString.getBytes(StandardCharsets.UTF_8);

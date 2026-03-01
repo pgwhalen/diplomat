@@ -12,7 +12,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 {%- endif %}
 
-public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} {
+{{docs}}public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} {
 
     static final StructLayout LAYOUT = MemoryLayout.structLayout(
         {{layout_members}}
@@ -62,7 +62,7 @@ public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} 
 {%- endfor %}
     {%- for f in fields %}
 
-    public {{f.java_type}} {{f.field_name}};
+{{f.docs}}    public {{f.java_type}} {{f.field_name}};
     {%- endfor %}
 
     {%- if !has_zero_arg_constructor %}
@@ -94,7 +94,7 @@ public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} 
     {%- endif %}
     {%- for m in constructor_methods %}
 
-    {{m.definition}}
+{{m.docs}}    {{m.definition}}
     {%- endfor %}
 
     static {{type_name}} fromNative(MemorySegment seg) {
@@ -130,10 +130,10 @@ public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} 
     {%- endif %}
     {%- for m in companion_methods %}
 
-    {{m.definition}}
+{{m.docs}}    {{m.definition}}
     {%- endfor %}
     {%- for m in self_methods %}
 
-    {{m.definition}}
+{{m.docs}}    {{m.definition}}
     {%- endfor %}
 }

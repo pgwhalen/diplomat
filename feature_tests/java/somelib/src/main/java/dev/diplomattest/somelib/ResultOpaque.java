@@ -317,6 +317,10 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
         }
     }
 
+    /**
+     * When we take &str, the return type becomes a Result
+     * Test that this interacts gracefully with returning a reference type
+     */
     public ResultOpaque takesStr(String v) {
         try (var arena = Arena.ofConfined()) {
             byte[] vBytes = v.getBytes(StandardCharsets.UTF_8);
