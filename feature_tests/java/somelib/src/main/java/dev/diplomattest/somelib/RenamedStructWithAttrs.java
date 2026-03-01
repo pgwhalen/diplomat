@@ -47,9 +47,22 @@ public class RenamedStructWithAttrs {
     public RenamedStructWithAttrs() {
     }
 
-    RenamedStructWithAttrs(boolean a, int b) {
-        this.a = a;
-        this.b = b;
+    public RenamedStructWithAttrs(boolean a, int b) {
+        try (var arena = Arena.ofConfined()) {
+            var result = (MemorySegment) NAMESPACE_STRUCTWITHATTRS_NEW_FALLIBLE.invokeExact((SegmentAllocator) arena, a, b);
+            var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 8L);
+            if (isOk) {
+                var seg = result.asSlice(0L, RenamedStructWithAttrs.LAYOUT.byteSize());
+                this.a = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 0L);
+                this.b = (int) seg.get(ValueLayout.JAVA_INT, 4L);
+            } else {
+                throw new RuntimeException("Diplomat error");
+            }
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     static RenamedStructWithAttrs fromNative(MemorySegment seg) {
@@ -64,22 +77,6 @@ public class RenamedStructWithAttrs {
         seg.set(ValueLayout.JAVA_BOOLEAN, 0L, this.a);
         seg.set(ValueLayout.JAVA_INT, 4L, this.b);
         return seg;
-    }
-
-    public static RenamedStructWithAttrs newFallible(boolean a, int b) {
-        try (var arena = Arena.ofConfined()) {
-            var result = (MemorySegment) NAMESPACE_STRUCTWITHATTRS_NEW_FALLIBLE.invokeExact((SegmentAllocator) arena, a, b);
-            var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 8L);
-            if (isOk) {
-                return RenamedStructWithAttrs.fromNative(result.asSlice(0L, RenamedStructWithAttrs.LAYOUT.byteSize()));
-            } else {
-                throw new RuntimeException("Diplomat error");
-            }
-        } catch (RuntimeException ex) {
-            throw ex;
-        } catch (Throwable ex) {
-            throw new RuntimeException(ex);
-        }
     }
 
     public int c() {

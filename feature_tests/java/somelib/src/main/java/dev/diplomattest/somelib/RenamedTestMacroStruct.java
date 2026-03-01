@@ -30,15 +30,22 @@ public class RenamedTestMacroStruct {
 
     public long a;
 
-    public RenamedTestMacroStruct() {
+    private RenamedTestMacroStruct(Void _internal) {
     }
 
-    RenamedTestMacroStruct(long a) {
-        this.a = a;
+    public RenamedTestMacroStruct() {
+        try (var arena = Arena.ofConfined()) {
+            var seg = (MemorySegment) NAMESPACE_TESTMACROSTRUCT_TEST_META.invokeExact((SegmentAllocator) arena);
+            this.a = (long) seg.get(ValueLayout.JAVA_LONG, 0L);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     static RenamedTestMacroStruct fromNative(MemorySegment seg) {
-        var result = new RenamedTestMacroStruct();
+        var result = new RenamedTestMacroStruct((Void) null);
         result.a = (long) seg.get(ValueLayout.JAVA_LONG, 0L);
         return result;
     }
@@ -52,16 +59,6 @@ public class RenamedTestMacroStruct {
     public static long testFunc() {
         try {
             return (long) NAMESPACE_TESTMACROSTRUCT_TEST_FUNC.invokeExact();
-        } catch (RuntimeException ex) {
-            throw ex;
-        } catch (Throwable ex) {
-            throw new RuntimeException(ex);
-        }
-    }
-
-    public static RenamedTestMacroStruct testMeta() {
-        try (var arena = Arena.ofConfined()) {
-            return RenamedTestMacroStruct.fromNative((MemorySegment) NAMESPACE_TESTMACROSTRUCT_TEST_META.invokeExact((SegmentAllocator) arena));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

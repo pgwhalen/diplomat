@@ -139,6 +139,13 @@ impl<'tcx> JavaFormatter<'tcx> {
         censor_symbol_for_keywords(name)
     }
 
+    pub fn fmt_named_constructor_name<'a>(&self, name: &Option<String>, method: &'a hir::Method) -> Cow<'a, str> {
+        let raw = name.as_deref().unwrap_or(method.name.as_str());
+        let camel = raw.to_lower_camel_case();
+        let renamed = method.attrs.rename.apply(camel.into());
+        censor_symbol_for_keywords(renamed)
+    }
+
     pub fn fmt_param_name<'a>(&self, ident: &'a str) -> Cow<'tcx, str> {
         let name = ident.to_lower_camel_case();
         censor_symbol_for_keywords(name.into())

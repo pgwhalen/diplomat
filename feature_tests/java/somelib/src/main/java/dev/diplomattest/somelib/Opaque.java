@@ -67,20 +67,20 @@ public class Opaque implements AutoCloseable {
         this.handle = handle;
     }
 
-    @Override
-    public void close() {
+    public Opaque() {
         try {
-            DESTROY.invokeExact(handle);
+            this.handle = (MemorySegment) OPAQUE_NEW.invokeExact();
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public static Opaque new_() {
+    @Override
+    public void close() {
         try {
-            return new Opaque((MemorySegment) OPAQUE_NEW.invokeExact());
-        } catch (RuntimeException ex) {
-            throw ex;
+            DESTROY.invokeExact(handle);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

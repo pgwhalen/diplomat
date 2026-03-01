@@ -28,10 +28,10 @@ public class Inner {
     }
 
     static Inner fromNative(MemorySegment seg) {
-        var result = new Inner();
-        result.x = (int) seg.get(ValueLayout.JAVA_INT, 0L);
-        result.y = (int) seg.get(ValueLayout.JAVA_INT, 4L);
-        return result;
+        return new Inner(
+            (int) seg.get(ValueLayout.JAVA_INT, 0L),
+            (int) seg.get(ValueLayout.JAVA_INT, 4L)
+        );
     }
 
     MemorySegment toNative(Arena arena) {
@@ -66,10 +66,10 @@ public class Outer {
     }
 
     static Outer fromNative(MemorySegment seg) {
-        var result = new Outer();
-        result.inner = Inner.fromNative(seg.asSlice(0L, Inner.LAYOUT.byteSize()));
-        result.z = (double) seg.get(ValueLayout.JAVA_DOUBLE, 8L);
-        return result;
+        return new Outer(
+            Inner.fromNative(seg.asSlice(0L, Inner.LAYOUT.byteSize())),
+            (double) seg.get(ValueLayout.JAVA_DOUBLE, 8L)
+        );
     }
 
     MemorySegment toNative(Arena arena) {

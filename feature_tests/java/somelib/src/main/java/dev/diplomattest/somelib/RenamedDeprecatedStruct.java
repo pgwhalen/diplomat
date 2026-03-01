@@ -14,8 +14,7 @@ public class RenamedDeprecatedStruct {
     }
 
     static RenamedDeprecatedStruct fromNative(MemorySegment seg) {
-        var result = new RenamedDeprecatedStruct();
-        return result;
+        return new RenamedDeprecatedStruct();
     }
 
     MemorySegment toNative(Arena arena) {

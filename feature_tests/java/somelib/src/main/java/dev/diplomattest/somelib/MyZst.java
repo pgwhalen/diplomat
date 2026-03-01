@@ -15,8 +15,7 @@ public class MyZst extends RuntimeException {
     }
 
     static MyZst fromNative(MemorySegment seg) {
-        var result = new MyZst();
-        return result;
+        return new MyZst();
     }
 
     MemorySegment toNative(Arena arena) {

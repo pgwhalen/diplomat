@@ -33,16 +33,23 @@ public class MyStructContainingAnOption {
 
     public DefaultEnum b;
 
-    public MyStructContainingAnOption() {
+    private MyStructContainingAnOption(Void _internal) {
     }
 
-    MyStructContainingAnOption(MyStruct a, DefaultEnum b) {
-        this.a = a;
-        this.b = b;
+    public MyStructContainingAnOption() {
+        try (var arena = Arena.ofConfined()) {
+            var seg = (MemorySegment) MYSTRUCTCONTAININGANOPTION_NEW.invokeExact((SegmentAllocator) arena);
+            this.a = seg.get(ValueLayout.JAVA_BOOLEAN, 32L) ? MyStruct.fromNative(seg.asSlice(0L, MyStruct.LAYOUT.byteSize())) : null;
+            this.b = seg.get(ValueLayout.JAVA_BOOLEAN, 44L) ? DefaultEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 40L)) : null;
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     static MyStructContainingAnOption fromNative(MemorySegment seg) {
-        var result = new MyStructContainingAnOption();
+        var result = new MyStructContainingAnOption((Void) null);
         result.a = seg.get(ValueLayout.JAVA_BOOLEAN, 32L) ? MyStruct.fromNative(seg.asSlice(0L, MyStruct.LAYOUT.byteSize())) : null;
         result.b = seg.get(ValueLayout.JAVA_BOOLEAN, 44L) ? DefaultEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 40L)) : null;
         return result;
@@ -53,16 +60,6 @@ public class MyStructContainingAnOption {
         if (this.a != null) { seg.asSlice(0L, MyStruct.LAYOUT.byteSize()).copyFrom(this.a.toNative(arena)); seg.set(ValueLayout.JAVA_BOOLEAN, 32L, true); } else { seg.set(ValueLayout.JAVA_BOOLEAN, 32L, false); }
         if (this.b != null) { seg.set(ValueLayout.JAVA_INT, 40L, this.b.toNative()); seg.set(ValueLayout.JAVA_BOOLEAN, 44L, true); } else { seg.set(ValueLayout.JAVA_BOOLEAN, 44L, false); }
         return seg;
-    }
-
-    public static MyStructContainingAnOption new_() {
-        try (var arena = Arena.ofConfined()) {
-            return MyStructContainingAnOption.fromNative((MemorySegment) MYSTRUCTCONTAININGANOPTION_NEW.invokeExact((SegmentAllocator) arena));
-        } catch (RuntimeException ex) {
-            throw ex;
-        } catch (Throwable ex) {
-            throw new RuntimeException(ex);
-        }
     }
 
     public static MyStructContainingAnOption filled() {

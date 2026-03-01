@@ -25,10 +25,10 @@ public class ImportedStruct {
     }
 
     static ImportedStruct fromNative(MemorySegment seg) {
-        var result = new ImportedStruct();
-        result.foo = UnimportedEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 0L));
-        result.count = (byte) seg.get(ValueLayout.JAVA_BYTE, 4L);
-        return result;
+        return new ImportedStruct(
+            UnimportedEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 0L)),
+            (byte) seg.get(ValueLayout.JAVA_BYTE, 4L)
+        );
     }
 
     MemorySegment toNative(Arena arena) {

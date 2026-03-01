@@ -51,6 +51,19 @@ public class MyString implements AutoCloseable {
         this.handle = handle;
     }
 
+    public MyString(String v) {
+        try (var arena = Arena.ofConfined()) {
+            byte[] vBytes = v.getBytes(StandardCharsets.UTF_8);
+
+            var vSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, vBytes);
+            this.handle = (MemorySegment) MYSTRING_NEW.invokeExact(vSeg, (long) vBytes.length);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
     @Override
     public void close() {
         try {
@@ -60,20 +73,7 @@ public class MyString implements AutoCloseable {
         }
     }
 
-    public static MyString new_(String v) {
-        try (var arena = Arena.ofConfined()) {
-            byte[] vBytes = v.getBytes(StandardCharsets.UTF_8);
-
-            var vSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, vBytes);
-            return new MyString((MemorySegment) MYSTRING_NEW.invokeExact(vSeg, (long) vBytes.length));
-        } catch (RuntimeException ex) {
-            throw ex;
-        } catch (Throwable ex) {
-            throw new RuntimeException(ex);
-        }
-    }
-
-    public static MyString newUnsafe(String v) {
+    public static MyString unsafe(String v) {
         try (var arena = Arena.ofConfined()) {
             byte[] vBytes = v.getBytes(StandardCharsets.UTF_8);
 

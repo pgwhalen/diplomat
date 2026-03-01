@@ -29,16 +29,23 @@ public class FixedDecimalFormatterOptions {
 
     public boolean someOtherConfig;
 
-    public FixedDecimalFormatterOptions() {
+    private FixedDecimalFormatterOptions(Void _internal) {
     }
 
-    FixedDecimalFormatterOptions(FixedDecimalGroupingStrategy groupingStrategy, boolean someOtherConfig) {
-        this.groupingStrategy = groupingStrategy;
-        this.someOtherConfig = someOtherConfig;
+    public FixedDecimalFormatterOptions() {
+        try (var arena = Arena.ofConfined()) {
+            var seg = (MemorySegment) ICU4X_FIXEDDECIMALFORMATTEROPTIONS_DEFAULT_MV1.invokeExact((SegmentAllocator) arena);
+            this.groupingStrategy = FixedDecimalGroupingStrategy.fromNative((int) seg.get(ValueLayout.JAVA_INT, 0L));
+            this.someOtherConfig = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 4L);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     static FixedDecimalFormatterOptions fromNative(MemorySegment seg) {
-        var result = new FixedDecimalFormatterOptions();
+        var result = new FixedDecimalFormatterOptions((Void) null);
         result.groupingStrategy = FixedDecimalGroupingStrategy.fromNative((int) seg.get(ValueLayout.JAVA_INT, 0L));
         result.someOtherConfig = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 4L);
         return result;
@@ -49,15 +56,5 @@ public class FixedDecimalFormatterOptions {
         seg.set(ValueLayout.JAVA_INT, 0L, this.groupingStrategy.toNative());
         seg.set(ValueLayout.JAVA_BOOLEAN, 4L, this.someOtherConfig);
         return seg;
-    }
-
-    public static FixedDecimalFormatterOptions default_() {
-        try (var arena = Arena.ofConfined()) {
-            return FixedDecimalFormatterOptions.fromNative((MemorySegment) ICU4X_FIXEDDECIMALFORMATTEROPTIONS_DEFAULT_MV1.invokeExact((SegmentAllocator) arena));
-        } catch (RuntimeException ex) {
-            throw ex;
-        } catch (Throwable ex) {
-            throw new RuntimeException(ex);
-        }
     }
 }

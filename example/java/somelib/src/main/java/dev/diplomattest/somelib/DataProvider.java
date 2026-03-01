@@ -48,7 +48,7 @@ public class DataProvider implements AutoCloseable {
         }
     }
 
-    public static DataProvider newStatic() {
+    public static DataProvider static_() {
         try {
             return new DataProvider((MemorySegment) ICU4X_DATAPROVIDER_NEW_STATIC_MV1.invokeExact());
         } catch (RuntimeException ex) {

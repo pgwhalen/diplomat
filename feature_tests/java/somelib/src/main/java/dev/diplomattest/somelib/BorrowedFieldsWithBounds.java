@@ -41,11 +41,11 @@ public class BorrowedFieldsWithBounds {
     }
 
     static BorrowedFieldsWithBounds fromNative(MemorySegment seg) {
-        var result = new BorrowedFieldsWithBounds();
-        result.fieldA = new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L) * 2).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_16LE);
-        result.fieldB = new String(seg.get(ValueLayout.ADDRESS, 16L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 24L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
-        result.fieldC = new String(seg.get(ValueLayout.ADDRESS, 32L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 40L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
-        return result;
+        return new BorrowedFieldsWithBounds(
+            new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L) * 2).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_16LE),
+            new String(seg.get(ValueLayout.ADDRESS, 16L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 24L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
+            new String(seg.get(ValueLayout.ADDRESS, 32L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 40L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8)
+        );
     }
 
     MemorySegment toNative(Arena arena) {

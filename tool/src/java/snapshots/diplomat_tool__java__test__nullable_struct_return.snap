@@ -29,10 +29,10 @@ public class MyStruct {
     }
 
     static MyStruct fromNative(MemorySegment seg) {
-        var result = new MyStruct();
-        result.a = (int) seg.get(ValueLayout.JAVA_INT, 0L);
-        result.b = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 4L);
-        return result;
+        return new MyStruct(
+            (int) seg.get(ValueLayout.JAVA_INT, 0L),
+            (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 4L)
+        );
     }
 }
 package dev.diplomattest.somelib;

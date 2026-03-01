@@ -6,14 +6,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class MyStringTest {
     @Test
     void testNewAndGetStr() {
-        try (MyString s = MyString.new_("hello")) {
+        try (MyString s = new MyString("hello")) {
             assertEquals("hello", s.getStr());
         }
     }
 
     @Test
     void testSetStrAndGetStr() {
-        try (MyString s = MyString.new_("hello")) {
+        try (MyString s = new MyString("hello")) {
             s.setStr("world");
             assertEquals("world", s.getStr());
         }
@@ -21,7 +21,7 @@ class MyStringTest {
 
     @Test
     void testUnicodeRoundTrip() {
-        try (MyString s = MyString.new_("\u4F60\u597D\uD83D\uDE00")) {
+        try (MyString s = new MyString("\u4F60\u597D\uD83D\uDE00")) {
             assertEquals("\u4F60\u597D\uD83D\uDE00", s.getStr());
         }
     }

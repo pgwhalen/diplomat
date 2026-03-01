@@ -29,10 +29,10 @@ public class OptionFields {
     }
 
     static OptionFields fromNative(MemorySegment seg) {
-        var result = new OptionFields();
-        result.a = seg.get(ValueLayout.JAVA_BOOLEAN, 1L) ? (byte) seg.get(ValueLayout.JAVA_BYTE, 0L) : null;
-        result.b = seg.get(ValueLayout.JAVA_BOOLEAN, 8L) ? MyEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 4L)) : null;
-        return result;
+        return new OptionFields(
+            seg.get(ValueLayout.JAVA_BOOLEAN, 1L) ? (byte) seg.get(ValueLayout.JAVA_BYTE, 0L) : null,
+            seg.get(ValueLayout.JAVA_BOOLEAN, 8L) ? MyEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 4L)) : null
+        );
     }
 
     MemorySegment toNative(Arena arena) {

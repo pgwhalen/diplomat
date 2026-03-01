@@ -61,16 +61,16 @@ class EnumTest {
 
     @Test
     void testEnumAsStructField() {
-        // MyStruct.new_() creates struct with g = MyEnum::B (discriminant -1)
-        MyStruct s = MyStruct.new_();
+        // new MyStruct() creates struct with g = MyEnum::B (discriminant -1)
+        MyStruct s = new MyStruct();
         assertEquals(MyEnum.B, s.g);
     }
 
     @Test
     void testStructWithEnumFieldPassedToRust() {
         // assert_struct validates all fields including the enum field g
-        MyStruct s = MyStruct.new_();
-        try (Opaque o = Opaque.new_()) {
+        MyStruct s = new MyStruct();
+        try (Opaque o = new Opaque()) {
             o.assertStruct(s);
         }
     }
@@ -79,7 +79,7 @@ class EnumTest {
     void testEnumErrorThrown() {
         // ResultOpaque.newFailingFoo should throw ErrorEnumException with FOO
         try {
-            ResultOpaque.newFailingFoo();
+            ResultOpaque.failingFoo();
             fail("Expected ErrorEnumException");
         } catch (ErrorEnumException e) {
             assertEquals(ErrorEnum.FOO, e.getValue());
@@ -89,7 +89,7 @@ class EnumTest {
     @Test
     void testEnumErrorBar() {
         try {
-            ResultOpaque.newFailingBar();
+            ResultOpaque.failingBar();
             fail("Expected ErrorEnumException");
         } catch (ErrorEnumException e) {
             assertEquals(ErrorEnum.BAR, e.getValue());
@@ -99,7 +99,7 @@ class EnumTest {
     @Test
     void testEnumSuccessReturn() {
         // ResultOpaque.new_ with a valid value should succeed (error is ErrorEnum)
-        try (ResultOpaque opaque = ResultOpaque.new_(42)) {
+        try (ResultOpaque opaque = new ResultOpaque(42)) {
             assertNotNull(opaque);
         }
     }

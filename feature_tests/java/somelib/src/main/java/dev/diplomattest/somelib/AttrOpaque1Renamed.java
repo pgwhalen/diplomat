@@ -61,20 +61,20 @@ public class AttrOpaque1Renamed implements AutoCloseable {
         this.handle = handle;
     }
 
-    @Override
-    public void close() {
+    public AttrOpaque1Renamed() {
         try {
-            DESTROY.invokeExact(handle);
+            this.handle = (MemorySegment) NAMESPACE_ATTROPAQUE1_NEW.invokeExact();
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public static AttrOpaque1Renamed totally_not_new() {
+    @Override
+    public void close() {
         try {
-            return new AttrOpaque1Renamed((MemorySegment) NAMESPACE_ATTROPAQUE1_NEW.invokeExact());
-        } catch (RuntimeException ex) {
-            throw ex;
+            DESTROY.invokeExact(handle);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

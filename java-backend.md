@@ -34,7 +34,11 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 ### What works
 
 - **Opaque types** with `AutoCloseable` / destroy via FFM downcall handles
-- **Static factory methods** (constructors returning `Box<Self>`)
+- **Constructors** — `#[diplomat::attr(auto, constructor)]` generates idiomatic `new TypeName(...)` Java constructors
+  - Infallible constructors for opaques (assign `this.handle`) and structs (assign fields)
+  - Fallible constructors (throw on error path)
+  - Named constructors (`#[diplomat::attr(auto, named_constructor = "...")]`) generate static factory methods
+- **Static factory methods** (non-constructor methods returning `Box<Self>`)
 - **Instance methods** with `&self` (opaque and struct)
 - **Primitive parameters and returns** (all integer sizes, float, double, boolean, char)
 - **Opaque parameters and returns** (passed as `MemorySegment`)
@@ -73,12 +77,12 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 - Slice parameters/returns other than `&str` / `&DiplomatStr16` — not supported (primitive slices work as struct fields)
 - Callbacks / traits
 - Iterators / iterables
-- Named constructors / accessors / comparators / indexing
+- Accessors / comparators / indexing
 - Java is not yet included in CI meta-tasks (`test-example`, `test-feature`, `test-all`)
 
 ### `attr_support()` flags
 
-In `tool/src/java/mod.rs`, the following are set to `true`: `method_overloading`, `utf8_strings`, `utf16_strings`, `non_exhaustive_structs`, `option`, `custom_errors`. All others are `false`. Flags should be flipped to `true` as features are implemented.
+In `tool/src/java/mod.rs`, the following are set to `true`: `method_overloading`, `utf8_strings`, `utf16_strings`, `non_exhaustive_structs`, `option`, `custom_errors`, `constructors`, `named_constructors`, `fallible_constructors`. All others are `false`. Flags should be flipped to `true` as features are implemented.
 
 ## Feature Checklist
 
@@ -140,15 +144,15 @@ Cross-backend comparison is provided where relevant. The Kotlin backend (JNA-bas
 
 - [x] **`custom_errors`** — Struct and opaque error types extend `RuntimeException` and are thrown directly from fallible methods. Enum errors are thrown as `RuntimeException` with the error value in the message (pending proper Java enum class generation).
 
+- [x] **`constructors`** — `#[diplomat::attr(auto, constructor)]` generates idiomatic `new TypeName(...)` Java constructors. Opaque constructors assign `this.handle`, struct constructors assign fields from native memory. Constructor syntax is not applied to enum types.
+
+- [x] **`named_constructors`** — `#[diplomat::attr(auto, named_constructor = "name")]` generates named static factory methods (e.g., `ResultOpaque.failingFoo()`). Names are converted to lowerCamelCase and keyword-censored.
+
+- [x] **`fallible_constructors`** — Constructors returning `Result<Box<Self>, E>` generate Java constructors that throw on error. The ok-branch assigns `this.handle` (opaque) or fields (struct); the error branch throws the appropriate exception type.
+
 ---
 
 ### TODO
-
-- [ ] **`constructors`** — Mark a method returning `Box<Self>` as the type's primary constructor. Java does not have Dart/JS-style `factory` constructors, but the idiomatic equivalent is to make the generated static factory method the obvious entry point (e.g. generate it as `public static Foo create(...)` or just promote it in documentation). Dart, JS, and nanobind all support this. The Kotlin backend does *not* yet support this, but it is planned there too. Since the Java backend already generates static factory methods, the incremental work is mostly about recognizing the `constructor` attribute and giving the method a canonical name or position.
-
-- [ ] **`named_constructors`** — Generate named static factory methods like `Foo.of(...)` or `Foo.fromBar(...)`. Java's standard library heavily uses this pattern (`List.of()`, `Optional.of()`, `Path.of()`). Only Dart currently supports this among existing backends. Implementation is straightforward: when a method is marked `named_constructor = "make"`, generate `public static Foo make(...)`. This is essentially what the backend already does for any static method returning `Self` — the attr just controls the name.
-
-- [ ] **`fallible_constructors`** — Allow constructors to return `Result<Box<Self>, E>`. In Java, constructors and factory methods can throw checked or unchecked exceptions, making this very natural. For example, `public static Foo create(...) throws SomeException`. Dart, JS, and nanobind support this. The Kotlin backend does not yet, but Java's exception model makes this arguably easier than in Kotlin. The backend already supports fallible returns — this flag just needs to be enabled and tested.
 
 - [ ] **`stringifiers`** — Map the `#[diplomat::attr(*, stringifier)]` method to a `toString()` override. Every Java class inherits `Object.toString()`, and overriding it is deeply idiomatic — it's automatically called by string concatenation (`"Value: " + obj`), `System.out.println()`, `String.format()`, and logging frameworks. The Kotlin backend already implements this as `override fun toString(): String`. The Dart backend maps it to `toString()` as well. The backend already supports `DiplomatWrite`-based returns — this flag just needs special-case naming.
 

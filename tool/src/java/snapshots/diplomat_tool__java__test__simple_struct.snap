@@ -56,12 +56,12 @@ public class MyStruct {
     }
 
     static MyStruct fromNative(MemorySegment seg) {
-        var result = new MyStruct();
-        result.a = (byte) seg.get(ValueLayout.JAVA_BYTE, 0L);
-        result.b = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 1L);
-        result.c = (long) seg.get(ValueLayout.JAVA_LONG, 8L);
-        result.d = (int) seg.get(ValueLayout.JAVA_INT, 16L);
-        return result;
+        return new MyStruct(
+            (byte) seg.get(ValueLayout.JAVA_BYTE, 0L),
+            (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 1L),
+            (long) seg.get(ValueLayout.JAVA_LONG, 8L),
+            (int) seg.get(ValueLayout.JAVA_INT, 16L)
+        );
     }
 
     MemorySegment toNative(Arena arena) {

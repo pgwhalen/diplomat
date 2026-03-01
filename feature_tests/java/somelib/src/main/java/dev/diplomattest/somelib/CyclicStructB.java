@@ -43,9 +43,9 @@ public class CyclicStructB {
     }
 
     static CyclicStructB fromNative(MemorySegment seg) {
-        var result = new CyclicStructB();
-        result.field = (byte) seg.get(ValueLayout.JAVA_BYTE, 0L);
-        return result;
+        return new CyclicStructB(
+            (byte) seg.get(ValueLayout.JAVA_BYTE, 0L)
+        );
     }
 
     MemorySegment toNative(Arena arena) {

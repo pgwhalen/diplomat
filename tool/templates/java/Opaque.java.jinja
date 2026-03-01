@@ -45,6 +45,10 @@ public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} 
         {%- endif %}
         this.handle = handle;
     }
+    {%- for m in constructor_methods %}
+
+    {{m.definition}}
+    {%- endfor %}
 
     @Override
     public void close() {

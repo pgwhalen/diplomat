@@ -66,21 +66,28 @@ public class MyStruct {
 
     public MyEnum g;
 
-    public MyStruct() {
+    private MyStruct(Void _internal) {
     }
 
-    MyStruct(byte a, boolean b, byte c, long d, int e, int f, MyEnum g) {
-        this.a = a;
-        this.b = b;
-        this.c = c;
-        this.d = d;
-        this.e = e;
-        this.f = f;
-        this.g = g;
+    public MyStruct() {
+        try (var arena = Arena.ofConfined()) {
+            var seg = (MemorySegment) MYSTRUCT_NEW.invokeExact((SegmentAllocator) arena);
+            this.a = (byte) seg.get(ValueLayout.JAVA_BYTE, 0L);
+            this.b = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 1L);
+            this.c = (byte) seg.get(ValueLayout.JAVA_BYTE, 2L);
+            this.d = (long) seg.get(ValueLayout.JAVA_LONG, 8L);
+            this.e = (int) seg.get(ValueLayout.JAVA_INT, 16L);
+            this.f = (int) seg.get(ValueLayout.JAVA_INT, 20L);
+            this.g = MyEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 24L));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     static MyStruct fromNative(MemorySegment seg) {
-        var result = new MyStruct();
+        var result = new MyStruct((Void) null);
         result.a = (byte) seg.get(ValueLayout.JAVA_BYTE, 0L);
         result.b = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 1L);
         result.c = (byte) seg.get(ValueLayout.JAVA_BYTE, 2L);
@@ -101,16 +108,6 @@ public class MyStruct {
         seg.set(ValueLayout.JAVA_INT, 20L, this.f);
         seg.set(ValueLayout.JAVA_INT, 24L, this.g.toNative());
         return seg;
-    }
-
-    public static MyStruct new_() {
-        try (var arena = Arena.ofConfined()) {
-            return MyStruct.fromNative((MemorySegment) MYSTRUCT_NEW.invokeExact((SegmentAllocator) arena));
-        } catch (RuntimeException ex) {
-            throw ex;
-        } catch (Throwable ex) {
-            throw new RuntimeException(ex);
-        }
     }
 
     public static void returnsZstResult() {

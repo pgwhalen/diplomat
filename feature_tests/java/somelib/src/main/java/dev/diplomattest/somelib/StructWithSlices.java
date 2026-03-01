@@ -37,10 +37,10 @@ public class StructWithSlices {
     }
 
     static StructWithSlices fromNative(MemorySegment seg) {
-        var result = new StructWithSlices();
-        result.first = new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
-        result.second = seg.get(ValueLayout.ADDRESS, 16L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 24L) * 2L).toArray(ValueLayout.JAVA_SHORT);
-        return result;
+        return new StructWithSlices(
+            new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
+            seg.get(ValueLayout.ADDRESS, 16L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 24L) * 2L).toArray(ValueLayout.JAVA_SHORT)
+        );
     }
 
     MemorySegment toNative(Arena arena) {

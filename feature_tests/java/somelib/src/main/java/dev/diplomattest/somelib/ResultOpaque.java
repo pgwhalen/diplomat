@@ -147,21 +147,13 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
         this.handle = handle;
     }
 
-    @Override
-    public void close() {
-        try {
-            DESTROY.invokeExact(handle);
-        } catch (Throwable ex) {
-            throw new RuntimeException(ex);
-        }
-    }
-
-    public static ResultOpaque new_(int i) {
+    public ResultOpaque(int i) {
+        super("ResultOpaque");
         try (var arena = Arena.ofConfined()) {
             var result = (MemorySegment) RESULTOPAQUE_NEW.invokeExact((SegmentAllocator) arena, i);
             var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 8L);
             if (isOk) {
-                return new ResultOpaque(result.get(ValueLayout.ADDRESS, 0L));
+                this.handle = result.get(ValueLayout.ADDRESS, 0L);
             } else {
                 throw new ErrorEnumException(ErrorEnum.fromNative((int) result.get(ValueLayout.JAVA_INT, 0L)));
             }
@@ -172,7 +164,16 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
         }
     }
 
-    public static ResultOpaque newFailingFoo() {
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static ResultOpaque failingFoo() {
         try (var arena = Arena.ofConfined()) {
             var result = (MemorySegment) RESULTOPAQUE_NEW_FAILING_FOO.invokeExact((SegmentAllocator) arena);
             var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 8L);
@@ -188,7 +189,7 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
         }
     }
 
-    public static ResultOpaque newFailingBar() {
+    public static ResultOpaque failingBar() {
         try (var arena = Arena.ofConfined()) {
             var result = (MemorySegment) RESULTOPAQUE_NEW_FAILING_BAR.invokeExact((SegmentAllocator) arena);
             var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 8L);
@@ -220,7 +221,7 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
         }
     }
 
-    public static ResultOpaque newFailingStruct(int i) {
+    public static ResultOpaque failingStruct(int i) {
         try (var arena = Arena.ofConfined()) {
             var result = (MemorySegment) RESULTOPAQUE_NEW_FAILING_STRUCT.invokeExact((SegmentAllocator) arena, i);
             var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 8L);

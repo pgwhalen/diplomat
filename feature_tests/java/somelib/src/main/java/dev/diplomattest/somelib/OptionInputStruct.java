@@ -29,11 +29,11 @@ public class OptionInputStruct {
     }
 
     static OptionInputStruct fromNative(MemorySegment seg) {
-        var result = new OptionInputStruct();
-        result.a = seg.get(ValueLayout.JAVA_BOOLEAN, 1L) ? (byte) seg.get(ValueLayout.JAVA_BYTE, 0L) : null;
-        result.b = seg.get(ValueLayout.JAVA_BOOLEAN, 8L) ? (int) seg.get(ValueLayout.JAVA_INT, 4L) : null;
-        result.c = seg.get(ValueLayout.JAVA_BOOLEAN, 16L) ? OptionEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 12L)) : null;
-        return result;
+        return new OptionInputStruct(
+            seg.get(ValueLayout.JAVA_BOOLEAN, 1L) ? (byte) seg.get(ValueLayout.JAVA_BYTE, 0L) : null,
+            seg.get(ValueLayout.JAVA_BOOLEAN, 8L) ? (int) seg.get(ValueLayout.JAVA_INT, 4L) : null,
+            seg.get(ValueLayout.JAVA_BOOLEAN, 16L) ? OptionEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 12L)) : null
+        );
     }
 
     MemorySegment toNative(Arena arena) {

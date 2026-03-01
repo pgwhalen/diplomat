@@ -48,9 +48,9 @@ public class CyclicStructA {
     }
 
     static CyclicStructA fromNative(MemorySegment seg) {
-        var result = new CyclicStructA();
-        result.a = CyclicStructB.fromNative(seg.asSlice(0L, CyclicStructB.LAYOUT.byteSize()));
-        return result;
+        return new CyclicStructA(
+            CyclicStructB.fromNative(seg.asSlice(0L, CyclicStructB.LAYOUT.byteSize()))
+        );
     }
 
     MemorySegment toNative(Arena arena) {

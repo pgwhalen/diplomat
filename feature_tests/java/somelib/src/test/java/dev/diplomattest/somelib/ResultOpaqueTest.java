@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ResultOpaqueTest {
     @Test
     void testNewSuccess() {
-        try (ResultOpaque opaque = ResultOpaque.new_(42)) {
+        try (ResultOpaque opaque = new ResultOpaque(42)) {
             assertNotNull(opaque);
         }
     }
@@ -18,18 +18,18 @@ class ResultOpaqueTest {
 
     @Test
     void testNewFailingFoo() {
-        assertThrows(RuntimeException.class, () -> ResultOpaque.newFailingFoo());
+        assertThrows(RuntimeException.class, () -> ResultOpaque.failingFoo());
     }
 
     @Test
     void testNewFailingBar() {
-        assertThrows(RuntimeException.class, () -> ResultOpaque.newFailingBar());
+        assertThrows(RuntimeException.class, () -> ResultOpaque.failingBar());
     }
 
     @Test
     void testNewFailingStruct() {
         try {
-            ResultOpaque.newFailingStruct(109);
+            ResultOpaque.failingStruct(109);
             fail("Expected ErrorStruct to be thrown");
         } catch (ErrorStruct e) {
             assertEquals(109, e.i);
@@ -45,7 +45,7 @@ class ResultOpaqueTest {
 
     @Test
     void testAssertInteger() {
-        try (ResultOpaque opaque = ResultOpaque.new_(42)) {
+        try (ResultOpaque opaque = new ResultOpaque(42)) {
             opaque.assertInteger(42);
         }
     }

@@ -36,23 +36,23 @@ public class Utf16Wrap implements AutoCloseable {
         this.handle = handle;
     }
 
-    @Override
-    public void close() {
-        try {
-            DESTROY.invokeExact(handle);
+    public Utf16Wrap(String input) {
+        try (var arena = Arena.ofConfined()) {
+            char[] inputChars = input.toCharArray();
+
+            var inputSeg = arena.allocateFrom(ValueLayout.JAVA_CHAR, inputChars);
+            this.handle = (MemorySegment) UTF16WRAP_FROM_UTF16.invokeExact(inputSeg, (long) inputChars.length);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public static Utf16Wrap fromUtf16(String input) {
-        try (var arena = Arena.ofConfined()) {
-            char[] inputChars = input.toCharArray();
-
-            var inputSeg = arena.allocateFrom(ValueLayout.JAVA_CHAR, inputChars);
-            return new Utf16Wrap((MemorySegment) UTF16WRAP_FROM_UTF16.invokeExact(inputSeg, (long) inputChars.length));
-        } catch (RuntimeException ex) {
-            throw ex;
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

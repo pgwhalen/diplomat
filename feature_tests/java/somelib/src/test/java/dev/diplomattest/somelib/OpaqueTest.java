@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class OpaqueTest {
     @Test
     void testOpaqueCreate() {
-        try (Opaque opaque = Opaque.new_()) {
+        try (Opaque opaque = new Opaque()) {
             assertNotNull(opaque.handle);
         }
     }

@@ -41,11 +41,11 @@ public class BorrowedFields {
     }
 
     static BorrowedFields fromNative(MemorySegment seg) {
-        var result = new BorrowedFields();
-        result.a = new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L) * 2).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_16LE);
-        result.b = new String(seg.get(ValueLayout.ADDRESS, 16L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 24L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
-        result.c = new String(seg.get(ValueLayout.ADDRESS, 32L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 40L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
-        return result;
+        return new BorrowedFields(
+            new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L) * 2).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_16LE),
+            new String(seg.get(ValueLayout.ADDRESS, 16L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 24L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
+            new String(seg.get(ValueLayout.ADDRESS, 32L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 40L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8)
+        );
     }
 
     MemorySegment toNative(Arena arena) {

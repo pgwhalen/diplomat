@@ -1,7 +1,7 @@
 use askama::Template;
 use diplomat_core::hir::{
     self, BackendAttrSupport, DocsUrlGenerator, Method, OutType, ReturnType, SelfType, Slice,
-    StringEncoding, StructField, SuccessType, Type, TypeContext, TypeDef, TypeId,
+    SpecialMethod, StringEncoding, StructField, SuccessType, Type, TypeContext, TypeDef, TypeId,
 };
 use std::borrow::Cow;
 
@@ -23,9 +23,9 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.static_slices = false;
     a.option = true;
 
-    a.constructors = false;
-    a.named_constructors = false;
-    a.fallible_constructors = false;
+    a.constructors = true;
+    a.named_constructors = true;
+    a.fallible_constructors = true;
     a.accessors = false;
     a.static_accessors = false;
     a.stringifiers = false;
@@ -374,10 +374,28 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             .map(|method| self.gen_native_method_info(method))
             .collect();
 
+        let constructor_methods: Vec<JavaMethodInfo> = supported_methods
+            .iter()
+            .filter(|method| {
+                method.param_self.is_none()
+                    && matches!(
+                        method.attrs.special_method,
+                        Some(SpecialMethod::Constructor)
+                    )
+            })
+            .map(|method| self.gen_method(method, None, type_name, is_error, None))
+            .collect();
+
         let companion_methods: Vec<JavaMethodInfo> = supported_methods
             .iter()
-            .filter(|method| method.param_self.is_none())
-            .map(|method| self.gen_method(method, None, type_name))
+            .filter(|method| {
+                method.param_self.is_none()
+                    && !matches!(
+                        method.attrs.special_method,
+                        Some(SpecialMethod::Constructor)
+                    )
+            })
+            .map(|method| self.gen_method(method, None, type_name, false, None))
             .collect();
 
         let self_methods: Vec<JavaMethodInfo> = supported_methods
@@ -388,7 +406,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     .as_ref()
                     .map(|self_param| (*method, &self_param.ty))
             })
-            .map(|(method, self_type)| self.gen_method(method, Some(self_type), type_name))
+            .map(|(method, self_type)| self.gen_method(method, Some(self_type), type_name, false, None))
             .collect();
 
         #[derive(Template)]
@@ -402,6 +420,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             is_error: bool,
             uses_optional: bool,
             native_methods: &'a [JavaNativeMethodInfo],
+            constructor_methods: &'a [JavaMethodInfo],
             companion_methods: &'a [JavaMethodInfo],
             self_methods: &'a [JavaMethodInfo],
         }
@@ -421,6 +440,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 is_error,
                 uses_optional,
                 native_methods: &native_methods,
+                constructor_methods: &constructor_methods,
                 companion_methods: &companion_methods,
                 self_methods: &self_methods,
             }
@@ -684,10 +704,57 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         method: &'cx Method,
         self_type: Option<&SelfType>,
         owner_type_name: &str,
+        is_error: bool,
+        struct_fields: Option<&[JavaStructFieldInfo]>,
+    ) -> JavaMethodInfo {
+        self.gen_method_inner(method, self_type, owner_type_name, is_error, struct_fields, true)
+    }
+
+    /// Like gen_method, but with `honor_constructors = false` to suppress constructor syntax.
+    fn gen_method_no_constructors(
+        &self,
+        method: &'cx Method,
+        self_type: Option<&SelfType>,
+        owner_type_name: &str,
+    ) -> JavaMethodInfo {
+        self.gen_method_inner(method, self_type, owner_type_name, false, None, false)
+    }
+
+    fn gen_method_inner(
+        &self,
+        method: &'cx Method,
+        self_type: Option<&SelfType>,
+        owner_type_name: &str,
+        is_error: bool,
+        struct_fields: Option<&[JavaStructFieldInfo]>,
+        honor_constructors: bool,
     ) -> JavaMethodInfo {
         let _guard = self.errors.set_context_method(method.name.as_str().into());
 
-        let method_name = self.formatter.fmt_method_name(method);
+        let is_constructor = honor_constructors
+            && matches!(
+                method.attrs.special_method,
+                Some(SpecialMethod::Constructor)
+            );
+        let is_named_constructor = honor_constructors
+            && matches!(
+                method.attrs.special_method,
+                Some(SpecialMethod::NamedConstructor(_))
+            );
+
+        let method_name: Cow<'_, str> = if is_constructor {
+            // Constructors use the class name, no method name needed
+            owner_type_name.into()
+        } else if is_named_constructor {
+            if let Some(SpecialMethod::NamedConstructor(ref name)) = method.attrs.special_method {
+                self.formatter.fmt_named_constructor_name(name, method)
+            } else {
+                self.formatter.fmt_method_name(method)
+            }
+        } else {
+            self.formatter.fmt_method_name(method)
+        };
+
         let abi_handle = method.abi_name.as_str().to_uppercase();
 
         let return_type_java = self.gen_return_type_java(&method.output, owner_type_name);
@@ -783,9 +850,12 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         // Build the return statement based on output type
         let return_stmt = if is_fallible || is_nullable {
-            self.gen_result_return_stmt(method, &invoke_call, &abi_handle, is_write_return)
+            self.gen_result_return_stmt(method, &invoke_call, &abi_handle, is_write_return, is_constructor, struct_fields)
         } else if is_write_return {
             format!("{invoke_call};\n            return DiplomatLib.writeToString(write);")
+        } else if is_constructor {
+            // Constructor: assign fields instead of returning
+            self.gen_constructor_assign_stmt(&method.output, &invoke_call, struct_fields)
         } else {
             match &method.output {
                 ReturnType::Infallible(SuccessType::Unit) => format!("{invoke_call};"),
@@ -816,6 +886,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         } else {
             ""
         };
+
+        // For error type constructors, prepend super() call
+        let super_call = if is_constructor && is_error {
+            format!("        super(\"{owner_type_name}\");\n")
+        } else {
+            String::new()
+        };
+
         let body = if needs_arena {
             let mut setup_lines = String::new();
             for (sp, encoding) in &string_params {
@@ -834,18 +912,57 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     }
                 }
             }
-            format!("{write_setup}        try (var arena = Arena.ofConfined()) {{\n{setup_lines}{nullable_setup}            {return_stmt}\n        }} catch (RuntimeException ex) {{\n            throw ex;\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
+            format!("{super_call}{write_setup}        try (var arena = Arena.ofConfined()) {{\n{setup_lines}{nullable_setup}            {return_stmt}\n        }} catch (RuntimeException ex) {{\n            throw ex;\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
         } else {
-            format!("{write_setup}        try {{\n{nullable_setup}            {return_stmt}\n        }} catch (RuntimeException ex) {{\n            throw ex;\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
+            format!("{super_call}{write_setup}        try {{\n{nullable_setup}            {return_stmt}\n        }} catch (RuntimeException ex) {{\n            throw ex;\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
         };
 
-        let static_kw = if is_static { "static " } else { "" };
-
-        let definition = format!(
-            "public {static_kw}{return_type_java} {method_name}({java_params_str}) {{\n{body}\n    }}"
-        );
+        // Build declaration
+        let definition = if is_constructor {
+            format!(
+                "public {owner_type_name}({java_params_str}) {{\n{body}\n    }}"
+            )
+        } else if is_named_constructor {
+            format!(
+                "public static {return_type_java} {method_name}({java_params_str}) {{\n{body}\n    }}"
+            )
+        } else {
+            let static_kw = if is_static { "static " } else { "" };
+            format!(
+                "public {static_kw}{return_type_java} {method_name}({java_params_str}) {{\n{body}\n    }}"
+            )
+        };
 
         JavaMethodInfo { definition }
+    }
+
+    /// Generate the assignment statement for a constructor (instead of return).
+    fn gen_constructor_assign_stmt(
+        &self,
+        output: &ReturnType,
+        invoke_call: &str,
+        struct_fields: Option<&[JavaStructFieldInfo]>,
+    ) -> String {
+        match output {
+            ReturnType::Infallible(SuccessType::OutType(ty)) => match ty {
+                Type::Opaque(_) => {
+                    format!("this.handle = (MemorySegment) {invoke_call};")
+                }
+                Type::Struct(_) => {
+                    let mut lines = Vec::new();
+                    lines.push(format!("var seg = (MemorySegment) {invoke_call};"));
+                    if let Some(fields) = struct_fields {
+                        for f in fields {
+                            lines.push(format!("this.{} = {};", f.field_name, f.from_native_expr));
+                        }
+                    }
+                    lines.join("\n            ")
+                }
+                _ => format!("{invoke_call};"),
+            },
+            ReturnType::Infallible(SuccessType::Unit) => format!("{invoke_call};"),
+            _ => format!("{invoke_call};"),
+        }
     }
 
     /// Generate the return statement for a fallible or nullable method.
@@ -855,6 +972,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         invoke_call: &str,
         _abi_handle: &str,
         is_write_return: bool,
+        is_constructor: bool,
+        struct_fields: Option<&[JavaStructFieldInfo]>,
     ) -> String {
         // Compute is_ok offset
         let is_ok_offset = match self.compute_result_layout(method) {
@@ -870,7 +989,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         match &method.output {
             ReturnType::Fallible(ok, err) => {
-                let ok_extract = self.gen_ok_extract(ok, is_write_return);
+                let ok_extract = self.gen_ok_extract(ok, is_write_return, is_constructor, struct_fields);
                 let err_throw = self.gen_err_throw(err);
                 lines.push("if (isOk) {".to_string());
                 lines.push(format!("    {ok_extract}"));
@@ -896,9 +1015,18 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     }
 
     /// Generate the ok-branch extraction for a fallible return.
-    fn gen_ok_extract(&self, ok: &SuccessType, is_write_return: bool) -> String {
+    fn gen_ok_extract(
+        &self,
+        ok: &SuccessType,
+        is_write_return: bool,
+        is_constructor: bool,
+        struct_fields: Option<&[JavaStructFieldInfo]>,
+    ) -> String {
         if is_write_return {
             return "return DiplomatLib.writeToString(write);".to_string();
+        }
+        if is_constructor {
+            return self.gen_ok_extract_constructor(ok, struct_fields);
         }
         match ok {
             SuccessType::Unit => "return;".to_string(),
@@ -908,6 +1036,38 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             }
             SuccessType::Write => "return DiplomatLib.writeToString(write);".to_string(),
             _ => "return;".to_string(),
+        }
+    }
+
+    /// Generate the ok-branch for a fallible constructor.
+    fn gen_ok_extract_constructor(
+        &self,
+        ok: &SuccessType,
+        struct_fields: Option<&[JavaStructFieldInfo]>,
+    ) -> String {
+        match ok {
+            SuccessType::Unit => String::new(),
+            SuccessType::OutType(ty) => match ty {
+                Type::Opaque(_) => {
+                    "this.handle = result.get(ValueLayout.ADDRESS, 0L);".to_string()
+                }
+                Type::Struct(_) => {
+                    let type_id = ty.id().expect("struct must have id");
+                    let type_name = self.formatter.fmt_type_name(type_id);
+                    let mut parts = Vec::new();
+                    parts.push(format!(
+                        "var seg = result.asSlice(0L, {type_name}.LAYOUT.byteSize());"
+                    ));
+                    if let Some(fields) = struct_fields {
+                        for f in fields {
+                            parts.push(format!("this.{} = {};", f.field_name, f.from_native_expr));
+                        }
+                    }
+                    parts.join("\n                ")
+                }
+                _ => String::new(),
+            },
+            _ => String::new(),
         }
     }
 
@@ -1214,7 +1374,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let companion_methods: Vec<JavaMethodInfo> = supported_methods
             .iter()
             .filter(|method| method.param_self.is_none())
-            .map(|method| self.gen_method(method, None, type_name))
+            .map(|method| self.gen_method_no_constructors(method, None, type_name))
             .collect();
 
         let self_methods: Vec<JavaMethodInfo> = supported_methods
@@ -1225,7 +1385,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     .as_ref()
                     .map(|self_param| (*method, &self_param.ty))
             })
-            .map(|(method, self_type)| self.gen_method(method, Some(self_type), type_name))
+            .map(|(method, self_type)| self.gen_method_no_constructors(method, Some(self_type), type_name))
             .collect();
 
         #[derive(Template)]
@@ -1308,10 +1468,37 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             .map(|method| self.gen_native_method_info(method))
             .collect();
 
+        let constructor_methods: Vec<JavaMethodInfo> = supported_methods
+            .iter()
+            .filter(|method| {
+                method.param_self.is_none()
+                    && matches!(
+                        method.attrs.special_method,
+                        Some(SpecialMethod::Constructor)
+                    )
+            })
+            .map(|method| self.gen_method(method, None, type_name, is_error, Some(&fields)))
+            .collect();
+
+        let has_zero_arg_constructor = supported_methods.iter().any(|method| {
+            method.param_self.is_none()
+                && matches!(
+                    method.attrs.special_method,
+                    Some(SpecialMethod::Constructor)
+                )
+                && method.params.is_empty()
+        });
+
         let companion_methods: Vec<JavaMethodInfo> = supported_methods
             .iter()
-            .filter(|method| method.param_self.is_none())
-            .map(|method| self.gen_method(method, None, type_name))
+            .filter(|method| {
+                method.param_self.is_none()
+                    && !matches!(
+                        method.attrs.special_method,
+                        Some(SpecialMethod::Constructor)
+                    )
+            })
+            .map(|method| self.gen_method(method, None, type_name, false, None))
             .collect();
 
         let self_methods: Vec<JavaMethodInfo> = supported_methods
@@ -1322,8 +1509,10 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     .as_ref()
                     .map(|self_param| (*method, &self_param.ty))
             })
-            .map(|(method, self_type)| self.gen_method(method, Some(self_type), type_name))
+            .map(|(method, self_type)| self.gen_method(method, Some(self_type), type_name, false, None))
             .collect();
+
+        let has_constructors = !constructor_methods.is_empty();
 
         #[derive(Template)]
         #[template(path = "java/Struct.java.jinja", escape = "none")]
@@ -1335,9 +1524,12 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             is_error: bool,
             is_out_struct: bool,
             uses_optional: bool,
+            has_zero_arg_constructor: bool,
+            has_constructors: bool,
             layout_members: &'a str,
             fields: &'a [JavaStructFieldInfo],
             native_methods: &'a [JavaNativeMethodInfo],
+            constructor_methods: &'a [JavaMethodInfo],
             companion_methods: &'a [JavaMethodInfo],
             self_methods: &'a [JavaMethodInfo],
         }
@@ -1356,9 +1548,12 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 is_error,
                 is_out_struct,
                 uses_optional,
+                has_zero_arg_constructor,
+                has_constructors,
                 layout_members: &layout_members,
                 fields: &fields,
                 native_methods: &native_methods,
+                constructor_methods: &constructor_methods,
                 companion_methods: &companion_methods,
                 self_methods: &self_methods,
             }

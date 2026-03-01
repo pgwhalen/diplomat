@@ -20,9 +20,9 @@ public class BorrowedFieldsReturning {
     }
 
     static BorrowedFieldsReturning fromNative(MemorySegment seg) {
-        var result = new BorrowedFieldsReturning();
-        result.bytes = new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
-        return result;
+        return new BorrowedFieldsReturning(
+            new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8)
+        );
     }
 
     MemorySegment toNative(Arena arena) {

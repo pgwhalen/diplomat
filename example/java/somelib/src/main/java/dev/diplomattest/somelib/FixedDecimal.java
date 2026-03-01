@@ -44,20 +44,20 @@ public class FixedDecimal implements AutoCloseable {
         this.handle = handle;
     }
 
-    @Override
-    public void close() {
+    public FixedDecimal(int v) {
         try {
-            DESTROY.invokeExact(handle);
+            this.handle = (MemorySegment) ICU4X_FIXEDDECIMAL_NEW_MV1.invokeExact(v);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public static FixedDecimal new_(int v) {
+    @Override
+    public void close() {
         try {
-            return new FixedDecimal((MemorySegment) ICU4X_FIXEDDECIMAL_NEW_MV1.invokeExact(v));
-        } catch (RuntimeException ex) {
-            throw ex;
+            DESTROY.invokeExact(handle);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

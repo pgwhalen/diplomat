@@ -6,8 +6,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class OptionStructTest {
     @Test
     void testOptionFieldsEmpty() {
-        // MyStructContainingAnOption.new_() returns both fields as None
-        MyStructContainingAnOption s = MyStructContainingAnOption.new_();
+        // new MyStructContainingAnOption() returns both fields as None
+        MyStructContainingAnOption s = new MyStructContainingAnOption();
         assertNull(s.a);
         assertNull(s.b);
     }

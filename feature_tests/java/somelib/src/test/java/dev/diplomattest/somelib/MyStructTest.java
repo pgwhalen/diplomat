@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class MyStructTest {
     @Test
     void testStructNew() {
-        MyStruct s = MyStruct.new_();
+        MyStruct s = new MyStruct();
         assertEquals(17, s.a);
         assertTrue(s.b);
         assertEquals(209, s.c & 0xFF); // c is u8 mapped to byte, interpret unsigned
@@ -17,7 +17,7 @@ class MyStructTest {
 
     @Test
     void testStructIntoA() {
-        MyStruct s = MyStruct.new_();
+        MyStruct s = new MyStruct();
         byte a = s.intoA();
         assertEquals(17, a);
     }

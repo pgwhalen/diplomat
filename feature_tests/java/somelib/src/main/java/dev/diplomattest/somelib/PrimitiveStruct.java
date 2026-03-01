@@ -43,14 +43,14 @@ public class PrimitiveStruct {
     }
 
     static PrimitiveStruct fromNative(MemorySegment seg) {
-        var result = new PrimitiveStruct();
-        result.x = (float) seg.get(ValueLayout.JAVA_FLOAT, 0L);
-        result.a = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 4L);
-        result.b = (int) seg.get(ValueLayout.JAVA_INT, 8L);
-        result.c = (long) seg.get(ValueLayout.JAVA_LONG, 16L);
-        result.d = (long) seg.get(ValueLayout.JAVA_LONG, 24L);
-        result.e = (byte) seg.get(ValueLayout.JAVA_BYTE, 32L);
-        return result;
+        return new PrimitiveStruct(
+            (float) seg.get(ValueLayout.JAVA_FLOAT, 0L),
+            (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 4L),
+            (int) seg.get(ValueLayout.JAVA_INT, 8L),
+            (long) seg.get(ValueLayout.JAVA_LONG, 16L),
+            (long) seg.get(ValueLayout.JAVA_LONG, 24L),
+            (byte) seg.get(ValueLayout.JAVA_BYTE, 32L)
+        );
     }
 
     MemorySegment toNative(Arena arena) {

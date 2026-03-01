@@ -29,10 +29,10 @@ public class Movement {
     }
 
     static Movement fromNative(MemorySegment seg) {
-        var result = new Movement();
-        result.direction = Direction.fromNative((int) seg.get(ValueLayout.JAVA_INT, 0L));
-        result.distance = (double) seg.get(ValueLayout.JAVA_DOUBLE, 8L);
-        return result;
+        return new Movement(
+            Direction.fromNative((int) seg.get(ValueLayout.JAVA_INT, 0L)),
+            (double) seg.get(ValueLayout.JAVA_DOUBLE, 8L)
+        );
     }
 
     MemorySegment toNative(Arena arena) {

@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class LocaleTest {
     @Test
     void testLocaleCreate() {
-        try (Locale locale = Locale.new_("en-US")) {
+        try (Locale locale = new Locale("en-US")) {
             assertNotNull(locale.handle);
         }
     }

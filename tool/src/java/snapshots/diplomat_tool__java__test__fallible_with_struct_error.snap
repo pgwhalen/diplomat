@@ -30,10 +30,10 @@ public class ErrorStruct extends RuntimeException {
     }
 
     static ErrorStruct fromNative(MemorySegment seg) {
-        var result = new ErrorStruct();
-        result.i = (int) seg.get(ValueLayout.JAVA_INT, 0L);
-        result.j = (int) seg.get(ValueLayout.JAVA_INT, 4L);
-        return result;
+        return new ErrorStruct(
+            (int) seg.get(ValueLayout.JAVA_INT, 0L),
+            (int) seg.get(ValueLayout.JAVA_INT, 4L)
+        );
     }
 
     MemorySegment toNative(Arena arena) {

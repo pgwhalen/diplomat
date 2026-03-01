@@ -28,10 +28,10 @@ public class Config {
     }
 
     static Config fromNative(MemorySegment seg) {
-        var result = new Config();
-        result.width = (int) seg.get(ValueLayout.JAVA_INT, 0L);
-        result.height = (int) seg.get(ValueLayout.JAVA_INT, 4L);
-        return result;
+        return new Config(
+            (int) seg.get(ValueLayout.JAVA_INT, 0L),
+            (int) seg.get(ValueLayout.JAVA_INT, 4L)
+        );
     }
 
     MemorySegment toNative(Arena arena) {

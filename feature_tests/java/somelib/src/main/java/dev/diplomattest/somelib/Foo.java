@@ -51,23 +51,23 @@ public class Foo implements AutoCloseable {
         this.handle = handle;
     }
 
-    @Override
-    public void close() {
-        try {
-            DESTROY.invokeExact(handle);
+    public Foo(String x) {
+        try (var arena = Arena.ofConfined()) {
+            byte[] xBytes = x.getBytes(StandardCharsets.UTF_8);
+
+            var xSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, xBytes);
+            this.handle = (MemorySegment) FOO_NEW.invokeExact(xSeg, (long) xBytes.length);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public static Foo new_(String x) {
-        try (var arena = Arena.ofConfined()) {
-            byte[] xBytes = x.getBytes(StandardCharsets.UTF_8);
-
-            var xSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, xBytes);
-            return new Foo((MemorySegment) FOO_NEW.invokeExact(xSeg, (long) xBytes.length));
-        } catch (RuntimeException ex) {
-            throw ex;
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

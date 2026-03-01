@@ -31,23 +31,23 @@ public class Locale implements AutoCloseable {
         this.handle = handle;
     }
 
-    @Override
-    public void close() {
-        try {
-            DESTROY.invokeExact(handle);
+    public Locale(String name) {
+        try (var arena = Arena.ofConfined()) {
+            byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+
+            var nameSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, nameBytes);
+            this.handle = (MemorySegment) ICU4X_LOCALE_NEW_MV1.invokeExact(nameSeg, (long) nameBytes.length);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public static Locale new_(String name) {
-        try (var arena = Arena.ofConfined()) {
-            byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
-
-            var nameSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, nameBytes);
-            return new Locale((MemorySegment) ICU4X_LOCALE_NEW_MV1.invokeExact(nameSeg, (long) nameBytes.length));
-        } catch (RuntimeException ex) {
-            throw ex;
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

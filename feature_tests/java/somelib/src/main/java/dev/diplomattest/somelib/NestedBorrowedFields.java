@@ -41,11 +41,11 @@ public class NestedBorrowedFields {
     }
 
     static NestedBorrowedFields fromNative(MemorySegment seg) {
-        var result = new NestedBorrowedFields();
-        result.fields = BorrowedFields.fromNative(seg.asSlice(0L, BorrowedFields.LAYOUT.byteSize()));
-        result.bounds = BorrowedFieldsWithBounds.fromNative(seg.asSlice(48L, BorrowedFieldsWithBounds.LAYOUT.byteSize()));
-        result.bounds2 = BorrowedFieldsWithBounds.fromNative(seg.asSlice(96L, BorrowedFieldsWithBounds.LAYOUT.byteSize()));
-        return result;
+        return new NestedBorrowedFields(
+            BorrowedFields.fromNative(seg.asSlice(0L, BorrowedFields.LAYOUT.byteSize())),
+            BorrowedFieldsWithBounds.fromNative(seg.asSlice(48L, BorrowedFieldsWithBounds.LAYOUT.byteSize())),
+            BorrowedFieldsWithBounds.fromNative(seg.asSlice(96L, BorrowedFieldsWithBounds.LAYOUT.byteSize()))
+        );
     }
 
     MemorySegment toNative(Arena arena) {

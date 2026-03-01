@@ -52,20 +52,20 @@ public class RenamedVectorTest implements AutoCloseable {
         this.handle = handle;
     }
 
-    @Override
-    public void close() {
+    public RenamedVectorTest() {
         try {
-            DESTROY.invokeExact(handle);
+            this.handle = (MemorySegment) NAMESPACE_VECTORTEST_NEW.invokeExact();
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    public static RenamedVectorTest new_() {
+    @Override
+    public void close() {
         try {
-            return new RenamedVectorTest((MemorySegment) NAMESPACE_VECTORTEST_NEW.invokeExact());
-        } catch (RuntimeException ex) {
-            throw ex;
+            DESTROY.invokeExact(handle);
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

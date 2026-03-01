@@ -42,13 +42,23 @@ public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} 
     public {{f.java_type}} {{f.field_name}};
     {%- endfor %}
 
+    {%- if !has_zero_arg_constructor %}
+
     public {{type_name}}() {
         {%- if is_error %}
         super("{{type_name}}");
         {%- endif %}
     }
+    {%- else %}
 
-    {%- if !fields.is_empty() %}
+    private {{type_name}}(Void _internal) {
+        {%- if is_error %}
+        super("{{type_name}}");
+        {%- endif %}
+    }
+    {%- endif %}
+
+    {%- if !fields.is_empty() && !has_constructors %}
 
     {{type_name}}({% for f in fields %}{{f.java_type}} {{f.field_name}}{% if !loop.last %}, {% endif %}{% endfor %}) {
         {%- if is_error %}
@@ -59,13 +69,31 @@ public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} 
         {%- endfor %}
     }
     {%- endif %}
+    {%- for m in constructor_methods %}
+
+    {{m.definition}}
+    {%- endfor %}
 
     static {{type_name}} fromNative(MemorySegment seg) {
+        {%- if has_constructors %}
+        {%- if has_zero_arg_constructor %}
+        var result = new {{type_name}}((Void) null);
+        {%- else %}
         var result = new {{type_name}}();
+        {%- endif %}
         {%- for f in fields %}
         result.{{f.field_name}} = {{f.from_native_expr}};
         {%- endfor %}
         return result;
+        {%- else if fields.is_empty() %}
+        return new {{type_name}}();
+        {%- else %}
+        return new {{type_name}}(
+            {%- for f in fields %}
+            {{f.from_native_expr}}{% if !loop.last %},{% endif %}
+            {%- endfor %}
+        );
+        {%- endif %}
     }
     {%- if !is_out_struct %}
 

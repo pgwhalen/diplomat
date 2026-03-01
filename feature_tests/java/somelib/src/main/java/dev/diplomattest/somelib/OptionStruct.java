@@ -33,11 +33,11 @@ public class OptionStruct {
     }
 
     static OptionStruct fromNative(MemorySegment seg) {
-        var result = new OptionStruct();
-        result.a = new OptionOpaque(seg.get(ValueLayout.ADDRESS, 0L));
-        result.b = new OptionOpaqueChar(seg.get(ValueLayout.ADDRESS, 8L));
-        result.c = (int) seg.get(ValueLayout.JAVA_INT, 16L);
-        result.d = new OptionOpaque(seg.get(ValueLayout.ADDRESS, 24L));
-        return result;
+        return new OptionStruct(
+            new OptionOpaque(seg.get(ValueLayout.ADDRESS, 0L)),
+            new OptionOpaqueChar(seg.get(ValueLayout.ADDRESS, 8L)),
+            (int) seg.get(ValueLayout.JAVA_INT, 16L),
+            new OptionOpaque(seg.get(ValueLayout.ADDRESS, 24L))
+        );
     }
 }
