@@ -4,6 +4,7 @@ import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.invoke.VarHandle;
 
 public interface TesterTrait {
     int testTraitFn(int x);
@@ -22,25 +23,25 @@ public interface TesterTrait {
         ValueLayout.ADDRESS.withName("data"),
         VTABLE_LAYOUT.withName("vtable")
     );
-    java.lang.invoke.VarHandle VH_DATA = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("data"));
-    java.lang.invoke.VarHandle VH_DESTRUCTOR = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("destructor"));
-    java.lang.invoke.VarHandle VH_SIZE = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("size"));
-    java.lang.invoke.VarHandle VH_ALIGNMENT = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("alignment"));
-    java.lang.invoke.VarHandle VH_RUN_TEST_TRAIT_FN = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("run_testTraitFn_callback"));
-    java.lang.invoke.VarHandle VH_RUN_TEST_VOID_TRAIT_FN = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("run_testVoidTraitFn_callback"));
-    java.lang.invoke.VarHandle VH_RUN_TEST_STRUCT_TRAIT_FN = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("run_testStructTraitFn_callback"));
+    VarHandle VH_DATA = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("data"));
+    VarHandle VH_DESTRUCTOR = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("destructor"));
+    VarHandle VH_SIZE = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("size"));
+    VarHandle VH_ALIGNMENT = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("alignment"));
+    VarHandle VH_RUN_TEST_TRAIT_FN = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("run_testTraitFn_callback"));
+    VarHandle VH_RUN_TEST_VOID_TRAIT_FN = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("run_testVoidTraitFn_callback"));
+    VarHandle VH_RUN_TEST_STRUCT_TRAIT_FN = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("run_testStructTraitFn_callback"));
 
     final class Statics {
         private Statics() {}
-    private static int traitRunner_testTraitFn(MemorySegment data, int x) {
+        private static int traitRunner_testTraitFn(MemorySegment data, int x) {
             TesterTrait impl_ = DiplomatLib.getCallback(data.address(), TesterTrait.class);
             return impl_.testTraitFn(x);
         }
-    private static void traitRunner_testVoidTraitFn(MemorySegment data) {
+        private static void traitRunner_testVoidTraitFn(MemorySegment data) {
             TesterTrait impl_ = DiplomatLib.getCallback(data.address(), TesterTrait.class);
             impl_.testVoidTraitFn();
         }
-    private static int traitRunner_testStructTraitFn(MemorySegment data, MemorySegment s) {
+        private static int traitRunner_testStructTraitFn(MemorySegment data, MemorySegment s) {
             TesterTrait impl_ = DiplomatLib.getCallback(data.address(), TesterTrait.class);
             return impl_.testStructTraitFn(TraitTestingStruct.fromNative(s));
         }

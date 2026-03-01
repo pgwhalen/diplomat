@@ -218,6 +218,21 @@ struct JavaOffsetConstInfo {
     declaration: String,
 }
 
+/// Java type, native (FFI) type, layout, and conversion expression for a callback param.
+struct CallbackParamTypeInfo {
+    java_type: String,
+    native_type: String,
+    layout: String,
+    conversion: String,
+}
+
+/// Java return type, layout, and whether it's void for a callback/trait return type.
+struct ReturnTypeInfo {
+    java_type: String,
+    layout: Option<String>,
+    is_void: bool,
+}
+
 /// Info about a callback parameter in a method, used to generate functional interface,
 /// runner method, upcall stub, and setup code in the method body.
 struct JavaCallbackInfo {
@@ -1668,16 +1683,17 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         for (i, cp) in params.iter().enumerate() {
             let arg_name = format!("arg{i}");
-            let (java_type, native_type, native_layout, conversion) =
-                self.callback_param_types(&cp.ty, &arg_name);
-            interface_params.push(format!("{java_type} {arg_name}"));
-            runner_native_params.push(format!("{native_type} {arg_name}"));
-            param_layouts.push(native_layout);
-            runner_arg_conversions.push(conversion);
+            let info = self.callback_param_types(&cp.ty, &arg_name);
+            interface_params.push(format!("{} {arg_name}", info.java_type));
+            runner_native_params.push(format!("{} {arg_name}", info.native_type));
+            param_layouts.push(info.layout);
+            runner_arg_conversions.push(info.conversion);
         }
 
-        let (interface_return_type, return_layout, returns_void) =
-            self.callback_return_type_input(output);
+        let return_info = self.callback_return_type_input(output);
+        let interface_return_type = return_info.java_type;
+        let return_layout = return_info.layout;
+        let returns_void = return_info.is_void;
 
         JavaCallbackInfo {
             unique_name,
@@ -1698,54 +1714,54 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         &self,
         ty: &OutType,
         arg_name: &str,
-    ) -> (String, String, String, String) {
+    ) -> CallbackParamTypeInfo {
         match ty {
             Type::Primitive(prim) => {
                 let java_type = self.formatter.fmt_primitive_as_java(*prim).to_string();
                 let layout = self.formatter.fmt_primitive_as_ffi(*prim).to_string();
-                (
-                    java_type.clone(),
-                    java_type,
+                CallbackParamTypeInfo {
+                    java_type: java_type.clone(),
+                    native_type: java_type,
                     layout,
-                    arg_name.to_string(),
-                )
+                    conversion: arg_name.to_string(),
+                }
             }
             Type::Enum(_) => {
                 let type_id = ty.id().expect("enum must have id");
                 let type_name = self.formatter.fmt_type_name(type_id).to_string();
-                (
-                    type_name.clone(),
-                    "int".to_string(),
-                    "ValueLayout.JAVA_INT".to_string(),
-                    format!("{type_name}.fromNative({arg_name})"),
-                )
+                CallbackParamTypeInfo {
+                    java_type: type_name.clone(),
+                    native_type: "int".to_string(),
+                    layout: "ValueLayout.JAVA_INT".to_string(),
+                    conversion: format!("{type_name}.fromNative({arg_name})"),
+                }
             }
             Type::Struct(_) => {
                 let type_id = ty.id().expect("struct must have id");
                 let type_name = self.formatter.fmt_type_name(type_id).to_string();
-                (
-                    type_name.clone(),
-                    "MemorySegment".to_string(),
-                    format!("{type_name}.LAYOUT"),
-                    format!("{type_name}.fromNative({arg_name})"),
-                )
+                CallbackParamTypeInfo {
+                    java_type: type_name.clone(),
+                    native_type: "MemorySegment".to_string(),
+                    layout: format!("{type_name}.LAYOUT"),
+                    conversion: format!("{type_name}.fromNative({arg_name})"),
+                }
             }
             Type::Opaque(_) => {
                 let type_id = ty.id().expect("opaque must have id");
                 let type_name = self.formatter.fmt_type_name(type_id).to_string();
-                (
-                    type_name.clone(),
-                    "MemorySegment".to_string(),
-                    "ValueLayout.ADDRESS".to_string(),
-                    format!("new {type_name}({arg_name})"),
-                )
+                CallbackParamTypeInfo {
+                    java_type: type_name.clone(),
+                    native_type: "MemorySegment".to_string(),
+                    layout: "ValueLayout.ADDRESS".to_string(),
+                    conversion: format!("new {type_name}({arg_name})"),
+                }
             }
-            _ => (
-                "Object".to_string(),
-                "MemorySegment".to_string(),
-                "ValueLayout.ADDRESS".to_string(),
-                arg_name.to_string(),
-            ),
+            _ => CallbackParamTypeInfo {
+                java_type: "Object".to_string(),
+                native_type: "MemorySegment".to_string(),
+                layout: "ValueLayout.ADDRESS".to_string(),
+                conversion: arg_name.to_string(),
+            },
         }
     }
 
@@ -1753,40 +1769,64 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     fn callback_return_type_input(
         &self,
         output: &ReturnType<InputOnly>,
-    ) -> (String, Option<String>, bool) {
+    ) -> ReturnTypeInfo {
         match output {
             ReturnType::Infallible(success) => match success {
-                SuccessType::Unit => ("void".to_string(), None, true),
+                SuccessType::Unit => ReturnTypeInfo {
+                    java_type: "void".to_string(),
+                    layout: None,
+                    is_void: true,
+                },
                 SuccessType::OutType(ty) => self.type_to_return_info(ty),
-                _ => ("void".to_string(), None, true),
+                _ => ReturnTypeInfo {
+                    java_type: "void".to_string(),
+                    layout: None,
+                    is_void: true,
+                },
             },
-            _ => ("void".to_string(), None, true),
+            _ => ReturnTypeInfo {
+                java_type: "void".to_string(),
+                layout: None,
+                is_void: true,
+            },
         }
     }
 
-    /// Helper: get (java_type, layout, is_void) for a type used as callback/trait return.
-    fn type_to_return_info<P: hir::TyPosition>(&self, ty: &Type<P>) -> (String, Option<String>, bool) {
+    /// Helper: get return type info for a type used as callback/trait return.
+    fn type_to_return_info<P: hir::TyPosition>(&self, ty: &Type<P>) -> ReturnTypeInfo {
         match ty {
             Type::Primitive(prim) => {
                 let java_type = self.formatter.fmt_primitive_as_java(*prim).to_string();
                 let layout = self.formatter.fmt_primitive_as_ffi(*prim).to_string();
-                (java_type, Some(layout), false)
+                ReturnTypeInfo {
+                    java_type,
+                    layout: Some(layout),
+                    is_void: false,
+                }
             }
             Type::Enum(_) => {
                 let type_id = ty.id().expect("enum must have id");
                 let type_name = self.formatter.fmt_type_name(type_id).to_string();
-                (type_name, Some("ValueLayout.JAVA_INT".to_string()), false)
+                ReturnTypeInfo {
+                    java_type: type_name,
+                    layout: Some("ValueLayout.JAVA_INT".to_string()),
+                    is_void: false,
+                }
             }
             Type::Struct(_) => {
                 let type_id = ty.id().expect("struct must have id");
                 let type_name = self.formatter.fmt_type_name(type_id).to_string();
-                (
-                    type_name.clone(),
-                    Some(format!("{type_name}.LAYOUT")),
-                    false,
-                )
+                ReturnTypeInfo {
+                    java_type: type_name.clone(),
+                    layout: Some(format!("{type_name}.LAYOUT")),
+                    is_void: false,
+                }
             }
-            _ => ("Object".to_string(), Some("ValueLayout.ADDRESS".to_string()), false),
+            _ => ReturnTypeInfo {
+                java_type: "Object".to_string(),
+                layout: Some("ValueLayout.ADDRESS".to_string()),
+                is_void: false,
+            },
         }
     }
 
@@ -2048,23 +2088,23 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         // Build VarHandles for data and vtable fields
         let mut var_handles = Vec::new();
-        var_handles.push(format!(
-            "    java.lang.invoke.VarHandle VH_DATA = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"data\"));"
-        ));
-        var_handles.push(format!(
-            "    java.lang.invoke.VarHandle VH_DESTRUCTOR = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"vtable\"), MemoryLayout.PathElement.groupElement(\"destructor\"));"
-        ));
-        var_handles.push(format!(
-            "    java.lang.invoke.VarHandle VH_SIZE = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"vtable\"), MemoryLayout.PathElement.groupElement(\"size\"));"
-        ));
-        var_handles.push(format!(
-            "    java.lang.invoke.VarHandle VH_ALIGNMENT = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"vtable\"), MemoryLayout.PathElement.groupElement(\"alignment\"));"
-        ));
+        var_handles.push(
+            "    VarHandle VH_DATA = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"data\"));".to_string()
+        );
+        var_handles.push(
+            "    VarHandle VH_DESTRUCTOR = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"vtable\"), MemoryLayout.PathElement.groupElement(\"destructor\"));".to_string()
+        );
+        var_handles.push(
+            "    VarHandle VH_SIZE = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"vtable\"), MemoryLayout.PathElement.groupElement(\"size\"));".to_string()
+        );
+        var_handles.push(
+            "    VarHandle VH_ALIGNMENT = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"vtable\"), MemoryLayout.PathElement.groupElement(\"alignment\"));".to_string()
+        );
         for method in &trait_methods {
             let method_name = self.formatter.fmt_trait_method_name(method);
             let vh_name = format!("VH_RUN_{}", method_name.to_shouty_snake_case());
             var_handles.push(format!(
-                "    java.lang.invoke.VarHandle {vh_name} = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"vtable\"), MemoryLayout.PathElement.groupElement(\"run_{method_name}_callback\"));"
+                "    VarHandle {vh_name} = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"vtable\"), MemoryLayout.PathElement.groupElement(\"run_{method_name}_callback\"));"
             ));
         }
 
@@ -2073,7 +2113,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         statics_class_body.push("        private Statics() {}".to_string());
         // Add runners as static methods in the Statics class
         for runner in &runners {
-            statics_class_body.push(runner.replace("\n    ", "\n        "));
+            statics_class_body.push(format!("    {}", runner.replace("\n    ", "\n        ")));
         }
         // Add MH + upcall static fields + initialization
         for method in &trait_methods {
@@ -2081,14 +2121,16 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             let mh_name = format!("MH_{}", method_name.to_shouty_snake_case());
             let upcall_name = format!("UPCALL_{method_name}");
 
-            let (_, return_layout, returns_void) = self.callback_return_type_input(&method.output);
+            let return_info = self.callback_return_type_input(&method.output);
+            let return_layout = return_info.layout;
+            let returns_void = return_info.is_void;
 
             let mut mt_params = vec!["MemorySegment.class".to_string()];
             let mut fd_params = vec!["ValueLayout.ADDRESS".to_string()];
             for cp in method.params.iter() {
                 mt_params.push(self.callback_param_method_type_class(&cp.ty));
-                let (_, _, layout, _) = self.callback_param_types(&cp.ty, "x");
-                fd_params.push(layout);
+                let info = self.callback_param_types(&cp.ty, "x");
+                fd_params.push(info.layout);
             }
             let mt_return = if returns_void {
                 "void.class".to_string()
@@ -2130,7 +2172,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         body.push_str("import java.lang.foreign.*;\n");
         body.push_str("import java.lang.invoke.MethodHandle;\n");
         body.push_str("import java.lang.invoke.MethodHandles;\n");
-        body.push_str("import java.lang.invoke.MethodType;\n\n");
+        body.push_str("import java.lang.invoke.MethodType;\n");
+        body.push_str("import java.lang.invoke.VarHandle;\n\n");
         body.push_str(&format!("public interface {trait_name} {{\n"));
         for m in &interface_methods {
             body.push_str(&format!("{m}\n"));
@@ -2179,8 +2222,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         method_name: &str,
         trait_name: &str,
     ) -> (String, String) {
-        let (_, _return_layout, returns_void) =
-            self.callback_return_type_input(&method.output);
+        let return_info = self.callback_return_type_input(&method.output);
+        let returns_void = return_info.is_void;
 
         // Build runner params
         let mut runner_params = vec!["MemorySegment data".to_string()];
@@ -2194,11 +2237,10 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 .as_ref()
                 .map(|n| n.as_str().to_lower_camel_case())
                 .unwrap_or_else(|| format!("arg{i}"));
-            let (_java_type, native_type, native_layout, conversion) =
-                self.callback_param_types(&cp.ty, &arg_name);
-            runner_params.push(format!("{native_type} {arg_name}"));
-            arg_conversions.push(conversion);
-            native_param_layouts.push(native_layout);
+            let info = self.callback_param_types(&cp.ty, &arg_name);
+            runner_params.push(format!("{} {arg_name}", info.native_type));
+            arg_conversions.push(info.conversion);
+            native_param_layouts.push(info.layout);
             mt_params.push(self.callback_param_method_type_class(&cp.ty));
         }
 
