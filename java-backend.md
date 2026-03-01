@@ -11,17 +11,22 @@ The Java backend uses the **Java FFM (Foreign Function & Memory) API** (`java.la
 - `tool/src/java/mod.rs` — backend entry point (`run()`, `attr_support()`, `ItemGenContext` codegen)
 - `tool/src/java/formatter.rs` — Java name/type formatting, keyword avoidance
 - `tool/templates/java/Opaque.java.jinja` — Askama template for opaque type classes
-- `tool/templates/java/Lib.java.jinja` — `DiplomatLib.java` runtime support (string view layout)
+- `tool/templates/java/Struct.java.jinja` — Askama template for struct type classes
+- `tool/templates/java/Lib.java.jinja` — `DiplomatLib.java` runtime support (write buffer, string view layout)
 - `example/java/somelib/` — Gradle-based example project (JDK 25, JUnit 5)
 - `example/config.toml` — `[java]` section with `domain` and `dylib-name`
+- `feature_tests/java/somelib/` — Gradle-based feature test project (JDK 25, JUnit 5)
 - `tool/src/java/snapshots/` — insta snapshot tests
 
 ## Commands
 
 ```bash
 cargo make gen-java-example    # Regenerate Java bindings for example/
+cargo make gen-java-feature    # Regenerate Java bindings for feature_tests/
 cargo make test-java-example   # Build native lib + run Gradle tests
-cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tests
+cargo make test-java-feature   # Build native lib + run Gradle feature tests
+cargo make test-java           # Run both example and feature tests
+cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tests (14 tests)
 ```
 
 ## Current Status
@@ -30,57 +35,81 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 
 - **Opaque types** with `AutoCloseable` / destroy via FFM downcall handles
 - **Static factory methods** (constructors returning `Box<Self>`)
-- **Instance methods** with `&self`
-- **Primitive parameters and returns** (all integer sizes, float, double, boolean)
+- **Instance methods** with `&self` (opaque and struct)
+- **Primitive parameters and returns** (all integer sizes, float, double, boolean, char)
 - **Opaque parameters and returns** (passed as `MemorySegment`)
 - **`&DiplomatStr` parameters** (Java `String` converted to UTF-8 bytes via `Arena`)
+- **`&DiplomatStr16` parameters** (Java `String` converted to UTF-16 char array via `Arena`)
 - **Enum parameters and returns** (as raw `int` — no Java enum class generated)
+- **Structs** — generated as POJOs with FFM `StructLayout`, `fromNative`/`toNative` conversion, C ABI padding
+  - Primitive fields (all sizes), nested struct fields, boolean fields
+  - Structs as method parameters (passed by value via `toNative`)
+  - Structs as return types (received via `SegmentAllocator` + `fromNative`)
+  - Struct self methods (consuming `self` passed by value)
+- **Fallible returns** (`Result<T, E>`) — result layout with `is_ok` discriminant, success extracted or error thrown
+  - Unit errors (`Result<T, ()>`) → `throw new RuntimeException("Diplomat error")`
+  - Struct errors (`Result<T, ErrorStruct>`) → struct `extends RuntimeException`, thrown directly
+  - Opaque errors (`Result<T, Box<ErrorOpaque>>`) → opaque `extends RuntimeException`, thrown directly
+  - Enum errors (`Result<T, ErrorEnum>`) → thrown as `RuntimeException` with error value in message
+  - Primitive error values (`Result<(), i32>`) → thrown as `RuntimeException` with value in message
+  - All success types: `Unit`, `OutType` (opaque/struct/primitive), `Write` (string)
+- **Nullable returns** (`Option<T>`) — wrapped in `Optional<T>` with boxed primitives
+- **Write returns** (`DiplomatWrite` / stringifiers) — write buffer allocated, converted to `String`
+- **Fallible + Write combination** (`Result<String, E>`) — write buffer destroyed on error path
+- **Optional opaque parameters** — nullable `MemorySegment` passed as `MemorySegment.NULL` when absent
+- **Optional opaque returns** — `Optional<T>` wrapping null-checked `MemorySegment`
+- **Error types** — structs and opaques with `#[diplomat::attr(auto, error)]` extend `RuntimeException`
 - **Method name renaming** via `#[diplomat::attr]`
 - **Java keyword collision avoidance**
+- **Feature tests** — `feature_tests/java/somelib/` Gradle project with JUnit 5 tests
 
 ### What doesn't work yet
 
-- Structs — completely skipped in `run()` (only `TypeDef::Opaque` is handled)
 - Enums as proper Java enum classes — currently passed as raw `int`
-- Fallible return types (Result) — methods filtered out (e.g., `FixedDecimalFormatter` constructor)
-- Nullable return types (Option) — filtered out
-- Write return type (stringifiers) — filtered out
-- Slices other than `&str` — not supported
+- Struct fields of unsupported types (enums, slices, `Option<T>`) — emit `null` placeholder
+- Cyclic struct references in result layouts — circular static class initialization in Java (e.g., `CyclicStructA` ↔ `CyclicStructB` when result layouts create cross-type references)
+- Slices other than `&str` / `&DiplomatStr16` — not supported
 - Callbacks / traits
 - Iterators / iterables
 - Named constructors / accessors / comparators / indexing
-- UTF-16 strings
-- Feature tests — no `feature_tests/java/` directory exists yet
 - Java is not yet included in CI meta-tasks (`test-example`, `test-feature`, `test-all`)
 
 ### `attr_support()` flags
 
-In `tool/src/java/mod.rs`, nearly everything is `false` except `method_overloading`. Flags should be flipped to `true` as features are implemented.
+In `tool/src/java/mod.rs`, the following are set to `true`: `method_overloading`, `utf8_strings`, `utf16_strings`, `non_exhaustive_structs`, `option`, `custom_errors`. All others are `false`. Flags should be flipped to `true` as features are implemented.
 
 ## Feature Checklist
 
 Copied from `book/src/developer.md` — check off features as they are added to the Java backend:
 
 - [x] **primitive types**: All integer sizes, float, double, boolean mapped to Java equivalents
-- [ ] **opaque types**:
+- [x] **opaque types**:
   - [x] basic definition
   - [x] return a boxed opaque (with `AutoCloseable` / destroy cleanup)
   - [x] as self parameter
   - [x] as another parameter
-- [ ] **structs**
+- [ ] **structs**:
+  - [x] basic definition (primitive fields, nested struct fields)
+  - [x] as return type
+  - [x] as parameter
+  - [x] struct self methods
+  - [ ] enum fields
+  - [ ] slice fields
+  - [ ] `Option<T>` fields
 - [ ] **enums** (as proper Java enum classes, not raw `int`)
-- [ ] **writeable** (DiplomatWrite / stringifiers)
+- [x] **writeable** (DiplomatWrite / stringifiers)
 - [ ] **slices**:
   - [ ] primitive slices
-  - [x] str slices (`&DiplomatStr` mapped to Java `String`)
+  - [x] str slices (`&DiplomatStr` mapped to Java `String` via UTF-8)
+  - [x] str16 slices (`&DiplomatStr16` mapped to Java `String` via UTF-16)
   - [ ] owned slices
   - [ ] slices of strings
   - [ ] strings
 - [ ] **borrows** — ensure managed objects aren't cleaned up while something depends on them
   - [ ] borrows of parameters
   - [ ] in struct fields
-- [ ] **nullables** — returning Option types
-- [ ] **fallibles** — returning Result types (discriminated union)
+- [x] **nullables** — returning `Option` types as `Optional<T>`
+- [x] **fallibles** — returning `Result` types (discriminated union with error throwing)
 
 ## `BackendAttrSupport` Flag Checklist
 
@@ -99,6 +128,16 @@ Cross-backend comparison is provided where relevant. The Kotlin backend (JNA-bas
 
 - [x] **`method_overloading`** — Java fully supports compile-time method overloading (same method name, different parameter lists). Already set to `true`. This is also useful for generating overloads that simulate default parameter values (see `default_args` below).
 
+- [x] **`utf8_strings`** — The Java backend converts `String` parameters to UTF-8 bytes via `getBytes(StandardCharsets.UTF_8)` and passes them to native code with `Arena.allocateFrom()`.
+
+- [x] **`utf16_strings`** — Java `String` parameters are converted to UTF-16 char arrays via `toCharArray()` and passed with `Arena.allocateFrom(ValueLayout.JAVA_CHAR, chars)`.
+
+- [x] **`non_exhaustive_structs`** — Java classes are inherently non-exhaustive — adding fields doesn't break binary compatibility. Structs are generated as regular classes (not records).
+
+- [x] **`option`** — `Option<T>` return types are wrapped in `Optional<T>` with boxed primitives. Optional opaque parameters pass `MemorySegment.NULL` when absent.
+
+- [x] **`custom_errors`** — Struct and opaque error types extend `RuntimeException` and are thrown directly from fallible methods. Enum errors are thrown as `RuntimeException` with the error value in the message (pending proper Java enum class generation).
+
 ---
 
 ### TODO
@@ -107,9 +146,9 @@ Cross-backend comparison is provided where relevant. The Kotlin backend (JNA-bas
 
 - [ ] **`named_constructors`** — Generate named static factory methods like `Foo.of(...)` or `Foo.fromBar(...)`. Java's standard library heavily uses this pattern (`List.of()`, `Optional.of()`, `Path.of()`). Only Dart currently supports this among existing backends. Implementation is straightforward: when a method is marked `named_constructor = "make"`, generate `public static Foo make(...)`. This is essentially what the backend already does for any static method returning `Self` — the attr just controls the name.
 
-- [ ] **`fallible_constructors`** — Allow constructors to return `Result<Box<Self>, E>`. In Java, constructors and factory methods can throw checked or unchecked exceptions, making this very natural. For example, `public static Foo create(...) throws SomeException`. Dart, JS, and nanobind support this. The Kotlin backend does not yet, but Java's exception model makes this arguably easier than in Kotlin. Requires implementing fallible return types (`Result`) first.
+- [ ] **`fallible_constructors`** — Allow constructors to return `Result<Box<Self>, E>`. In Java, constructors and factory methods can throw checked or unchecked exceptions, making this very natural. For example, `public static Foo create(...) throws SomeException`. Dart, JS, and nanobind support this. The Kotlin backend does not yet, but Java's exception model makes this arguably easier than in Kotlin. The backend already supports fallible returns — this flag just needs to be enabled and tested.
 
-- [ ] **`stringifiers`** — Map the `#[diplomat::attr(*, stringifier)]` method to a `toString()` override. Every Java class inherits `Object.toString()`, and overriding it is deeply idiomatic — it's automatically called by string concatenation (`"Value: " + obj`), `System.out.println()`, `String.format()`, and logging frameworks. The Kotlin backend already implements this as `override fun toString(): String`. The Dart backend maps it to `toString()` as well. Requires implementing `DiplomatWrite`-based returns first (the stringifier method returns via `&mut DiplomatWrite`), which is a prerequisite shared with other write-return features.
+- [ ] **`stringifiers`** — Map the `#[diplomat::attr(*, stringifier)]` method to a `toString()` override. Every Java class inherits `Object.toString()`, and overriding it is deeply idiomatic — it's automatically called by string concatenation (`"Value: " + obj`), `System.out.println()`, `String.format()`, and logging frameworks. The Kotlin backend already implements this as `override fun toString(): String`. The Dart backend maps it to `toString()` as well. The backend already supports `DiplomatWrite`-based returns — this flag just needs special-case naming.
 
 - [ ] **`comparators`** — Map the `comparison` attribute to `Comparable<T>` implementation with a `compareTo()` method. Java's `Comparable<T>` interface is a standard part of the language, enabling natural use with `Collections.sort()`, `TreeMap`, `TreeSet`, and `Arrays.sort()`. Dart and C++ already support this. The Kotlin backend does *not* yet enable this flag, but Java's strongly-typed `Comparable<T>` makes it a clean fit. The Diplomat `comparison` method returns `std::cmp::Ordering`, which maps directly to Java's `compareTo()` contract (negative/zero/positive int).
 
@@ -119,21 +158,11 @@ Cross-backend comparison is provided where relevant. The Kotlin backend (JNA-bas
 
 - [ ] **`indexing`** — Generate a `get(indexType)` method for the `indexer` attribute. Java does **not** support `[]` operator overloading — bracket indexing only works on built-in arrays. The idiomatic alternative is a `get(int index)` method, which is the convention used by `java.util.List` and all standard Java collection classes. The Kotlin backend uses `operator fun get()` for bracket notation; Java must use a named method instead. Supported by Kotlin, Dart, C++, and nanobind. Despite lacking operator syntax, the named-method approach is still valuable and idiomatic.
 
-- [ ] **`option`** — Support `Option<Struct>` and `Option<Primitive>` parameters. Java has `Optional<T>` (since JDK 8) but more commonly uses nullable references for optional values. For primitive optional parameters, boxed types (`Integer`, `Long`, etc.) can represent nullability. All other backends except C support this. The implementation requires generating null-checking logic and conversion between Java nullables and Diplomat's `DiplomatOption` representation.
-
 - [ ] **`callbacks`** — Allow callback function parameters. Java supports callbacks via functional interfaces (`@FunctionalInterface`) and, for FFM API interop, the `Linker.upcallStub()` mechanism that converts a Java `MethodHandle` into a native function pointer (`MemorySegment`). This is more complex than the Kotlin backend's JNA `Callback` interface approach but is fully supported by the FFM API. Kotlin, C++, C, and nanobind support this. Implementation involves generating functional interfaces for each callback signature and creating upcall stubs at call sites.
 
 - [ ] **`traits`** — Generate Java interfaces from Diplomat trait definitions. Java interfaces are the natural analog of Rust traits. Single-method traits can use `@FunctionalInterface` for lambda syntax. Multi-method traits become regular interfaces. The FFM upcall stub mechanism handles the native-to-Java invocation path. The Kotlin backend implements traits using JNA callback interfaces and vtable wrappers; the Java FFM equivalent requires `Linker.upcallStub()` for each method. Kotlin and C support traits; C++ and nanobind do not.
 
-- [ ] **`custom_errors`** — Mark a type as valid for use in `Result<T, E>` error positions. In Java, this means generating the error type as extending `Exception` (or `RuntimeException`), so fallible methods can `throw` it. The Kotlin backend implements this by making the opaque type extend `Exception("Rust error result for TypeName")`. The same pattern works naturally in Java. Only Kotlin currently supports this among non-C backends. Requires implementing fallible returns first.
-
 - [ ] **`owned_slices`** — Support for Rust-allocated slices that transfer ownership to the foreign side. The FFM API can manage these via `MemorySegment` with custom cleanup actions (using `Arena` or manual `MemorySegment.ofAddress()` with deallocation). The Kotlin backend wraps these in an `OwnedSlice` class with a raw pointer and length. Kotlin, Dart, and JS support this. Requires implementing basic slice support first.
-
-- [ ] **`non_exhaustive_structs`** — Declare that adding fields to a struct is not a breaking change. Java classes are inherently non-exhaustive — adding fields to a class doesn't break binary compatibility for existing callers (Java's classfile format handles this). This is *not* true for Java `record` types (which have a fixed canonical constructor), but the Java backend should generate structs as regular classes, not records. Kotlin, Dart, and JS all set this flag to `true`. This is a straightforward flag flip once structs are implemented; no special codegen needed.
-
-- [ ] **`utf8_strings`** — Indicate that the backend works with UTF-8 string data natively. The Java backend already converts `String` parameters to UTF-8 bytes via `getBytes(StandardCharsets.UTF_8)` and passes them to native code. While Java's `String` type is internally UTF-16, the FFM API's `Arena.allocateFrom(String)` converts to UTF-8 automatically. C, C++, and nanobind set this to `true`. Setting this flag tells Diplomat the backend can handle `&DiplomatStr` (UTF-8) parameters directly, which the Java backend already does.
-
-- [ ] **`utf16_strings`** — Indicate that the backend works with UTF-16 string data. Java's `String` is natively UTF-16, so `&DiplomatStr16` parameters can be passed by directly copying the string's underlying `char[]` data via `MemorySegment`. All existing backends set this to `true`. Implementation is straightforward once the UTF-8 path is solid — use `StandardCharsets.UTF_16LE` for encoding.
 
 - [ ] **`defaults`** — Support for the `default` attribute on types and enum variants, indicating a type has a default/zero state. C++ and nanobind support this. Once enums are implemented as proper Java enum classes, a default variant can be marked (e.g., via a `static` field or documentation convention). Low priority but straightforward.
 
@@ -141,7 +170,7 @@ Cross-backend comparison is provided where relevant. The Kotlin backend (JNA-bas
 
 - [ ] **`generate_mocking_interface`** — Generate an interface extracted from an opaque type's methods, allowing test mocking. Only Kotlin supports this today. In Java, this is extremely natural and useful — Java's testing ecosystem (Mockito, EasyMock) relies heavily on interfaces for mocking. The implementation mirrors Kotlin's: generate an internal `interface FooInterface` with all instance methods, then have the opaque class `implements FooInterface`. This allows test code to mock the interface without needing a native library.
 
-- [ ] **`free_functions`** — Support generating functions not associated with any type. Java requires all functions to live inside a class, but the idiomatic pattern is a utility class with static methods (e.g., `Collections.sort()`, `Arrays.asList()`). The generated `DiplomatLib` class or a dedicated utility class can host these. C, C++, and nanobind support this. The Java backend currently only processes `TypeDef::Opaque` in its `run()` loop and skips free functions.
+- [ ] **`free_functions`** — Support generating functions not associated with any type. Java requires all functions to live inside a class, but the idiomatic pattern is a utility class with static methods (e.g., `Collections.sort()`, `Arrays.asList()`). The generated `DiplomatLib` class or a dedicated utility class can host these. C, C++, and nanobind support this.
 
 - [ ] **`static_slices`** — Support `&'static` slice parameters. These are slices with the `'static` lifetime, meaning the data lives for the entire program. In Java, this can be handled by allocating a `MemorySegment` in the global arena (`Arena.global()`), which is never freed. Kotlin, C, C++, and nanobind support this. Requires basic slice support first.
 
