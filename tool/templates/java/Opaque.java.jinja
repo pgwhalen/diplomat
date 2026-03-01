@@ -6,8 +6,17 @@ import java.nio.charset.StandardCharsets;
 {%- if uses_optional %}
 import java.util.Optional;
 {%- endif %}
+{%- if special_methods.iterator_type.is_some() || special_methods.iterable_type.is_some() %}
+import java.util.Iterator;
+{%- endif %}
+{%- if special_methods.iterator_type.is_some() %}
+import java.util.NoSuchElementException;
+{%- endif %}
 
-public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} implements AutoCloseable {
+public class {{type_name}}
+    {%- if is_error %} extends RuntimeException{% endif %} implements AutoCloseable
+    {%- if let Some(t) = special_methods.iterator_type.as_deref() %}, Iterator<{{t}}>{% endif %}
+    {%- if let Some(t) = special_methods.iterable_item_type.as_deref() %}, Iterable<{{t}}>{% endif %} {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
@@ -38,12 +47,18 @@ public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} 
     }
 
     final MemorySegment handle;
+{%- if special_methods.iterator_type.is_some() %}
+    private {{special_methods.iterator_type.as_deref().unwrap()}} nextVal;
+{%- endif %}
 
     {{type_name}}(MemorySegment handle) {
         {%- if is_error %}
         super("{{type_name}}");
         {%- endif %}
         this.handle = handle;
+{%- if special_methods.iterator_type.is_some() %}
+        this.nextVal = nextInternal();
+{%- endif %}
     }
     {%- for m in constructor_methods %}
 
@@ -66,4 +81,31 @@ public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} 
 
     {{m.definition}}
     {%- endfor %}
+{%- if let Some(iter_ty) = special_methods.iterator_type.as_deref() %}
+
+    @Override
+    public boolean hasNext() {
+        return nextVal != null;
+    }
+
+    @Override
+    public {{iter_ty}} next() {
+        {{iter_ty}} returnVal = nextVal;
+        if (returnVal == null) {
+            throw new NoSuchElementException();
+        }
+        nextVal = nextInternal();
+        return returnVal;
+    }
+{%- endif %}
+{%- if let Some(idx) = special_methods.indexer_type.as_ref() %}
+
+    public {{idx.item_type}} get({{idx.index_type}} index) {
+        {{idx.item_type}} returnVal = getInternal(index);
+        if (returnVal == null) {
+            throw new IndexOutOfBoundsException("Index " + index + " is out of bounds.");
+        }
+        return returnVal;
+    }
+{%- endif %}
 }

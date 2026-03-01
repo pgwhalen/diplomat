@@ -3,7 +3,6 @@ package dev.diplomattest.somelib;
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 public class RenamedVectorTest implements AutoCloseable {
 
@@ -81,14 +80,14 @@ public class RenamedVectorTest implements AutoCloseable {
         }
     }
 
-    public Optional<Double> get(long idx) {
+    private Double getInternal(long idx) {
         try (var arena = Arena.ofConfined()) {
             var result = (MemorySegment) NAMESPACE_VECTORTEST_GET.invokeExact((SegmentAllocator) arena, handle, idx);
             var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 8L);
             if (isOk) {
-                return Optional.of((double) result.get(ValueLayout.JAVA_DOUBLE, 0L));
+                return (double) result.get(ValueLayout.JAVA_DOUBLE, 0L);
             } else {
-                return Optional.empty();
+                return null;
             }
         } catch (RuntimeException ex) {
             throw ex;
@@ -105,5 +104,13 @@ public class RenamedVectorTest implements AutoCloseable {
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
+    }
+
+    public Double get(long index) {
+        Double returnVal = getInternal(index);
+        if (returnVal == null) {
+            throw new IndexOutOfBoundsException("Index " + index + " is out of bounds.");
+        }
+        return returnVal;
     }
 }

@@ -31,9 +31,9 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.static_accessors = false;
     a.stringifiers = false;
     a.comparators = false;
-    a.iterators = false;
-    a.iterables = false;
-    a.indexing = false;
+    a.iterators = true;
+    a.iterables = true;
+    a.indexing = true;
     a.callbacks = false;
     a.traits = false;
     a.custom_errors = true;
@@ -203,6 +203,23 @@ struct JavaEnumVariantInfo {
     discriminant: isize,
 }
 
+#[derive(Default)]
+struct JavaSpecialMethods {
+    /// Boxed yield type for Iterator<T> (e.g. "Byte", "AttrOpaque1Renamed")
+    iterator_type: Option<String>,
+    /// Indexer info for get() wrapper
+    indexer_type: Option<JavaIndexerType>,
+    /// Concrete iterator class name (e.g. "MyIterator")
+    iterable_type: Option<String>,
+    /// Boxed item type for Iterable<T> (resolved from the iterator's yield type)
+    iterable_item_type: Option<String>,
+}
+
+struct JavaIndexerType {
+    index_type: String,
+    item_type: String,
+}
+
 /// Alignment helper: compute (size, alignment) for an OutType in the C ABI.
 fn out_type_size_align(ty: &OutType, formatter: &JavaFormatter) -> (usize, usize) {
     field_size_align_generic(ty, formatter)
@@ -362,15 +379,77 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             .filter(|m| !m.attrs.disable && self.is_method_supported(m))
             .collect();
 
+        // Scan for special methods (iterator, iterable, indexer)
+        let mut special_methods = JavaSpecialMethods::default();
+        for method in &supported_methods {
+            match &method.attrs.special_method {
+                Some(SpecialMethod::Iterator) => {
+                    // Iterator can return Nullable(OutType) or Infallible(OutType(Opaque { optional }))
+                    // Use special_method_presence.iterator which has the cleaned-up type
+                    if let Some(SuccessType::OutType(item_ty)) =
+                        ty.special_method_presence.iterator.as_ref()
+                    {
+                        special_methods.iterator_type =
+                            Some(self.gen_out_type_java_boxed(item_ty, type_name));
+                    }
+                }
+                Some(SpecialMethod::Iterable) => {
+                    // The return type is the concrete iterator class
+                    if let ReturnType::Infallible(SuccessType::OutType(Type::Opaque(op))) =
+                        &method.output
+                    {
+                        let iter_type_name =
+                            self.formatter.fmt_type_name(op.tcx_id.into()).to_string();
+                        special_methods.iterable_type = Some(iter_type_name);
+                        // Resolve the iterator's yield type to get Iterable<ItemType>
+                        let iter_def = self.tcx.resolve_opaque(op.tcx_id);
+                        if let Some(SuccessType::OutType(item_ty)) =
+                            iter_def.special_method_presence.iterator.as_ref()
+                        {
+                            special_methods.iterable_item_type =
+                                Some(self.gen_out_type_java_boxed(item_ty, type_name));
+                        }
+                    }
+                }
+                Some(SpecialMethod::Indexer) => {
+                    if let ReturnType::Nullable(SuccessType::OutType(ty)) = &method.output {
+                        let item_type = self.gen_out_type_java_boxed(ty, type_name);
+                        let index_type = method
+                            .params
+                            .first()
+                            .map(|p| match &p.ty {
+                                Type::Primitive(prim) => self
+                                    .formatter
+                                    .fmt_primitive_as_java(*prim)
+                                    .to_string(),
+                                _ => "long".to_string(),
+                            })
+                            .unwrap_or_else(|| "long".to_string());
+                        special_methods.indexer_type = Some(JavaIndexerType {
+                            index_type,
+                            item_type,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Iterator/indexer internal methods use raw null instead of Optional,
+        // so only count non-special nullable methods for uses_optional
         let uses_optional = supported_methods.iter().any(|method| {
+            let is_special_nullable = matches!(
+                method.attrs.special_method,
+                Some(SpecialMethod::Iterator) | Some(SpecialMethod::Indexer)
+            );
             // Check return type for optional opaque
             if let ReturnType::Infallible(SuccessType::OutType(Type::Opaque(op))) = &method.output {
-                if op.is_optional() {
+                if op.is_optional() && !is_special_nullable {
                     return true;
                 }
             }
-            // Nullable returns use Optional
-            if matches!(&method.output, ReturnType::Nullable(_)) {
+            // Nullable returns use Optional (unless it's an iterator/indexer special method)
+            if matches!(&method.output, ReturnType::Nullable(_)) && !is_special_nullable {
                 return true;
             }
             // Check params for optional opaque
@@ -434,6 +513,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             constructor_methods: &'a [JavaMethodInfo],
             companion_methods: &'a [JavaMethodInfo],
             self_methods: &'a [JavaMethodInfo],
+            special_methods: &'a JavaSpecialMethods,
         }
 
         (
@@ -454,6 +534,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 constructor_methods: &constructor_methods,
                 companion_methods: &companion_methods,
                 self_methods: &self_methods,
+                special_methods: &special_methods,
             }
             .render()
             .expect("failed to render opaque type"),
@@ -752,6 +833,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 method.attrs.special_method,
                 Some(SpecialMethod::NamedConstructor(_))
             );
+        let is_iterator = matches!(method.attrs.special_method, Some(SpecialMethod::Iterator));
+        let is_iterable = matches!(method.attrs.special_method, Some(SpecialMethod::Iterable));
+        let is_indexer = matches!(method.attrs.special_method, Some(SpecialMethod::Indexer));
 
         let method_name: Cow<'_, str> = if is_constructor {
             // Constructors use the class name, no method name needed
@@ -762,13 +846,38 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             } else {
                 self.formatter.fmt_method_name(method)
             }
+        } else if is_iterator {
+            "nextInternal".into()
+        } else if is_indexer {
+            "getInternal".into()
+        } else if is_iterable {
+            "iterator".into()
         } else {
             self.formatter.fmt_method_name(method)
         };
 
         let abi_handle = method.abi_name.as_str().to_uppercase();
 
-        let return_type_java = self.gen_return_type_java(&method.output, owner_type_name);
+        // For iterator/indexer, use boxed nullable type instead of Optional<T>.
+        // For optional opaque returns (Infallible(Opaque{optional})), strip the Optional wrapper.
+        let return_type_java = if is_iterator || is_indexer {
+            match &method.output {
+                ReturnType::Nullable(SuccessType::OutType(ty)) => {
+                    self.gen_out_type_java_boxed(ty, owner_type_name)
+                }
+                ReturnType::Infallible(SuccessType::OutType(Type::Opaque(op))) => {
+                    // Strip optional: just the type name
+                    let type_id: TypeId = op.tcx_id.into();
+                    self.formatter.fmt_type_name(type_id).to_string()
+                }
+                ReturnType::Infallible(SuccessType::OutType(ty)) => {
+                    self.gen_out_type_java_boxed(ty, owner_type_name)
+                }
+                _ => self.gen_return_type_java(&method.output, owner_type_name),
+            }
+        } else {
+            self.gen_return_type_java(&method.output, owner_type_name)
+        };
         let is_static = self_type.is_none();
 
         // Build parameter list for Java signature
@@ -860,8 +969,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let invoke_call = format!("{abi_handle}.invokeExact({args_str})");
 
         // Build the return statement based on output type
+        let raw_nullable = is_iterator || is_indexer;
         let return_stmt = if is_fallible || is_nullable {
-            self.gen_result_return_stmt(method, &invoke_call, &abi_handle, is_write_return, is_constructor, struct_fields)
+            self.gen_result_return_stmt(method, &invoke_call, &abi_handle, is_write_return, is_constructor, struct_fields, raw_nullable)
         } else if is_write_return {
             format!("{invoke_call};\n            return DiplomatLib.writeToString(write);")
         } else if is_constructor {
@@ -875,9 +985,15 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                         if op.is_optional() {
                             let type_id = ty.id().expect("opaque must have id");
                             let type_name = self.formatter.fmt_type_name(type_id);
-                            format!(
-                                "var resultAddr = (MemorySegment) {invoke_call};\n            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new {type_name}(resultAddr));"
-                            )
+                            if raw_nullable {
+                                format!(
+                                    "var resultAddr = (MemorySegment) {invoke_call};\n            return resultAddr.equals(MemorySegment.NULL) ? null : new {type_name}(resultAddr);"
+                                )
+                            } else {
+                                format!(
+                                    "var resultAddr = (MemorySegment) {invoke_call};\n            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new {type_name}(resultAddr));"
+                                )
+                            }
                         } else {
                             let wrapped = self.wrap_invoke_result(ty, &invoke_call);
                             format!("return {wrapped};")
@@ -937,6 +1053,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             format!(
                 "public static {return_type_java} {method_name}({java_params_str}) {{\n{body}\n    }}"
             )
+        } else if is_iterator || is_indexer {
+            format!(
+                "private {return_type_java} {method_name}({java_params_str}) {{\n{body}\n    }}"
+            )
+        } else if is_iterable {
+            format!(
+                "@Override\n    public {return_type_java} {method_name}({java_params_str}) {{\n{body}\n    }}"
+            )
         } else {
             let static_kw = if is_static { "static " } else { "" };
             format!(
@@ -977,6 +1101,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     }
 
     /// Generate the return statement for a fallible or nullable method.
+    /// When `raw_nullable` is true, nullable returns use raw null instead of Optional.
+    #[allow(clippy::too_many_arguments)]
     fn gen_result_return_stmt(
         &self,
         method: &Method,
@@ -985,6 +1111,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         is_write_return: bool,
         is_constructor: bool,
         struct_fields: Option<&[JavaStructFieldInfo]>,
+        raw_nullable: bool,
     ) -> String {
         // Compute is_ok offset
         let is_ok_offset = match self.compute_result_layout(method) {
@@ -1009,6 +1136,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     lines.push("    DiplomatLib.destroyWrite(write);".to_string());
                 }
                 lines.push(format!("    {err_throw}"));
+                lines.push("}".to_string());
+            }
+            ReturnType::Nullable(ok) if raw_nullable => {
+                let ok_extract = self.gen_nullable_raw_extract(ok);
+                lines.push("if (isOk) {".to_string());
+                lines.push(format!("    {ok_extract}"));
+                lines.push("} else {".to_string());
+                lines.push("    return null;".to_string());
                 lines.push("}".to_string());
             }
             ReturnType::Nullable(ok) => {
@@ -1093,6 +1228,20 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 "return Optional.of(DiplomatLib.writeToString(write));".to_string()
             }
             _ => "return Optional.empty();".to_string(),
+        }
+    }
+
+    /// Generate the ok-branch extraction for a raw nullable return (returns value or null).
+    fn gen_nullable_raw_extract(&self, ok: &SuccessType) -> String {
+        match ok {
+            SuccessType::OutType(ty) => {
+                let extract = self.gen_result_value_extract(ty, "result");
+                format!("return {extract};")
+            }
+            SuccessType::Write => {
+                "return DiplomatLib.writeToString(write);".to_string()
+            }
+            _ => "return null;".to_string(),
         }
     }
 
@@ -1766,7 +1915,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             Type::DiplomatOption(inner) => {
                 let inner_layout = self.field_layout_element(inner);
                 let (_inner_size, inner_align) = field_size_align_generic(inner.as_ref(), self.formatter);
-                let padding_after_bool = if inner_align > 1 { inner_align - 1 } else { 0 };
+                let padding_after_bool = inner_align.saturating_sub(1);
                 if padding_after_bool > 0 {
                     format!("MemoryLayout.structLayout({inner_layout}.withName(\"value\"), ValueLayout.JAVA_BOOLEAN.withName(\"is_ok\"), MemoryLayout.paddingLayout({padding_after_bool}))")
                 } else {
@@ -2650,5 +2799,75 @@ mod test {
         };
 
         insta::assert_snapshot!(gen_all_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_opaque_iterator() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::opaque]
+                struct MyIterator(());
+
+                impl MyIterator {
+                    #[diplomat::attr(auto, iterator)]
+                    pub fn next(&mut self) -> Option<i32> {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_opaque_iterable() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::opaque]
+                struct MyIterator(());
+
+                impl MyIterator {
+                    #[diplomat::attr(auto, iterator)]
+                    pub fn next(&mut self) -> Option<Box<MyIterator>> {
+                        unimplemented!()
+                    }
+                }
+
+                #[diplomat::opaque]
+                struct MyCollection(());
+
+                impl MyCollection {
+                    #[diplomat::attr(auto, iterable)]
+                    pub fn iter(&self) -> Box<MyIterator> {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_opaque_indexer() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::opaque]
+                struct MyVec(());
+
+                impl MyVec {
+                    #[diplomat::attr(auto, indexer)]
+                    pub fn get(&self, i: usize) -> Option<f64> {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
     }
 }

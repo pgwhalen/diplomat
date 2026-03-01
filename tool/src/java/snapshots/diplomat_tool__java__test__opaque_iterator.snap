@@ -1,0 +1,86 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_opaque_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
+
+public class MyIterator implements AutoCloseable, Iterator<Integer> {
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    private static final MethodHandle DESTROY;
+    private static final MethodHandle MYITERATOR_NEXT;
+    static final StructLayout MYITERATOR_NEXT_RESULT = MemoryLayout.structLayout(
+            ValueLayout.JAVA_INT.withName("union_val"),
+            ValueLayout.JAVA_BOOLEAN.withName("is_ok"),
+            MemoryLayout.paddingLayout(3)
+        );
+
+    static {
+        System.loadLibrary("diplomat_example");
+        LIB = SymbolLookup.loaderLookup();
+        DESTROY = LINKER.downcallHandle(
+            LIB.find("MyIterator_destroy").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        MYITERATOR_NEXT = LINKER.downcallHandle(
+            LIB.find("MyIterator_next").orElseThrow(),
+            FunctionDescriptor.of(MYITERATOR_NEXT_RESULT, ValueLayout.ADDRESS)
+        );
+    }
+
+    final MemorySegment handle;
+    private Integer nextVal;
+
+    MyIterator(MemorySegment handle) {
+        this.handle = handle;
+        this.nextVal = nextInternal();
+    }
+
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    private Integer nextInternal() {
+        try (var arena = Arena.ofConfined()) {
+            var result = (MemorySegment) MYITERATOR_NEXT.invokeExact((SegmentAllocator) arena, handle);
+            var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 4L);
+            if (isOk) {
+                return (int) result.get(ValueLayout.JAVA_INT, 0L);
+            } else {
+                return null;
+            }
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Override
+    public boolean hasNext() {
+        return nextVal != null;
+    }
+
+    @Override
+    public Integer next() {
+        Integer returnVal = nextVal;
+        if (returnVal == null) {
+            throw new NoSuchElementException();
+        }
+        nextVal = nextInternal();
+        return returnVal;
+    }
+}

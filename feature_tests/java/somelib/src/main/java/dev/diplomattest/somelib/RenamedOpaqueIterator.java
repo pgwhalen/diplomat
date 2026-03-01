@@ -6,31 +6,31 @@ import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-public class OpaqueThinIter implements AutoCloseable, Iterator<OpaqueThin> {
+public class RenamedOpaqueIterator implements AutoCloseable, Iterator<AttrOpaque1Renamed> {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
 
     private static final MethodHandle DESTROY;
-    private static final MethodHandle OPAQUETHINITER_NEXT;
+    private static final MethodHandle NAMESPACE_OPAQUEITERATOR_NEXT;
 
     static {
         System.loadLibrary("diplomat_feature_tests");
         LIB = SymbolLookup.loaderLookup();
         DESTROY = LINKER.downcallHandle(
-            LIB.find("OpaqueThinIter_destroy").orElseThrow(),
+            LIB.find("namespace_OpaqueIterator_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        OPAQUETHINITER_NEXT = LINKER.downcallHandle(
-            LIB.find("OpaqueThinIter_next").orElseThrow(),
+        NAMESPACE_OPAQUEITERATOR_NEXT = LINKER.downcallHandle(
+            LIB.find("namespace_OpaqueIterator_next").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }
 
     final MemorySegment handle;
-    private OpaqueThin nextVal;
+    private AttrOpaque1Renamed nextVal;
 
-    OpaqueThinIter(MemorySegment handle) {
+    RenamedOpaqueIterator(MemorySegment handle) {
         this.handle = handle;
         this.nextVal = nextInternal();
     }
@@ -44,10 +44,10 @@ public class OpaqueThinIter implements AutoCloseable, Iterator<OpaqueThin> {
         }
     }
 
-    private OpaqueThin nextInternal() {
+    private AttrOpaque1Renamed nextInternal() {
         try {
-            var resultAddr = (MemorySegment) OPAQUETHINITER_NEXT.invokeExact(handle);
-            return resultAddr.equals(MemorySegment.NULL) ? null : new OpaqueThin(resultAddr);
+            var resultAddr = (MemorySegment) NAMESPACE_OPAQUEITERATOR_NEXT.invokeExact(handle);
+            return resultAddr.equals(MemorySegment.NULL) ? null : new AttrOpaque1Renamed(resultAddr);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {
@@ -61,8 +61,8 @@ public class OpaqueThinIter implements AutoCloseable, Iterator<OpaqueThin> {
     }
 
     @Override
-    public OpaqueThin next() {
-        OpaqueThin returnVal = nextVal;
+    public AttrOpaque1Renamed next() {
+        AttrOpaque1Renamed returnVal = nextVal;
         if (returnVal == null) {
             throw new NoSuchElementException();
         }

@@ -4,35 +4,32 @@ import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
-import java.util.NoSuchElementException;
 
-public class OpaqueThinIter implements AutoCloseable, Iterator<OpaqueThin> {
+public class RenamedMyIterable implements AutoCloseable, Iterable<Byte> {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
 
     private static final MethodHandle DESTROY;
-    private static final MethodHandle OPAQUETHINITER_NEXT;
+    private static final MethodHandle NAMESPACE_MYITERABLE_ITER;
 
     static {
         System.loadLibrary("diplomat_feature_tests");
         LIB = SymbolLookup.loaderLookup();
         DESTROY = LINKER.downcallHandle(
-            LIB.find("OpaqueThinIter_destroy").orElseThrow(),
+            LIB.find("namespace_MyIterable_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        OPAQUETHINITER_NEXT = LINKER.downcallHandle(
-            LIB.find("OpaqueThinIter_next").orElseThrow(),
+        NAMESPACE_MYITERABLE_ITER = LINKER.downcallHandle(
+            LIB.find("namespace_MyIterable_iter").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }
 
     final MemorySegment handle;
-    private OpaqueThin nextVal;
 
-    OpaqueThinIter(MemorySegment handle) {
+    RenamedMyIterable(MemorySegment handle) {
         this.handle = handle;
-        this.nextVal = nextInternal();
     }
 
     @Override
@@ -44,29 +41,14 @@ public class OpaqueThinIter implements AutoCloseable, Iterator<OpaqueThin> {
         }
     }
 
-    private OpaqueThin nextInternal() {
+    @Override
+    public RenamedMyIterator iterator() {
         try {
-            var resultAddr = (MemorySegment) OPAQUETHINITER_NEXT.invokeExact(handle);
-            return resultAddr.equals(MemorySegment.NULL) ? null : new OpaqueThin(resultAddr);
+            return new RenamedMyIterator((MemorySegment) NAMESPACE_MYITERABLE_ITER.invokeExact(handle));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
-    }
-
-    @Override
-    public boolean hasNext() {
-        return nextVal != null;
-    }
-
-    @Override
-    public OpaqueThin next() {
-        OpaqueThin returnVal = nextVal;
-        if (returnVal == null) {
-            throw new NoSuchElementException();
-        }
-        nextVal = nextInternal();
-        return returnVal;
     }
 }

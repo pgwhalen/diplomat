@@ -4,8 +4,9 @@ import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.util.Iterator;
 
-public class OpaqueThinVec implements AutoCloseable {
+public class OpaqueThinVec implements AutoCloseable, Iterable<OpaqueThin> {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
@@ -56,7 +57,8 @@ public class OpaqueThinVec implements AutoCloseable {
         }
     }
 
-    public OpaqueThinIter iter() {
+    @Override
+    public OpaqueThinIter iterator() {
         try {
             return new OpaqueThinIter((MemorySegment) OPAQUETHINVEC_ITER.invokeExact(handle));
         } catch (RuntimeException ex) {
@@ -76,10 +78,10 @@ public class OpaqueThinVec implements AutoCloseable {
         }
     }
 
-    public Optional<OpaqueThin> get(long idx) {
+    private OpaqueThin getInternal(long idx) {
         try {
             var resultAddr = (MemorySegment) OPAQUETHINVEC_GET.invokeExact(handle, idx);
-            return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OpaqueThin(resultAddr));
+            return resultAddr.equals(MemorySegment.NULL) ? null : new OpaqueThin(resultAddr);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

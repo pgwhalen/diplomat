@@ -1,0 +1,129 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_opaque_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+
+public class MyCollection implements AutoCloseable, Iterable<MyIterator> {
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    private static final MethodHandle DESTROY;
+    private static final MethodHandle MYCOLLECTION_ITER;
+
+    static {
+        System.loadLibrary("diplomat_example");
+        LIB = SymbolLookup.loaderLookup();
+        DESTROY = LINKER.downcallHandle(
+            LIB.find("MyCollection_destroy").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        MYCOLLECTION_ITER = LINKER.downcallHandle(
+            LIB.find("MyCollection_iter").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+        );
+    }
+
+    final MemorySegment handle;
+
+    MyCollection(MemorySegment handle) {
+        this.handle = handle;
+    }
+
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Override
+    public MyIterator iterator() {
+        try {
+            return new MyIterator((MemorySegment) MYCOLLECTION_ITER.invokeExact(handle));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+}package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
+
+public class MyIterator implements AutoCloseable, Iterator<MyIterator> {
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    private static final MethodHandle DESTROY;
+    private static final MethodHandle MYITERATOR_NEXT;
+
+    static {
+        System.loadLibrary("diplomat_example");
+        LIB = SymbolLookup.loaderLookup();
+        DESTROY = LINKER.downcallHandle(
+            LIB.find("MyIterator_destroy").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        MYITERATOR_NEXT = LINKER.downcallHandle(
+            LIB.find("MyIterator_next").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+        );
+    }
+
+    final MemorySegment handle;
+    private MyIterator nextVal;
+
+    MyIterator(MemorySegment handle) {
+        this.handle = handle;
+        this.nextVal = nextInternal();
+    }
+
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    private MyIterator nextInternal() {
+        try {
+            var resultAddr = (MemorySegment) MYITERATOR_NEXT.invokeExact(handle);
+            return resultAddr.equals(MemorySegment.NULL) ? null : new MyIterator(resultAddr);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Override
+    public boolean hasNext() {
+        return nextVal != null;
+    }
+
+    @Override
+    public MyIterator next() {
+        MyIterator returnVal = nextVal;
+        if (returnVal == null) {
+            throw new NoSuchElementException();
+        }
+        nextVal = nextInternal();
+        return returnVal;
+    }
+}
