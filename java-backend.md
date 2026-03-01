@@ -70,7 +70,7 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 
 - Struct fields of certain unsupported types (e.g., struct slices, string view slices) — emit `Object` placeholder
 - Cyclic struct references in result layouts — circular static class initialization in Java (e.g., `CyclicStructA` ↔ `CyclicStructB` when result layouts create cross-type references)
-- Slices other than `&str` / `&DiplomatStr16` — not supported
+- Slice parameters/returns other than `&str` / `&DiplomatStr16` — not supported (primitive slices work as struct fields)
 - Callbacks / traits
 - Iterators / iterables
 - Named constructors / accessors / comparators / indexing
