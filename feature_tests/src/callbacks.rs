@@ -28,41 +28,49 @@ mod ffi {
             f() + g(5)
         }
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_str_cb_arg(f: impl Fn(&str) -> i32) -> i32 {
             f("bananna")
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_opaque_cb_arg<'a>(cb: impl Fn(&mut MyString), a: &'a mut MyString) {
             cb(a);
         }
 
+        #[diplomat::attr(java, disable)]
         pub fn test_slice_cb_arg(arg: &[u8], f: impl Fn(&[u8])) {
             f(arg);
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_result_output(t: impl Fn() -> Result<(), ()>) {
             assert_eq!(t(), Ok(()));
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_result_usize_output(t: impl Fn() -> Result<usize, ()>) {
             assert_eq!(t(), Ok(0));
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_option_output(t: impl Fn() -> Option<()>) {
             assert_eq!(t(), None);
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_diplomat_option_output(t: impl Fn() -> DiplomatOption<u32>) {
             let out = t();
             assert_eq!(out.into_option(), Some(0));
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_option_opaque<'a>(
             t: impl Fn() -> Option<&'a crate::structs::ffi::Opaque>,
             w: &mut DiplomatWrite,
@@ -75,12 +83,14 @@ mod ffi {
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_diplomat_result(t: impl Fn() -> DiplomatResult<usize, usize>) {
             let out = t();
             assert_eq!(out.as_ref().err().cloned(), Some(10));
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_result_opaque<'a>(
             t: impl Fn() -> Result<&'a crate::structs::ffi::Opaque, ()>,
             w: &mut DiplomatWrite,
@@ -93,6 +103,7 @@ mod ffi {
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_inner_conversion(
             t: impl Fn() -> Result<crate::structs::ffi::MyStructContainingAnOption, usize>,
         ) {
@@ -103,6 +114,7 @@ mod ffi {
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_str_conversion<'a>(t: impl Fn() -> Result<DiplomatStrSlice<'a>, ()>) {
             let str = t().expect("Could not get string.");
             let str = String::from_utf8(str.to_vec()).unwrap();
@@ -110,12 +122,14 @@ mod ffi {
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_slice_conversion<'a>(t: impl Fn() -> Result<&'a [f64], ()>) {
             let sl = t().expect("Could not get f64 slice.");
             assert_eq!(sl[1], 2.0);
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_struct_slice_conversion<'a>(
             t: impl Fn() -> Result<&'a [crate::structs::ffi::PrimitiveStruct], ()>,
         ) {
@@ -124,6 +138,7 @@ mod ffi {
         }
 
         #[diplomat::attr(kotlin, disable)]
+        #[diplomat::attr(java, disable)]
         pub fn test_opaque_result_error<'a>(
             t: impl Fn() -> Result<(), &'a crate::structs::ffi::Opaque>,
             w: &mut DiplomatWrite,
@@ -178,6 +193,7 @@ mod ffi {
 
     #[diplomat::attr(not(supports = "callbacks"), disable)]
     #[diplomat::attr(kotlin, disable)]
+    #[diplomat::attr(java, disable)]
     pub fn free_callback_holder(f: impl Fn() -> Result<(), ()>) {
         assert_eq!(f(), Ok(()))
     }

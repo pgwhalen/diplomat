@@ -1,5 +1,6 @@
 use diplomat_core::hir::{
-    self, DocsUrlGenerator, FloatType, IntSizeType, IntType, PrimitiveType, TypeContext, TypeId,
+    self, DocsUrlGenerator, FloatType, IntSizeType, IntType, PrimitiveType, TraitId, TypeContext,
+    TypeId,
 };
 use heck::{ToLowerCamelCase, ToShoutySnakeCase};
 use std::borrow::Cow;
@@ -186,6 +187,21 @@ impl<'tcx> JavaFormatter<'tcx> {
         let resolved = self.tcx.resolve_type(id);
         let candidate: Cow<str> = resolved.name().as_str().into();
         resolved.attrs().rename.apply(candidate)
+    }
+
+    pub fn fmt_trait_name(&self, id: TraitId) -> Cow<'tcx, str> {
+        let resolved = self.tcx.resolve_trait(id);
+        let candidate: Cow<str> = resolved.name.as_str().into();
+        resolved.attrs.rename.apply(candidate)
+    }
+
+    pub fn fmt_trait_method_name<'a>(&self, method: &'a hir::Callback) -> Cow<'a, str> {
+        let name = method
+            .name
+            .as_ref()
+            .expect("trait methods must have a name");
+        let camel = name.as_str().to_lower_camel_case();
+        censor_symbol_for_keywords(camel.into())
     }
 
     /// Returns (size, alignment) in bytes for a primitive type in the C ABI.

@@ -7,6 +7,10 @@ import java.nio.charset.StandardCharsets;
 {%- if uses_optional %}
 import java.util.Optional;
 {%- endif %}
+{%- if has_callbacks %}
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+{%- endif %}
 
 public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} {
 
@@ -44,6 +48,18 @@ public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} 
         {%- endfor %}
     }
     {%- endif %}
+{%- for iface in callback_interfaces %}
+
+{{iface}}
+{%- endfor %}
+{%- for runner in callback_runners %}
+
+{{runner}}
+{%- endfor %}
+{%- for s in callback_statics %}
+
+{{s}}
+{%- endfor %}
     {%- for f in fields %}
 
     public {{f.java_type}} {{f.field_name}};

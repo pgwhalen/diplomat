@@ -1,9 +1,10 @@
 use askama::Template;
 use diplomat_core::hir::{
-    self, BackendAttrSupport, DocsUrlGenerator, Method, OutType, ReturnType, SelfType, Slice,
-    SpecialMethod, StringEncoding, StructField, SuccessType, Type, TypeContext, TypeDef, TypeId,
+    self, BackendAttrSupport, Callback, CallbackInstantiationFunctionality, DocsUrlGenerator,
+    InputOnly, Method, OutType, ReturnType, SelfType, Slice, SpecialMethod, StringEncoding,
+    StructField, SuccessType, TraitIdGetter, Type, TypeContext, TypeDef, TypeId,
 };
-use heck::ToShoutySnakeCase;
+use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
 use std::borrow::Cow;
 
 mod formatter;
@@ -34,8 +35,8 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.iterators = true;
     a.iterables = true;
     a.indexing = true;
-    a.callbacks = false;
-    a.traits = false;
+    a.callbacks = true;
+    a.traits = true;
     a.custom_errors = true;
     a.traits_are_send = false;
     a.traits_are_sync = false;
@@ -131,6 +132,19 @@ pub(crate) fn run<'tcx>(
         }
     }
 
+    // Generate trait files
+    for (_id, trt_def) in tcx.all_traits() {
+        let _guard = ty_gen_cx
+            .errors
+            .set_context_ty(trt_def.name.as_str().into());
+        if trt_def.attrs.disable {
+            continue;
+        }
+        let trait_name = trt_def.name.to_string();
+        let (file_name, body) = ty_gen_cx.gen_trait_def(trt_def, &trait_name);
+        files.add_file(file_name, body);
+    }
+
     // Generate Lib.java runtime support file
     #[derive(Template)]
     #[template(path = "java/Lib.java.jinja", escape = "none")]
@@ -171,6 +185,12 @@ struct ItemGenContext<'a, 'cx> {
 
 struct JavaMethodInfo {
     definition: String,
+    /// Callback functional interface declarations to put at class level
+    callback_interfaces: Vec<String>,
+    /// Callback static runner methods to put at class level
+    callback_runners: Vec<String>,
+    /// Callback static field + static initializer code to put at class level
+    callback_statics: Vec<String>,
 }
 
 struct JavaNativeMethodInfo {
@@ -196,6 +216,31 @@ struct JavaVarHandleInfo {
 struct JavaOffsetConstInfo {
     const_name: String,
     declaration: String,
+}
+
+/// Info about a callback parameter in a method, used to generate functional interface,
+/// runner method, upcall stub, and setup code in the method body.
+struct JavaCallbackInfo {
+    /// Unique name for this callback (e.g. "testMultiArgCallback_f")
+    unique_name: String,
+    /// Java parameter name (e.g. "f")
+    param_name: String,
+    /// Name of the functional interface (e.g. "TestMultiArgCallbackF")
+    interface_name: String,
+    /// Java parameter types for the functional interface (e.g. "int arg0")
+    interface_params: Vec<String>,
+    /// Java return type for the functional interface
+    interface_return_type: String,
+    /// Runner method parameter types: native types including MemorySegment data
+    runner_native_params: Vec<String>,
+    /// Expressions to convert native args to Java types inside the runner
+    runner_arg_conversions: Vec<String>,
+    /// FunctionDescriptor parameter layouts (not including ADDRESS for data)
+    param_layouts: Vec<String>,
+    /// FunctionDescriptor return layout (None for void)
+    return_layout: Option<String>,
+    /// Whether the callback returns void
+    returns_void: bool,
 }
 
 struct JavaEnumVariantInfo {
@@ -357,6 +402,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 | Type::Slice(Slice::Str(_, _))
                 | Type::Enum(_)
                 | Type::Struct(_)
+                | Type::Callback(_)
+                | Type::ImplTrait(_)
         )
     }
 
@@ -499,6 +546,21 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             .map(|(method, self_type)| self.gen_method(method, Some(self_type), type_name, false, None))
             .collect();
 
+        // Collect all callback declarations from all methods
+        let all_methods_iter = constructor_methods
+            .iter()
+            .chain(companion_methods.iter())
+            .chain(self_methods.iter());
+        let mut all_cb_interfaces = Vec::new();
+        let mut all_cb_runners = Vec::new();
+        let mut all_cb_statics = Vec::new();
+        for m in all_methods_iter {
+            all_cb_interfaces.extend(m.callback_interfaces.iter().cloned());
+            all_cb_runners.extend(m.callback_runners.iter().cloned());
+            all_cb_statics.extend(m.callback_statics.iter().cloned());
+        }
+        let has_callbacks = !all_cb_interfaces.is_empty();
+
         #[derive(Template)]
         #[template(path = "java/Opaque.java.jinja", escape = "none")]
         struct ImplTemplate<'a> {
@@ -509,11 +571,15 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             dtor_abi_name: &'a str,
             is_error: bool,
             uses_optional: bool,
+            has_callbacks: bool,
             native_methods: &'a [JavaNativeMethodInfo],
             constructor_methods: &'a [JavaMethodInfo],
             companion_methods: &'a [JavaMethodInfo],
             self_methods: &'a [JavaMethodInfo],
             special_methods: &'a JavaSpecialMethods,
+            callback_interfaces: &'a [String],
+            callback_runners: &'a [String],
+            callback_statics: &'a [String],
         }
 
         (
@@ -530,11 +596,15 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 dtor_abi_name: ty.dtor_abi_name.as_str(),
                 is_error,
                 uses_optional,
+                has_callbacks,
                 native_methods: &native_methods,
                 constructor_methods: &constructor_methods,
                 companion_methods: &companion_methods,
                 self_methods: &self_methods,
                 special_methods: &special_methods,
+                callback_interfaces: &all_cb_interfaces,
+                callback_runners: &all_cb_runners,
+                callback_statics: &all_cb_statics,
             }
             .render()
             .expect("failed to render opaque type"),
@@ -633,6 +703,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let type_id = ty.id().expect("struct must have id");
                 let type_name = self.formatter.fmt_type_name(type_id);
                 layouts.push(format!("{type_name}.LAYOUT"));
+            }
+            Type::Callback(_) => {
+                layouts.push("DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT".to_string());
+            }
+            Type::ImplTrait(trt) => {
+                let trait_id = trt.id();
+                let trait_name = self.formatter.fmt_trait_name(trait_id);
+                layouts.push(format!("{trait_name}.TRAIT_STRUCT_LAYOUT"));
             }
             _ => {
                 self.errors
@@ -888,8 +966,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let mut string_params: Vec<(String, StringEncoding)> = Vec::new();
         // Track nullable opaque params that need local variable setup
         let mut nullable_setup_lines: Vec<String> = Vec::new();
+        // Track callback params
+        let mut callback_infos: Vec<JavaCallbackInfo> = Vec::new();
+        // Track trait params (param_name, trait_name)
+        let mut trait_setup_params: Vec<(String, String)> = Vec::new();
         // Track if any struct params need arena for toNative
         let mut has_struct_param = false;
+
+        let method_name_for_cb = self.formatter.fmt_method_name(method).to_string();
 
         let _has_struct_self = matches!(self_type, Some(SelfType::Struct(_)));
         if let Some(st) = self_type {
@@ -919,6 +1003,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 &mut invoke_args,
                 &mut string_params,
                 &mut nullable_setup_lines,
+                &mut callback_infos,
+                &mut trait_setup_params,
+                &method_name_for_cb,
             );
         }
 
@@ -945,12 +1032,17 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             invoke_args.push("write".to_string());
         }
 
+        let has_callbacks = !callback_infos.is_empty();
+        let has_traits = !trait_setup_params.is_empty();
+
         // Determine if we need an arena
         let needs_arena = !string_params.is_empty()
             || has_struct_param
             || returns_struct
             || is_fallible
-            || is_nullable;
+            || is_nullable
+            || has_callbacks
+            || has_traits;
 
         // When returning a struct or result layout, FFM prepends SegmentAllocator
         let returns_struct_layout = returns_struct || is_fallible || is_nullable;
@@ -1039,6 +1131,17 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     }
                 }
             }
+            for cb_info in &callback_infos {
+                setup_lines.push_str(&format!(
+                    "            {}\n",
+                    self.gen_callback_setup_code(cb_info)
+                ));
+            }
+            for (tp_name, tp_trait_name) in &trait_setup_params {
+                setup_lines.push_str(&format!(
+                    "            var {tp_name}Native = {tp_trait_name}.createNative({tp_name}, arena);\n"
+                ));
+            }
             format!("{super_call}{write_setup}        try (var arena = Arena.ofConfined()) {{\n{setup_lines}{nullable_setup}            {return_stmt}\n        }} catch (RuntimeException ex) {{\n            throw ex;\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
         } else {
             format!("{super_call}{write_setup}        try {{\n{nullable_setup}            {return_stmt}\n        }} catch (RuntimeException ex) {{\n            throw ex;\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
@@ -1068,7 +1171,32 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             )
         };
 
-        JavaMethodInfo { definition }
+        // Generate callback class-level declarations
+        let mut cb_interfaces = Vec::new();
+        let mut cb_runners = Vec::new();
+        let mut cb_statics = Vec::new();
+        for (cb_info, param) in callback_infos.iter().zip(
+            method
+                .params
+                .iter()
+                .filter(|p| matches!(&p.ty, Type::Callback(_))),
+        ) {
+            if let Type::Callback(ref cb) = param.ty {
+                let cb_params = cb.get_inputs().expect("callback must have inputs");
+                let cb_output = cb.get_output_type().expect("callback must have output");
+                cb_interfaces.push(self.gen_callback_interface(cb_info));
+                cb_runners.push(self.gen_callback_runner(cb_info, cb_output, owner_type_name));
+                cb_statics
+                    .push(self.gen_callback_statics(cb_info, cb_params, cb_output, owner_type_name));
+            }
+        }
+
+        JavaMethodInfo {
+            definition,
+            callback_interfaces: cb_interfaces,
+            callback_runners: cb_runners,
+            callback_statics: cb_statics,
+        }
     }
 
     /// Generate the assignment statement for a constructor (instead of return).
@@ -1326,6 +1454,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         invoke_args: &mut Vec<String>,
         string_params: &mut Vec<(String, StringEncoding)>,
         nullable_setup_lines: &mut Vec<String>,
+        callback_infos: &mut Vec<JavaCallbackInfo>,
+        trait_setup_params: &mut Vec<(String, String)>, // (param_name, trait_name)
+        method_name_for_cb: &str,
     ) {
         match ty {
             Type::Primitive(prim) => {
@@ -1378,6 +1509,28 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     .unwrap_or("MemorySegment".into());
                 java_params.push(format!("{type_name} {param_name}"));
                 invoke_args.push(format!("{param_name}.toNative(arena)"));
+            }
+            Type::Callback(ref cb) => {
+                let params = cb.get_inputs().expect("callback must have inputs");
+                let output = cb.get_output_type().expect("callback must have output");
+                let cb_info = self.gen_callback_info_from_parts(
+                    params,
+                    output,
+                    param_name,
+                    method_name_for_cb,
+                );
+                java_params.push(format!("{} {param_name}", cb_info.interface_name));
+                let native_seg_name = format!("{param_name}Native");
+                invoke_args.push(native_seg_name);
+                callback_infos.push(cb_info);
+            }
+            Type::ImplTrait(trt) => {
+                let trait_id = trt.id();
+                let trait_name = self.formatter.fmt_trait_name(trait_id).to_string();
+                java_params.push(format!("{trait_name} {param_name}"));
+                let native_seg_name = format!("{param_name}Native");
+                invoke_args.push(native_seg_name);
+                trait_setup_params.push((param_name.to_string(), trait_name));
             }
             _ => {
                 self.errors
@@ -1487,6 +1640,654 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 )
             }
             _ => invoke_call.to_string(),
+        }
+    }
+
+    /// Build a JavaCallbackInfo from callback parts (params + output).
+    fn gen_callback_info_from_parts(
+        &self,
+        params: &[hir::CallbackParam],
+        output: &ReturnType<InputOnly>,
+        param_name: &str,
+        method_name: &str,
+    ) -> JavaCallbackInfo {
+        let unique_name = format!("{method_name}_{param_name}");
+        let interface_name = format!(
+            "{}{}",
+            method_name.to_upper_camel_case(),
+            param_name.to_upper_camel_case()
+        );
+
+        let mut interface_params = Vec::new();
+        let mut runner_native_params = Vec::new();
+        let mut runner_arg_conversions = Vec::new();
+        let mut param_layouts = Vec::new();
+
+        // Runner always receives MemorySegment data as first arg
+        runner_native_params.push("MemorySegment data".to_string());
+
+        for (i, cp) in params.iter().enumerate() {
+            let arg_name = format!("arg{i}");
+            let (java_type, native_type, native_layout, conversion) =
+                self.callback_param_types(&cp.ty, &arg_name);
+            interface_params.push(format!("{java_type} {arg_name}"));
+            runner_native_params.push(format!("{native_type} {arg_name}"));
+            param_layouts.push(native_layout);
+            runner_arg_conversions.push(conversion);
+        }
+
+        let (interface_return_type, return_layout, returns_void) =
+            self.callback_return_type_input(output);
+
+        JavaCallbackInfo {
+            unique_name,
+            param_name: param_name.to_string(),
+            interface_name,
+            interface_params,
+            interface_return_type,
+            runner_native_params,
+            runner_arg_conversions,
+            param_layouts,
+            return_layout,
+            returns_void,
+        }
+    }
+
+    /// Get Java type, native (FFI) type, layout, and conversion expression for a callback param.
+    fn callback_param_types(
+        &self,
+        ty: &OutType,
+        arg_name: &str,
+    ) -> (String, String, String, String) {
+        match ty {
+            Type::Primitive(prim) => {
+                let java_type = self.formatter.fmt_primitive_as_java(*prim).to_string();
+                let layout = self.formatter.fmt_primitive_as_ffi(*prim).to_string();
+                (
+                    java_type.clone(),
+                    java_type,
+                    layout,
+                    arg_name.to_string(),
+                )
+            }
+            Type::Enum(_) => {
+                let type_id = ty.id().expect("enum must have id");
+                let type_name = self.formatter.fmt_type_name(type_id).to_string();
+                (
+                    type_name.clone(),
+                    "int".to_string(),
+                    "ValueLayout.JAVA_INT".to_string(),
+                    format!("{type_name}.fromNative({arg_name})"),
+                )
+            }
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                let type_name = self.formatter.fmt_type_name(type_id).to_string();
+                (
+                    type_name.clone(),
+                    "MemorySegment".to_string(),
+                    format!("{type_name}.LAYOUT"),
+                    format!("{type_name}.fromNative({arg_name})"),
+                )
+            }
+            Type::Opaque(_) => {
+                let type_id = ty.id().expect("opaque must have id");
+                let type_name = self.formatter.fmt_type_name(type_id).to_string();
+                (
+                    type_name.clone(),
+                    "MemorySegment".to_string(),
+                    "ValueLayout.ADDRESS".to_string(),
+                    format!("new {type_name}({arg_name})"),
+                )
+            }
+            _ => (
+                "Object".to_string(),
+                "MemorySegment".to_string(),
+                "ValueLayout.ADDRESS".to_string(),
+                arg_name.to_string(),
+            ),
+        }
+    }
+
+    /// Get Java return type, layout string, and whether it's void for a callback's output (InputOnly position).
+    fn callback_return_type_input(
+        &self,
+        output: &ReturnType<InputOnly>,
+    ) -> (String, Option<String>, bool) {
+        match output {
+            ReturnType::Infallible(success) => match success {
+                SuccessType::Unit => ("void".to_string(), None, true),
+                SuccessType::OutType(ty) => self.type_to_return_info(ty),
+                _ => ("void".to_string(), None, true),
+            },
+            _ => ("void".to_string(), None, true),
+        }
+    }
+
+    /// Helper: get (java_type, layout, is_void) for a type used as callback/trait return.
+    fn type_to_return_info<P: hir::TyPosition>(&self, ty: &Type<P>) -> (String, Option<String>, bool) {
+        match ty {
+            Type::Primitive(prim) => {
+                let java_type = self.formatter.fmt_primitive_as_java(*prim).to_string();
+                let layout = self.formatter.fmt_primitive_as_ffi(*prim).to_string();
+                (java_type, Some(layout), false)
+            }
+            Type::Enum(_) => {
+                let type_id = ty.id().expect("enum must have id");
+                let type_name = self.formatter.fmt_type_name(type_id).to_string();
+                (type_name, Some("ValueLayout.JAVA_INT".to_string()), false)
+            }
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                let type_name = self.formatter.fmt_type_name(type_id).to_string();
+                (
+                    type_name.clone(),
+                    Some(format!("{type_name}.LAYOUT")),
+                    false,
+                )
+            }
+            _ => ("Object".to_string(), Some("ValueLayout.ADDRESS".to_string()), false),
+        }
+    }
+
+    /// Generate the native return expression for a callback runner (converting Java -> native).
+    fn callback_return_conversion_input(
+        &self,
+        output: &ReturnType<InputOnly>,
+        expr: &str,
+    ) -> String {
+        match output {
+            ReturnType::Infallible(SuccessType::OutType(ty)) => match ty {
+                Type::Enum(_) => format!("{expr}.toNative()"),
+                Type::Struct(_) => format!("{expr}.toNative(Arena.global())"),
+                _ => expr.to_string(),
+            },
+            _ => expr.to_string(),
+        }
+    }
+
+    /// Generate the @FunctionalInterface declaration for a callback.
+    fn gen_callback_interface(&self, info: &JavaCallbackInfo) -> String {
+        let params_str = info.interface_params.join(", ");
+        format!(
+            "    @FunctionalInterface\n    public interface {} {{\n        {} invoke({});\n    }}",
+            info.interface_name, info.interface_return_type, params_str
+        )
+    }
+
+    /// Generate the static runner method for a callback.
+    fn gen_callback_runner(
+        &self,
+        info: &JavaCallbackInfo,
+        cb_output: &ReturnType<InputOnly>,
+        _owner_type_name: &str,
+    ) -> String {
+        let runner_params_str = info.runner_native_params.join(", ");
+        let native_return_type = if info.returns_void {
+            "void"
+        } else {
+            self.native_return_type_str(cb_output)
+        };
+
+        let arg_exprs: Vec<String> = info.runner_arg_conversions.clone();
+        let invoke_args = arg_exprs.join(", ");
+
+        let invoke_expr = format!("cb.invoke({invoke_args})");
+        let body = if info.returns_void {
+            format!("        {invoke_expr};")
+        } else {
+            let converted = self.callback_return_conversion_input(cb_output, &invoke_expr);
+            format!("        return {converted};")
+        };
+
+        format!(
+            "    private static {native_return_type} runCallback_{unique_name}({runner_params_str}) {{\n\
+             \x20       @SuppressWarnings(\"unchecked\")\n\
+             \x20       {iface} cb = DiplomatLib.getCallback(data.address(), {iface}.class);\n\
+             {body}\n\
+             \x20   }}",
+            unique_name = info.unique_name,
+            iface = info.interface_name,
+        )
+    }
+
+    /// Generate the static MethodHandle + upcall stub declarations for a callback.
+    fn gen_callback_statics(
+        &self,
+        info: &JavaCallbackInfo,
+        cb_params: &[hir::CallbackParam],
+        cb_output: &ReturnType<InputOnly>,
+        owner_type_name: &str,
+    ) -> String {
+        let runner_name = format!("runCallback_{}", info.unique_name);
+        let mh_name = format!("MH_RUN_{}", info.unique_name);
+        let upcall_name = format!("UPCALL_{}", info.unique_name);
+
+        // Build MethodType parameters (MemorySegment for data, then native param types)
+        let mut mt_params = vec!["MemorySegment.class".to_string()];
+        for cp in cb_params.iter() {
+            mt_params.push(self.callback_param_method_type_class(&cp.ty));
+        }
+        let mt_params_str = mt_params.join(", ");
+
+        let mt_return = if info.returns_void {
+            "void.class".to_string()
+        } else {
+            self.native_return_method_type_class(cb_output)
+        };
+
+        // Build FunctionDescriptor
+        let mut fd_params = vec!["ValueLayout.ADDRESS".to_string()]; // data
+        fd_params.extend(info.param_layouts.iter().cloned());
+        let fd_params_str = fd_params.join(", ");
+        let fd = if let Some(ref ret) = info.return_layout {
+            format!("FunctionDescriptor.of({ret}, {fd_params_str})")
+        } else {
+            format!("FunctionDescriptor.ofVoid({fd_params_str})")
+        };
+
+        format!(
+            "    private static final MethodHandle {mh_name};\n\
+             \x20   private static final MemorySegment {upcall_name};\n\
+             \x20   static {{\n\
+             \x20       try {{\n\
+             \x20           {mh_name} = MethodHandles.lookup().findStatic(\n\
+             \x20               {owner_type_name}.class, \"{runner_name}\",\n\
+             \x20               MethodType.methodType({mt_return}, {mt_params_str}));\n\
+             \x20           {upcall_name} = DiplomatLib.LINKER_SHARED.upcallStub(\n\
+             \x20               {mh_name},\n\
+             \x20               {fd},\n\
+             \x20               Arena.global());\n\
+             \x20       }} catch (ReflectiveOperationException ex) {{\n\
+             \x20           throw new ExceptionInInitializerError(ex);\n\
+             \x20       }}\n\
+             \x20   }}"
+        )
+    }
+
+    /// Get the native return type string (for runner method signature) from a callback output.
+    fn native_return_type_str(&self, output: &ReturnType<InputOnly>) -> &'static str {
+        match output {
+            ReturnType::Infallible(SuccessType::OutType(ty)) => match ty {
+                Type::Primitive(prim) => self.formatter.fmt_primitive_as_java(*prim),
+                Type::Enum(_) => "int",
+                Type::Struct(_) => "MemorySegment",
+                _ => "Object",
+            },
+            _ => "void",
+        }
+    }
+
+    /// Get MethodType class literal for a callback return type.
+    fn native_return_method_type_class(&self, output: &ReturnType<InputOnly>) -> String {
+        match output {
+            ReturnType::Infallible(SuccessType::OutType(ty)) => {
+                self.callback_param_method_type_class_input(ty)
+            }
+            _ => "void.class".to_string(),
+        }
+    }
+
+    /// Get the MethodType class literal for a Type<InputOnly>.
+    fn callback_param_method_type_class_input(&self, ty: &Type<InputOnly>) -> String {
+        match ty {
+            Type::Primitive(prim) => {
+                format!("{}.class", self.formatter.fmt_primitive_as_java(*prim))
+            }
+            Type::Enum(_) => "int.class".to_string(),
+            Type::Struct(_) | Type::Opaque(_) => "MemorySegment.class".to_string(),
+            _ => "MemorySegment.class".to_string(),
+        }
+    }
+
+    /// Get the MethodType class literal for a callback param or return type.
+    fn callback_param_method_type_class(&self, ty: &OutType) -> String {
+        match ty {
+            Type::Primitive(prim) => {
+                format!("{}.class", self.formatter.fmt_primitive_as_java(*prim))
+            }
+            Type::Enum(_) => "int.class".to_string(),
+            Type::Struct(_) | Type::Opaque(_) => "MemorySegment.class".to_string(),
+            _ => "MemorySegment.class".to_string(),
+        }
+    }
+
+    /// Generate the setup code in a method body for a single callback parameter.
+    fn gen_callback_setup_code(&self, info: &JavaCallbackInfo) -> String {
+        let id_var = format!("{}Id", info.param_name);
+        let native_var = format!("{}Native", info.param_name);
+        let upcall_name = format!("UPCALL_{}", info.unique_name);
+
+        format!(
+            "long {id_var} = DiplomatLib.registerCallback({param});\n\
+             \x20           var {native_var} = arena.allocate(DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT);\n\
+             \x20           DiplomatLib.VH_CB_DATA.set({native_var}, 0L, MemorySegment.ofAddress({id_var}));\n\
+             \x20           DiplomatLib.VH_CB_RUN.set({native_var}, 0L, {upcall_name});\n\
+             \x20           DiplomatLib.VH_CB_DESTRUCTOR.set({native_var}, 0L, DiplomatLib.DESTRUCTOR_STUB);",
+            param = info.param_name,
+        )
+    }
+
+    /// Generate trait definition file.
+    fn gen_trait_def(
+        &self,
+        trt: &'cx hir::TraitDef,
+        trait_name: &str,
+    ) -> (String, String) {
+        let trait_methods: Vec<_> = trt
+            .methods
+            .iter()
+            .filter(|m| {
+                if let Some(m_attrs) = &m.attrs {
+                    !m_attrs.disable
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        // Build interface method signatures
+        let mut interface_methods = Vec::new();
+        for method in &trait_methods {
+            let method_name = self.formatter.fmt_trait_method_name(method);
+            let mut params = Vec::new();
+            for (i, cp) in method.params.iter().enumerate() {
+                let arg_name = cp
+                    .name
+                    .as_ref()
+                    .map(|n| n.as_str().to_lower_camel_case())
+                    .unwrap_or_else(|| format!("arg{i}"));
+                let java_type = self.callback_param_java_type(&cp.ty);
+                params.push(format!("{java_type} {arg_name}"));
+            }
+            let return_type = self.trait_method_return_type(&method.output);
+            let params_str = params.join(", ");
+            interface_methods.push(format!("    {return_type} {method_name}({params_str});"));
+        }
+
+        // Build vtable layout fields: destructor, size, alignment, then per-method callback
+        let mut vtable_fields = Vec::new();
+        vtable_fields.push("ValueLayout.ADDRESS.withName(\"destructor\")".to_string());
+        vtable_fields.push("ValueLayout.JAVA_LONG.withName(\"size\")".to_string());
+        vtable_fields.push("ValueLayout.JAVA_LONG.withName(\"alignment\")".to_string());
+        for method in &trait_methods {
+            let method_name = self.formatter.fmt_trait_method_name(method);
+            vtable_fields.push(format!(
+                "ValueLayout.ADDRESS.withName(\"run_{method_name}_callback\")"
+            ));
+        }
+
+        // Build runner methods, MH/upcall statics for each method
+        let mut runners = Vec::new();
+        let mut statics = Vec::new();
+        for method in &trait_methods {
+            let method_name = self.formatter.fmt_trait_method_name(method).to_string();
+            let (runner, static_decl) =
+                self.gen_trait_method_upcall(method, &method_name, trait_name);
+            runners.push(runner);
+            statics.push(static_decl);
+        }
+
+        // Build createNative method
+        let mut create_native_lines = Vec::new();
+        create_native_lines.push("    static MemorySegment createNative(Object impl_, Arena arena) {".to_string());
+        create_native_lines.push("        long id = DiplomatLib.registerCallback(impl_);".to_string());
+        create_native_lines.push("        var seg = arena.allocate(TRAIT_STRUCT_LAYOUT);".to_string());
+        create_native_lines.push("        VH_DATA.set(seg, 0L, MemorySegment.ofAddress(id));".to_string());
+        create_native_lines.push("        VH_DESTRUCTOR.set(seg, 0L, DiplomatLib.DESTRUCTOR_STUB);".to_string());
+        create_native_lines.push("        VH_SIZE.set(seg, 0L, 0L);".to_string());
+        create_native_lines.push("        VH_ALIGNMENT.set(seg, 0L, 0L);".to_string());
+        for method in &trait_methods {
+            let method_name = self.formatter.fmt_trait_method_name(method);
+            let upcall_name = format!("Statics.UPCALL_{method_name}");
+            let vh_name = format!("VH_RUN_{}", method_name.to_shouty_snake_case());
+            create_native_lines.push(format!("        {vh_name}.set(seg, 0L, {upcall_name});"));
+        }
+        create_native_lines.push("        return seg;".to_string());
+        create_native_lines.push("    }".to_string());
+
+        // Build VarHandles for data and vtable fields
+        let mut var_handles = Vec::new();
+        var_handles.push(format!(
+            "    java.lang.invoke.VarHandle VH_DATA = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"data\"));"
+        ));
+        var_handles.push(format!(
+            "    java.lang.invoke.VarHandle VH_DESTRUCTOR = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"vtable\"), MemoryLayout.PathElement.groupElement(\"destructor\"));"
+        ));
+        var_handles.push(format!(
+            "    java.lang.invoke.VarHandle VH_SIZE = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"vtable\"), MemoryLayout.PathElement.groupElement(\"size\"));"
+        ));
+        var_handles.push(format!(
+            "    java.lang.invoke.VarHandle VH_ALIGNMENT = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"vtable\"), MemoryLayout.PathElement.groupElement(\"alignment\"));"
+        ));
+        for method in &trait_methods {
+            let method_name = self.formatter.fmt_trait_method_name(method);
+            let vh_name = format!("VH_RUN_{}", method_name.to_shouty_snake_case());
+            var_handles.push(format!(
+                "    java.lang.invoke.VarHandle {vh_name} = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"vtable\"), MemoryLayout.PathElement.groupElement(\"run_{method_name}_callback\"));"
+            ));
+        }
+
+        // Build Statics inner class body
+        let mut statics_class_body = Vec::new();
+        statics_class_body.push("        private Statics() {}".to_string());
+        // Add runners as static methods in the Statics class
+        for runner in &runners {
+            statics_class_body.push(runner.replace("\n    ", "\n        "));
+        }
+        // Add MH + upcall static fields + initialization
+        for method in &trait_methods {
+            let method_name = self.formatter.fmt_trait_method_name(method).to_string();
+            let mh_name = format!("MH_{}", method_name.to_shouty_snake_case());
+            let upcall_name = format!("UPCALL_{method_name}");
+
+            let (_, return_layout, returns_void) = self.callback_return_type_input(&method.output);
+
+            let mut mt_params = vec!["MemorySegment.class".to_string()];
+            let mut fd_params = vec!["ValueLayout.ADDRESS".to_string()];
+            for cp in method.params.iter() {
+                mt_params.push(self.callback_param_method_type_class(&cp.ty));
+                let (_, _, layout, _) = self.callback_param_types(&cp.ty, "x");
+                fd_params.push(layout);
+            }
+            let mt_return = if returns_void {
+                "void.class".to_string()
+            } else {
+                self.native_return_method_type_class(&method.output)
+            };
+            let mt_params_str = mt_params.join(", ");
+            let fd_params_str = fd_params.join(", ");
+            let fd = if let Some(ref ret) = return_layout {
+                format!("FunctionDescriptor.of({ret}, {fd_params_str})")
+            } else {
+                format!("FunctionDescriptor.ofVoid({fd_params_str})")
+            };
+
+            statics_class_body.push(format!("        static final MethodHandle {mh_name};"));
+            statics_class_body.push(format!("        static final MemorySegment {upcall_name};"));
+            statics_class_body.push(format!(
+                "        static {{\n\
+                 \x20           try {{\n\
+                 \x20               {mh_name} = MethodHandles.lookup().findStatic(\n\
+                 \x20                   Statics.class, \"traitRunner_{method_name}\",\n\
+                 \x20                   MethodType.methodType({mt_return}, {mt_params_str}));\n\
+                 \x20               {upcall_name} = DiplomatLib.LINKER_SHARED.upcallStub(\n\
+                 \x20                   {mh_name},\n\
+                 \x20                   {fd},\n\
+                 \x20                   Arena.global());\n\
+                 \x20           }} catch (ReflectiveOperationException ex) {{\n\
+                 \x20               throw new ExceptionInInitializerError(ex);\n\
+                 \x20           }}\n\
+                 \x20       }}"
+            ));
+        }
+
+        // Build complete file content
+        let domain = self.domain;
+        let lib_name = self.lib_name;
+        let mut body = String::new();
+        body.push_str(&format!("package {domain}.{lib_name};\n\n"));
+        body.push_str("import java.lang.foreign.*;\n");
+        body.push_str("import java.lang.invoke.MethodHandle;\n");
+        body.push_str("import java.lang.invoke.MethodHandles;\n");
+        body.push_str("import java.lang.invoke.MethodType;\n\n");
+        body.push_str(&format!("public interface {trait_name} {{\n"));
+        for m in &interface_methods {
+            body.push_str(&format!("{m}\n"));
+        }
+        body.push('\n');
+        // VTABLE_LAYOUT
+        body.push_str("    StructLayout VTABLE_LAYOUT = MemoryLayout.structLayout(\n        ");
+        body.push_str(&vtable_fields.join(",\n        "));
+        body.push_str("\n    );\n");
+        // TRAIT_STRUCT_LAYOUT
+        body.push_str("    StructLayout TRAIT_STRUCT_LAYOUT = MemoryLayout.structLayout(\n");
+        body.push_str("        ValueLayout.ADDRESS.withName(\"data\"),\n");
+        body.push_str("        VTABLE_LAYOUT.withName(\"vtable\")\n");
+        body.push_str("    );\n");
+        // VarHandles
+        for vh in &var_handles {
+            body.push_str(&format!("{vh}\n"));
+        }
+        body.push('\n');
+        // Statics inner class
+        body.push_str("    final class Statics {\n");
+        for line in &statics_class_body {
+            body.push_str(&format!("{line}\n"));
+        }
+        body.push_str("    }\n\n");
+        // createNative
+        for line in &create_native_lines {
+            body.push_str(&format!("{line}\n"));
+        }
+        body.push_str("}\n");
+
+        (
+            format!(
+                "src/main/java/{}/{lib_name}/{trait_name}.java",
+                self.domain.replace('.', "/"),
+                lib_name = self.lib_name,
+            ),
+            body,
+        )
+    }
+
+    /// Generate the runner method and static MH+upcall for a single trait method.
+    fn gen_trait_method_upcall(
+        &self,
+        method: &Callback,
+        method_name: &str,
+        trait_name: &str,
+    ) -> (String, String) {
+        let (_, _return_layout, returns_void) =
+            self.callback_return_type_input(&method.output);
+
+        // Build runner params
+        let mut runner_params = vec!["MemorySegment data".to_string()];
+        let mut arg_conversions = Vec::new();
+        let mut native_param_layouts = Vec::new();
+        let mut mt_params = vec!["MemorySegment.class".to_string()];
+
+        for (i, cp) in method.params.iter().enumerate() {
+            let arg_name = cp
+                .name
+                .as_ref()
+                .map(|n| n.as_str().to_lower_camel_case())
+                .unwrap_or_else(|| format!("arg{i}"));
+            let (_java_type, native_type, native_layout, conversion) =
+                self.callback_param_types(&cp.ty, &arg_name);
+            runner_params.push(format!("{native_type} {arg_name}"));
+            arg_conversions.push(conversion);
+            native_param_layouts.push(native_layout);
+            mt_params.push(self.callback_param_method_type_class(&cp.ty));
+        }
+
+        let native_return_type = if returns_void {
+            "void"
+        } else {
+            self.native_return_type_str(&method.output)
+        };
+
+        let runner_params_str = runner_params.join(", ");
+        let invoke_args = arg_conversions.join(", ");
+        let invoke_expr = format!("impl_.{method_name}({invoke_args})");
+
+        let body = if returns_void {
+            format!("        {invoke_expr};")
+        } else {
+            let converted =
+                self.callback_return_conversion_input(&method.output, &invoke_expr);
+            format!("        return {converted};")
+        };
+
+        let runner = format!(
+            "    private static {native_return_type} traitRunner_{method_name}({runner_params_str}) {{\n\
+             \x20       {trait_name} impl_ = DiplomatLib.getCallback(data.address(), {trait_name}.class);\n\
+             {body}\n\
+             \x20   }}"
+        );
+
+        // Reference to Statics inner class fields (MH + upcall are initialized there)
+        let mh_name = format!("MH_{}", method_name.to_shouty_snake_case());
+        let upcall_name = format!("UPCALL_{method_name}");
+
+        let combined_static = format!(
+            "    MethodHandle {mh_name} = Statics.{mh_name};\n\
+             \x20   MemorySegment {upcall_name} = Statics.{upcall_name};"
+        );
+
+        (runner, combined_static)
+    }
+
+    /// Get the Java type name for a callback parameter type.
+    fn callback_param_java_type(&self, ty: &OutType) -> String {
+        match ty {
+            Type::Primitive(prim) => self.formatter.fmt_primitive_as_java(*prim).to_string(),
+            Type::Enum(_) => {
+                let type_id = ty.id().expect("enum must have id");
+                self.formatter.fmt_type_name(type_id).to_string()
+            }
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                self.formatter.fmt_type_name(type_id).to_string()
+            }
+            Type::Opaque(_) => {
+                let type_id = ty.id().expect("opaque must have id");
+                self.formatter.fmt_type_name(type_id).to_string()
+            }
+            _ => "Object".to_string(),
+        }
+    }
+
+    /// Get the Java return type for a trait method.
+    fn trait_method_return_type(&self, output: &ReturnType<InputOnly>) -> String {
+        match output {
+            ReturnType::Infallible(success) => match success {
+                SuccessType::Unit => "void".to_string(),
+                SuccessType::OutType(ty) => self.callback_param_java_type_input(ty),
+                _ => "void".to_string(),
+            },
+            _ => "void".to_string(),
+        }
+    }
+
+    /// Get the Java type name for a callback parameter type (InputOnly position).
+    fn callback_param_java_type_input(&self, ty: &Type<InputOnly>) -> String {
+        match ty {
+            Type::Primitive(prim) => self.formatter.fmt_primitive_as_java(*prim).to_string(),
+            Type::Enum(_) => {
+                let type_id = ty.id().expect("enum must have id");
+                self.formatter.fmt_type_name(type_id).to_string()
+            }
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                self.formatter.fmt_type_name(type_id).to_string()
+            }
+            Type::Opaque(_) => {
+                let type_id = ty.id().expect("opaque must have id");
+                self.formatter.fmt_type_name(type_id).to_string()
+            }
+            _ => "Object".to_string(),
         }
     }
 
@@ -1677,6 +2478,21 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         let has_constructors = !constructor_methods.is_empty();
 
+        // Collect callback declarations from all methods
+        let all_methods_iter = constructor_methods
+            .iter()
+            .chain(companion_methods.iter())
+            .chain(self_methods.iter());
+        let mut all_cb_interfaces = Vec::new();
+        let mut all_cb_runners = Vec::new();
+        let mut all_cb_statics = Vec::new();
+        for m in all_methods_iter {
+            all_cb_interfaces.extend(m.callback_interfaces.iter().cloned());
+            all_cb_runners.extend(m.callback_runners.iter().cloned());
+            all_cb_statics.extend(m.callback_statics.iter().cloned());
+        }
+        let has_callbacks = !all_cb_interfaces.is_empty();
+
         #[derive(Template)]
         #[template(path = "java/Struct.java.jinja", escape = "none")]
         struct StructTemplate<'a> {
@@ -1689,6 +2505,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             uses_optional: bool,
             has_zero_arg_constructor: bool,
             has_constructors: bool,
+            has_callbacks: bool,
             layout_members: &'a str,
             var_handles: &'a [JavaVarHandleInfo],
             offset_consts: &'a [JavaOffsetConstInfo],
@@ -1697,6 +2514,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             constructor_methods: &'a [JavaMethodInfo],
             companion_methods: &'a [JavaMethodInfo],
             self_methods: &'a [JavaMethodInfo],
+            callback_interfaces: &'a [String],
+            callback_runners: &'a [String],
+            callback_statics: &'a [String],
         }
 
         (
@@ -1715,6 +2535,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 uses_optional,
                 has_zero_arg_constructor,
                 has_constructors,
+                has_callbacks,
                 layout_members: &layout_members,
                 var_handles: &var_handles,
                 offset_consts: &offset_consts,
@@ -1723,6 +2544,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 constructor_methods: &constructor_methods,
                 companion_methods: &companion_methods,
                 self_methods: &self_methods,
+                callback_interfaces: &all_cb_interfaces,
+                callback_runners: &all_cb_runners,
+                callback_statics: &all_cb_statics,
             }
             .render()
             .expect("failed to render struct type"),
@@ -2851,6 +3675,60 @@ mod test {
         insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
     }
 
+    fn gen_all_with_traits_for_test(tk_stream: proc_macro2::TokenStream) -> String {
+        let tcx = new_tcx(tk_stream);
+        let docs_urls = std::collections::HashMap::new();
+        let docs_generator = &diplomat_core::hir::DocsUrlGenerator::with_base_urls(None, docs_urls);
+        let formatter = JavaFormatter::new(&tcx, docs_generator);
+        let errors = ErrorStore::default();
+
+        let cx = ItemGenContext {
+            tcx: &tcx,
+            formatter: &formatter,
+            errors: &errors,
+            lib_name: "somelib",
+            dylib_name: "diplomat_example",
+            domain: "dev.diplomattest",
+        };
+
+        let mut result = String::new();
+        for (_id, ty) in tcx.all_types() {
+            match ty {
+                TypeDef::Opaque(o) => {
+                    let (_file, body) = cx.gen_opaque_def(o, o.name.as_str(), o.attrs.custom_errors);
+                    result.push_str(&body);
+                    result.push('\n');
+                }
+                TypeDef::Struct(s) => {
+                    let (_file, body) = cx.gen_struct_def(s, s.name.as_str(), false);
+                    result.push_str(&body);
+                    result.push('\n');
+                }
+                TypeDef::OutStruct(s) => {
+                    let (_file, body) = cx.gen_struct_def(s, s.name.as_str(), true);
+                    result.push_str(&body);
+                    result.push('\n');
+                }
+                TypeDef::Enum(e) => {
+                    let (_file, body) = cx.gen_enum_def(e, e.name.as_str(), e.attrs.custom_errors);
+                    result.push_str(&body);
+                    result.push('\n');
+                }
+                _ => {}
+            }
+        }
+        for (_id, trt_def) in tcx.all_traits() {
+            if trt_def.attrs.disable {
+                continue;
+            }
+            let trait_name = trt_def.name.to_string();
+            let (_file, body) = cx.gen_trait_def(trt_def, &trait_name);
+            result.push_str(&body);
+            result.push('\n');
+        }
+        result
+    }
+
     #[test]
     fn test_opaque_indexer() {
         let tk_stream = quote! {
@@ -2869,5 +3747,125 @@ mod test {
         };
 
         insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_callback_simple() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub struct CallbackWrapper {
+                    cant_be_empty: bool,
+                }
+
+                impl CallbackWrapper {
+                    pub fn test_multi_arg_callback(f: impl Fn(i32) -> i32, x: i32) -> i32 {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_struct_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_callback_no_args() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub struct CallbackWrapper {
+                    cant_be_empty: bool,
+                }
+
+                impl CallbackWrapper {
+                    pub fn test_no_args(h: impl Fn()) -> i32 {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_struct_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_callback_with_struct_param() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub struct SomeStruct {
+                    x: i32,
+                    y: i32,
+                }
+
+                pub struct CallbackWrapper {
+                    cant_be_empty: bool,
+                }
+
+                impl CallbackWrapper {
+                    pub fn test_cb_with_struct(f: impl Fn(SomeStruct) -> i32) -> i32 {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_all_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_multiple_callbacks() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub struct CallbackWrapper {
+                    cant_be_empty: bool,
+                }
+
+                impl CallbackWrapper {
+                    pub fn test_multiple_cb_args(f: impl Fn() -> i32, g: impl Fn(i32) -> i32) -> i32 {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_struct_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_trait_simple() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub struct TraitTestingStruct {
+                    x: i32,
+                    y: i32,
+                }
+
+                pub trait TesterTrait {
+                    fn test_trait_fn(&self, x: u32) -> u32;
+                    fn test_void_trait_fn(&self);
+                    fn test_struct_trait_fn(&self, s: TraitTestingStruct) -> i32;
+                }
+
+                pub struct TraitWrapper {
+                    cant_be_empty: bool,
+                }
+
+                impl TraitWrapper {
+                    pub fn test_with_trait(t: impl TesterTrait, x: i32) -> i32 {
+                        unimplemented!()
+                    }
+
+                    pub fn test_trait_with_struct(t: impl TesterTrait) -> i32 {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_all_with_traits_for_test(tk_stream));
     }
 }

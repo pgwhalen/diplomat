@@ -26,7 +26,7 @@ cargo make gen-java-feature    # Regenerate Java bindings for feature_tests/
 cargo make test-java-example   # Build native lib + run Gradle tests
 cargo make test-java-feature   # Build native lib + run Gradle feature tests
 cargo make test-java           # Run both example and feature tests
-cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tests (23 tests)
+cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tests (28 tests)
 ```
 
 ## Current Status
@@ -68,6 +68,15 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 - **Error types** — structs and opaques with `#[diplomat::attr(auto, error)]` extend `RuntimeException`
 - **Method name renaming** via `#[diplomat::attr]`
 - **Java keyword collision avoidance**
+- **Callbacks** — `impl Fn(args) -> ret` parameters generate `@FunctionalInterface` inner interfaces, static runner methods, and FFM upcall stubs. At each call site, the Java lambda is registered in a `ConcurrentHashMap` registry and a `DiplomatCallback` native struct is allocated with `{data=id, run_callback=stub, destructor=destructor_stub}`.
+  - Simple callbacks: `Fn(i32) -> i32`, `Fn()`, `Fn() -> i32`
+  - Callbacks with struct params: `Fn(SomeStruct) -> i32`
+  - Multiple callback params in one method
+  - `CallbackHolder` / `MutableCallbackHolder` (stored callbacks with `'static` lifetime)
+  - **Disabled for Java**: callbacks with str/opaque/slice args, result/option/DiplomatResult returns, inner/str/slice/struct-slice conversion, opaque result errors
+- **Traits** — Diplomat trait definitions generate Java `interface` files with vtable layouts, a `Statics` inner class for upcall stubs, and a `createNative()` factory method. Users implement the interface and pass it to methods accepting `impl Trait`.
+  - Trait methods with primitive, void, and struct params/returns
+  - **Disabled for Java**: trait methods returning `Result`
 - **Feature tests** — `feature_tests/java/somelib/` Gradle project with JUnit 5 tests
 
 ### What doesn't work yet
@@ -75,13 +84,12 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 - Struct fields of certain unsupported types (e.g., struct slices, string view slices) — emit `Object` placeholder
 - Cyclic struct references in result layouts — circular static class initialization in Java (e.g., `CyclicStructA` ↔ `CyclicStructB` when result layouts create cross-type references)
 - Slice parameters/returns other than `&str` / `&DiplomatStr16` — not supported (primitive slices work as struct fields)
-- Callbacks / traits
 - Accessors / comparators
 - Java is not yet included in CI meta-tasks (`test-example`, `test-feature`, `test-all`)
 
 ### `attr_support()` flags
 
-In `tool/src/java/mod.rs`, the following are set to `true`: `method_overloading`, `utf8_strings`, `utf16_strings`, `non_exhaustive_structs`, `option`, `custom_errors`, `constructors`, `named_constructors`, `fallible_constructors`, `iterators`, `iterables`, `indexing`. All others are `false`. Flags should be flipped to `true` as features are implemented.
+In `tool/src/java/mod.rs`, the following are set to `true`: `method_overloading`, `utf8_strings`, `utf16_strings`, `non_exhaustive_structs`, `option`, `custom_errors`, `constructors`, `named_constructors`, `fallible_constructors`, `iterators`, `iterables`, `indexing`, `callbacks`, `traits`. All others are `false`. Flags should be flipped to `true` as features are implemented.
 
 ## Feature Checklist
 
@@ -163,9 +171,9 @@ Cross-backend comparison is provided where relevant. The Kotlin backend (JNA-bas
 
 - [x] **`indexing`** — Generate a `get(indexType)` method for the `indexer` attribute. Generates a private `getInternal()` wrapper that returns raw nullable values, with a public `get()` wrapper that throws `IndexOutOfBoundsException` for null results. Java does not support `[]` operator overloading, but `get()` is the idiomatic convention (`java.util.List`, etc.). Supported by Kotlin, Dart, C++, and nanobind.
 
-- [ ] **`callbacks`** — Allow callback function parameters. Java supports callbacks via functional interfaces (`@FunctionalInterface`) and, for FFM API interop, the `Linker.upcallStub()` mechanism that converts a Java `MethodHandle` into a native function pointer (`MemorySegment`). This is more complex than the Kotlin backend's JNA `Callback` interface approach but is fully supported by the FFM API. Kotlin, C++, C, and nanobind support this. Implementation involves generating functional interfaces for each callback signature and creating upcall stubs at call sites.
+- [x] **`callbacks`** — Callback function parameters (`impl Fn(args) -> ret`) generate `@FunctionalInterface` inner interfaces, static runner methods, and FFM `Linker.upcallStub()` stubs. At each call site, the Java lambda is registered in a `ConcurrentHashMap<Long, Object>` registry in `DiplomatLib.java`; a `DiplomatCallback` native struct is allocated with `{data=id, run_callback=stub, destructor=destructor_stub}`. Callbacks with str/opaque/slice args, result/option returns, and various conversion callbacks are disabled for Java via `#[diplomat::attr(java, disable)]`. Kotlin, C++, C, and nanobind also support this.
 
-- [ ] **`traits`** — Generate Java interfaces from Diplomat trait definitions. Java interfaces are the natural analog of Rust traits. Single-method traits can use `@FunctionalInterface` for lambda syntax. Multi-method traits become regular interfaces. The FFM upcall stub mechanism handles the native-to-Java invocation path. The Kotlin backend implements traits using JNA callback interfaces and vtable wrappers; the Java FFM equivalent requires `Linker.upcallStub()` for each method. Kotlin and C support traits; C++ and nanobind do not.
+- [x] **`traits`** — Diplomat trait definitions generate Java `interface` files. Each interface includes the user-facing method signatures, a `VTABLE_LAYOUT` and `TRAIT_STRUCT_LAYOUT` for the native representation, a `Statics` inner class with per-method runner methods and upcall stubs, and a `createNative(Object impl_, Arena arena)` factory method. Trait methods returning `Result` are disabled for Java. Kotlin and C also support traits.
 
 - [ ] **`owned_slices`** — Support for Rust-allocated slices that transfer ownership to the foreign side. The FFM API can manage these via `MemorySegment` with custom cleanup actions (using `Arena` or manual `MemorySegment.ofAddress()` with deallocation). The Kotlin backend wraps these in an `OwnedSlice` class with a raw pointer and length. Kotlin, Dart, and JS support this. Requires implementing basic slice support first.
 

@@ -1,0 +1,96 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_struct_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
+import java.nio.charset.StandardCharsets;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+
+public class CallbackWrapper {
+
+    static final StructLayout LAYOUT = MemoryLayout.structLayout(
+        ValueLayout.JAVA_BOOLEAN.withName("cantBeEmpty")
+    );
+    private static final VarHandle VH_CANT_BE_EMPTY = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("cantBeEmpty"));
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+    private static final MethodHandle CALLBACKWRAPPER_TEST_NO_ARGS;
+
+    static {
+        System.loadLibrary("diplomat_example");
+        LIB = SymbolLookup.loaderLookup();
+        CALLBACKWRAPPER_TEST_NO_ARGS = LINKER.downcallHandle(
+            LIB.find("CallbackWrapper_test_no_args").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
+        );
+    }
+
+    @FunctionalInterface
+    public interface TestNoArgsH {
+        void invoke();
+    }
+
+    private static void runCallback_testNoArgs_h(MemorySegment data) {
+        @SuppressWarnings("unchecked")
+        TestNoArgsH cb = DiplomatLib.getCallback(data.address(), TestNoArgsH.class);
+        cb.invoke();
+    }
+
+    private static final MethodHandle MH_RUN_testNoArgs_h;
+    private static final MemorySegment UPCALL_testNoArgs_h;
+    static {
+        try {
+            MH_RUN_testNoArgs_h = MethodHandles.lookup().findStatic(
+                CallbackWrapper.class, "runCallback_testNoArgs_h",
+                MethodType.methodType(void.class, MemorySegment.class));
+            UPCALL_testNoArgs_h = DiplomatLib.LINKER_SHARED.upcallStub(
+                MH_RUN_testNoArgs_h,
+                FunctionDescriptor.ofVoid(ValueLayout.ADDRESS),
+                Arena.global());
+        } catch (ReflectiveOperationException ex) {
+            throw new ExceptionInInitializerError(ex);
+        }
+    }
+
+    public boolean cantBeEmpty;
+
+    public CallbackWrapper() {
+    }
+
+    CallbackWrapper(boolean cantBeEmpty) {
+        this.cantBeEmpty = cantBeEmpty;
+    }
+
+    static CallbackWrapper fromNative(MemorySegment seg) {
+        return new CallbackWrapper(
+            (boolean) VH_CANT_BE_EMPTY.get(seg, 0L)
+        );
+    }
+
+    MemorySegment toNative(Arena arena) {
+        var seg = arena.allocate(LAYOUT);
+        VH_CANT_BE_EMPTY.set(seg, 0L, this.cantBeEmpty);
+        return seg;
+    }
+
+    public static int testNoArgs(TestNoArgsH h) {
+        try (var arena = Arena.ofConfined()) {
+            long hId = DiplomatLib.registerCallback(h);
+            var hNative = arena.allocate(DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT);
+            DiplomatLib.VH_CB_DATA.set(hNative, 0L, MemorySegment.ofAddress(hId));
+            DiplomatLib.VH_CB_RUN.set(hNative, 0L, UPCALL_testNoArgs_h);
+            DiplomatLib.VH_CB_DESTRUCTOR.set(hNative, 0L, DiplomatLib.DESTRUCTOR_STUB);
+            return (int) CALLBACKWRAPPER_TEST_NO_ARGS.invokeExact(hNative);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+}

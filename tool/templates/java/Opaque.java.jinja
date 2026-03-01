@@ -12,6 +12,10 @@ import java.util.Iterator;
 {%- if special_methods.iterator_type.is_some() %}
 import java.util.NoSuchElementException;
 {%- endif %}
+{%- if has_callbacks %}
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+{%- endif %}
 
 public class {{type_name}}
     {%- if is_error %} extends RuntimeException{% endif %} implements AutoCloseable
@@ -45,6 +49,18 @@ public class {{type_name}}
         );
         {%- endfor %}
     }
+{%- for iface in callback_interfaces %}
+
+{{iface}}
+{%- endfor %}
+{%- for runner in callback_runners %}
+
+{{runner}}
+{%- endfor %}
+{%- for s in callback_statics %}
+
+{{s}}
+{%- endfor %}
 
     final MemorySegment handle;
 {%- if special_methods.iterator_type.is_some() %}
