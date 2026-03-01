@@ -6,6 +6,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class Config {
@@ -14,6 +15,8 @@ public class Config {
         ValueLayout.JAVA_INT.withName("width"),
         ValueLayout.JAVA_INT.withName("height")
     );
+    private static final VarHandle VH_WIDTH = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("width"));
+    private static final VarHandle VH_HEIGHT = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("height"));
 
     public int width;
 
@@ -29,15 +32,15 @@ public class Config {
 
     static Config fromNative(MemorySegment seg) {
         return new Config(
-            (int) seg.get(ValueLayout.JAVA_INT, 0L),
-            (int) seg.get(ValueLayout.JAVA_INT, 4L)
+            (int) VH_WIDTH.get(seg, 0L),
+            (int) VH_HEIGHT.get(seg, 0L)
         );
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        seg.set(ValueLayout.JAVA_INT, 0L, this.width);
-        seg.set(ValueLayout.JAVA_INT, 4L, this.height);
+        VH_WIDTH.set(seg, 0L, this.width);
+        VH_HEIGHT.set(seg, 0L, this.height);
         return seg;
     }
 }

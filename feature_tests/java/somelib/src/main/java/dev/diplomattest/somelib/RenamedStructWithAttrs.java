@@ -2,6 +2,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class RenamedStructWithAttrs {
@@ -11,6 +12,8 @@ public class RenamedStructWithAttrs {
         MemoryLayout.paddingLayout(3),
         ValueLayout.JAVA_INT.withName("b")
     );
+    private static final VarHandle VH_A = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("a"));
+    private static final VarHandle VH_B = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("b"));
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
@@ -53,8 +56,8 @@ public class RenamedStructWithAttrs {
             var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 8L);
             if (isOk) {
                 var seg = result.asSlice(0L, RenamedStructWithAttrs.LAYOUT.byteSize());
-                this.a = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 0L);
-                this.b = (int) seg.get(ValueLayout.JAVA_INT, 4L);
+                this.a = (boolean) VH_A.get(seg, 0L);
+                this.b = (int) VH_B.get(seg, 0L);
             } else {
                 throw new RuntimeException("Diplomat error");
             }
@@ -67,15 +70,15 @@ public class RenamedStructWithAttrs {
 
     static RenamedStructWithAttrs fromNative(MemorySegment seg) {
         var result = new RenamedStructWithAttrs();
-        result.a = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 0L);
-        result.b = (int) seg.get(ValueLayout.JAVA_INT, 4L);
+        result.a = (boolean) VH_A.get(seg, 0L);
+        result.b = (int) VH_B.get(seg, 0L);
         return result;
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        seg.set(ValueLayout.JAVA_BOOLEAN, 0L, this.a);
-        seg.set(ValueLayout.JAVA_INT, 4L, this.b);
+        VH_A.set(seg, 0L, this.a);
+        VH_B.set(seg, 0L, this.b);
         return seg;
     }
 

@@ -3,6 +3,7 @@ use diplomat_core::hir::{
     self, BackendAttrSupport, DocsUrlGenerator, Method, OutType, ReturnType, SelfType, Slice,
     SpecialMethod, StringEncoding, StructField, SuccessType, Type, TypeContext, TypeDef, TypeId,
 };
+use heck::ToShoutySnakeCase;
 use std::borrow::Cow;
 
 mod formatter;
@@ -185,6 +186,16 @@ struct JavaStructFieldInfo {
     java_type: String,
     from_native_expr: String,
     to_native_stmt: String,
+}
+
+struct JavaVarHandleInfo {
+    handle_name: String,
+    declaration: String,
+}
+
+struct JavaOffsetConstInfo {
+    const_name: String,
+    declaration: String,
 }
 
 struct JavaEnumVariantInfo {
@@ -1434,6 +1445,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     ) -> (String, String) {
         let is_error = ty.attrs.custom_errors;
 
+        // Compute VarHandle and offset constant declarations
+        let (var_handles, offset_consts) = self.compute_var_handles(&ty.fields);
+
         // Compute field info
         let fields: Vec<JavaStructFieldInfo> =
             self.compute_struct_fields(&ty.fields, type_name);
@@ -1527,6 +1541,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             has_zero_arg_constructor: bool,
             has_constructors: bool,
             layout_members: &'a str,
+            var_handles: &'a [JavaVarHandleInfo],
+            offset_consts: &'a [JavaOffsetConstInfo],
             fields: &'a [JavaStructFieldInfo],
             native_methods: &'a [JavaNativeMethodInfo],
             constructor_methods: &'a [JavaMethodInfo],
@@ -1551,6 +1567,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 has_zero_arg_constructor,
                 has_constructors,
                 layout_members: &layout_members,
+                var_handles: &var_handles,
+                offset_consts: &offset_consts,
                 fields: &fields,
                 native_methods: &native_methods,
                 constructor_methods: &constructor_methods,
@@ -1562,33 +1580,117 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         )
     }
 
+    /// Compute VarHandle and offset constant declarations for a struct's fields.
+    fn compute_var_handles<P: hir::TyPosition>(
+        &self,
+        fields: &[StructField<P>],
+    ) -> (Vec<JavaVarHandleInfo>, Vec<JavaOffsetConstInfo>) {
+        let mut var_handles = Vec::new();
+        let mut offset_consts = Vec::new();
+
+        for field in fields.iter() {
+            let field_name = self.formatter.fmt_field_name(field.name.as_str());
+            let shouty = field_name.to_shouty_snake_case();
+
+            match &field.ty {
+                // Primitives, booleans, enums, opaques: single VarHandle
+                Type::Primitive(_) | Type::Opaque(_) | Type::Enum(_) => {
+                    var_handles.push(JavaVarHandleInfo {
+                        handle_name: format!("VH_{shouty}"),
+                        declaration: format!(
+                            "LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"{field_name}\"))"
+                        ),
+                    });
+                }
+                // Nested struct: offset constant (accessed via asSlice)
+                Type::Struct(_) => {
+                    offset_consts.push(JavaOffsetConstInfo {
+                        const_name: format!("OFFSET_{shouty}"),
+                        declaration: format!(
+                            "LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement(\"{field_name}\"))"
+                        ),
+                    });
+                }
+                // Slice: two VarHandles for data and len sub-fields
+                Type::Slice(_) => {
+                    var_handles.push(JavaVarHandleInfo {
+                        handle_name: format!("VH_{shouty}_DATA"),
+                        declaration: format!(
+                            "LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"{field_name}\"), MemoryLayout.PathElement.groupElement(\"data\"))"
+                        ),
+                    });
+                    var_handles.push(JavaVarHandleInfo {
+                        handle_name: format!("VH_{shouty}_LEN"),
+                        declaration: format!(
+                            "LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"{field_name}\"), MemoryLayout.PathElement.groupElement(\"len\"))"
+                        ),
+                    });
+                }
+                // DiplomatOption: VarHandle(s) for value + VarHandle for is_ok
+                Type::DiplomatOption(inner) => {
+                    match inner.as_ref() {
+                        // For nested struct options: offset for value, VarHandle for is_ok
+                        Type::Struct(_) => {
+                            offset_consts.push(JavaOffsetConstInfo {
+                                const_name: format!("OFFSET_{shouty}"),
+                                declaration: format!(
+                                    "LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement(\"{field_name}\"))"
+                                ),
+                            });
+                        }
+                        // For slice options: VarHandles for data/len sub-fields
+                        Type::Slice(_) => {
+                            var_handles.push(JavaVarHandleInfo {
+                                handle_name: format!("VH_{shouty}_DATA"),
+                                declaration: format!(
+                                    "LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"{field_name}\"), MemoryLayout.PathElement.groupElement(\"value\"), MemoryLayout.PathElement.groupElement(\"data\"))"
+                                ),
+                            });
+                            var_handles.push(JavaVarHandleInfo {
+                                handle_name: format!("VH_{shouty}_LEN"),
+                                declaration: format!(
+                                    "LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"{field_name}\"), MemoryLayout.PathElement.groupElement(\"value\"), MemoryLayout.PathElement.groupElement(\"len\"))"
+                                ),
+                            });
+                        }
+                        // For primitives/enums/opaques: VarHandle for value
+                        _ => {
+                            var_handles.push(JavaVarHandleInfo {
+                                handle_name: format!("VH_{shouty}_VALUE"),
+                                declaration: format!(
+                                    "LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"{field_name}\"), MemoryLayout.PathElement.groupElement(\"value\"))"
+                                ),
+                            });
+                        }
+                    }
+                    var_handles.push(JavaVarHandleInfo {
+                        handle_name: format!("VH_{shouty}_IS_OK"),
+                        declaration: format!(
+                            "LAYOUT.varHandle(MemoryLayout.PathElement.groupElement(\"{field_name}\"), MemoryLayout.PathElement.groupElement(\"is_ok\"))"
+                        ),
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        (var_handles, offset_consts)
+    }
+
     /// Compute Java field info for each struct field.
     fn compute_struct_fields<P: hir::TyPosition>(
         &self,
         fields: &[StructField<P>],
         _type_name: &str,
     ) -> Vec<JavaStructFieldInfo> {
-        // First compute offsets for each field (needed for fromNative/toNative with nested structs)
-        let mut offset: usize = 0;
-        let mut field_offsets = Vec::new();
-        for field in fields.iter() {
-            let (f_size, f_align) = self.get_field_size_align(&field.ty);
-            if f_align > 0 {
-                let padding = (f_align - (offset % f_align)) % f_align;
-                offset += padding;
-            }
-            field_offsets.push(offset);
-            offset += f_size;
-        }
-
         fields
             .iter()
-            .zip(field_offsets.iter())
-            .map(|(field, &field_offset)| {
+            .map(|field| {
                 let field_name = self.formatter.fmt_field_name(field.name.as_str()).to_string();
                 let java_type = self.field_java_type(&field.ty);
-                let from_native_expr = self.field_from_native(&field.ty, &field_name, field_offset);
-                let to_native_stmt = self.field_to_native(&field.ty, &field_name, field_offset);
+                let shouty = field_name.to_shouty_snake_case();
+                let from_native_expr = self.field_from_native(&field.ty, &field_name, &shouty);
+                let to_native_stmt = self.field_to_native(&field.ty, &field_name, &shouty);
 
                 JavaStructFieldInfo {
                     field_name,
@@ -1666,9 +1768,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let (_inner_size, inner_align) = field_size_align_generic(inner.as_ref(), self.formatter);
                 let padding_after_bool = if inner_align > 1 { inner_align - 1 } else { 0 };
                 if padding_after_bool > 0 {
-                    format!("MemoryLayout.structLayout({inner_layout}, ValueLayout.JAVA_BOOLEAN, MemoryLayout.paddingLayout({padding_after_bool}))")
+                    format!("MemoryLayout.structLayout({inner_layout}.withName(\"value\"), ValueLayout.JAVA_BOOLEAN.withName(\"is_ok\"), MemoryLayout.paddingLayout({padding_after_bool}))")
                 } else {
-                    format!("MemoryLayout.structLayout({inner_layout}, ValueLayout.JAVA_BOOLEAN)")
+                    format!("MemoryLayout.structLayout({inner_layout}.withName(\"value\"), ValueLayout.JAVA_BOOLEAN.withName(\"is_ok\"))")
                 }
             }
             _ => "ValueLayout.JAVA_BYTE".to_string(),
@@ -1726,37 +1828,42 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     }
 
     /// Generate the expression to read a field from a MemorySegment in fromNative.
+    /// `shouty` is the SHOUTY_SNAKE_CASE version of the field name, used to reference VarHandles/offsets.
     fn field_from_native<P: hir::TyPosition>(
         &self,
         ty: &Type<P>,
         field_name: &str,
-        offset: usize,
+        shouty: &str,
     ) -> String {
         match ty {
             Type::Primitive(prim) => {
-                let layout = self.formatter.fmt_primitive_as_ffi(*prim);
-                format!("({java_type}) seg.get({layout}, {offset}L)", java_type = self.formatter.fmt_primitive_as_java(*prim))
+                let java_type = self.formatter.fmt_primitive_as_java(*prim);
+                let vh = format!("VH_{shouty}");
+                format!("({java_type}) {vh}.get(seg, 0L)")
             }
             Type::Opaque(_) => {
                 let type_id = ty.id().expect("opaque must have id");
                 let type_name = self.formatter.fmt_type_name(type_id);
-                format!("new {type_name}(seg.get(ValueLayout.ADDRESS, {offset}L))")
+                let vh = format!("VH_{shouty}");
+                format!("new {type_name}((MemorySegment) {vh}.get(seg, 0L))")
             }
             Type::Enum(_) => {
                 let type_id = ty.id().expect("enum must have id");
                 let type_name = self.formatter.fmt_type_name(type_id);
-                format!("{type_name}.fromNative((int) seg.get(ValueLayout.JAVA_INT, {offset}L))")
+                let vh = format!("VH_{shouty}");
+                format!("{type_name}.fromNative((int) {vh}.get(seg, 0L))")
             }
             Type::Struct(_) => {
                 let type_id = ty.id().expect("struct must have id");
                 let type_name = self.formatter.fmt_type_name(type_id);
+                let offset_const = format!("OFFSET_{shouty}");
                 format!(
-                    "{type_name}.fromNative(seg.asSlice({offset}L, {type_name}.LAYOUT.byteSize()))"
+                    "{type_name}.fromNative(seg.asSlice({offset_const}, {type_name}.LAYOUT.byteSize()))"
                 )
             }
             Type::Slice(slc) => {
-                let data_offset = offset;
-                let len_offset = offset + 8;
+                let vh_data = format!("VH_{shouty}_DATA");
+                let vh_len = format!("VH_{shouty}_LEN");
                 match slc {
                     Slice::Str(_, encoding) => {
                         let charset = match encoding {
@@ -1768,57 +1875,127 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                             _ => "",
                         };
                         format!(
-                            "new String(seg.get(ValueLayout.ADDRESS, {data_offset}L).reinterpret(seg.get(ValueLayout.JAVA_LONG, {len_offset}L){byte_multiplier}).toArray(ValueLayout.JAVA_BYTE), {charset})"
+                            "new String(((MemorySegment) {vh_data}.get(seg, 0L)).reinterpret((long) {vh_len}.get(seg, 0L){byte_multiplier}).toArray(ValueLayout.JAVA_BYTE), {charset})"
                         )
                     }
                     Slice::Primitive(_, prim) => {
                         let layout = self.formatter.fmt_primitive_as_ffi(*prim);
                         let (elem_size, _) = self.formatter.primitive_size_align(*prim);
                         format!(
-                            "seg.get(ValueLayout.ADDRESS, {data_offset}L).reinterpret(seg.get(ValueLayout.JAVA_LONG, {len_offset}L) * {elem_size}L).toArray({layout})"
+                            "((MemorySegment) {vh_data}.get(seg, 0L)).reinterpret((long) {vh_len}.get(seg, 0L) * {elem_size}L).toArray({layout})"
                         )
                     }
                     _ => format!("null /* unsupported slice field {field_name} */"),
                 }
             }
             Type::DiplomatOption(inner) => {
-                let (inner_size, _inner_align) = field_size_align_generic(inner.as_ref(), self.formatter);
-                let is_ok_offset = offset + inner_size;
-                let inner_expr = self.field_from_native(inner.as_ref(), field_name, offset);
-                format!("seg.get(ValueLayout.JAVA_BOOLEAN, {is_ok_offset}L) ? {inner_expr} : null")
+                let vh_is_ok = format!("VH_{shouty}_IS_OK");
+                let inner_expr = match inner.as_ref() {
+                    Type::Struct(_) => {
+                        // Nested struct option uses offset + inner struct size
+                        let type_id = inner.id().expect("struct must have id");
+                        let type_name = self.formatter.fmt_type_name(type_id);
+                        let offset_const = format!("OFFSET_{shouty}");
+                        format!(
+                            "{type_name}.fromNative(seg.asSlice({offset_const}, {type_name}.LAYOUT.byteSize()))"
+                        )
+                    }
+                    Type::Slice(slc) => {
+                        let vh_data = format!("VH_{shouty}_DATA");
+                        let vh_len = format!("VH_{shouty}_LEN");
+                        match slc {
+                            Slice::Str(_, encoding) => {
+                                let charset = match encoding {
+                                    StringEncoding::UnvalidatedUtf16 => "StandardCharsets.UTF_16LE",
+                                    _ => "StandardCharsets.UTF_8",
+                                };
+                                let byte_multiplier = match encoding {
+                                    StringEncoding::UnvalidatedUtf16 => " * 2",
+                                    _ => "",
+                                };
+                                format!(
+                                    "new String(((MemorySegment) {vh_data}.get(seg, 0L)).reinterpret((long) {vh_len}.get(seg, 0L){byte_multiplier}).toArray(ValueLayout.JAVA_BYTE), {charset})"
+                                )
+                            }
+                            Slice::Primitive(_, prim) => {
+                                let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                                let (elem_size, _) = self.formatter.primitive_size_align(*prim);
+                                format!(
+                                    "((MemorySegment) {vh_data}.get(seg, 0L)).reinterpret((long) {vh_len}.get(seg, 0L) * {elem_size}L).toArray({layout})"
+                                )
+                            }
+                            _ => format!("null /* unsupported option slice field {field_name} */"),
+                        }
+                    }
+                    _ => {
+                        // Primitive, enum, opaque option uses VH_X_VALUE
+                        let vh_value = format!("VH_{shouty}_VALUE");
+                        self.field_from_native_via_vh(inner.as_ref(), &vh_value)
+                    }
+                };
+                format!("(boolean) {vh_is_ok}.get(seg, 0L) ? {inner_expr} : null")
             }
             _ => format!("null /* unsupported field {field_name} */"),
         }
     }
 
+    /// Generate expression to read a value from a VarHandle (for use inside DiplomatOption).
+    fn field_from_native_via_vh<P: hir::TyPosition>(
+        &self,
+        ty: &Type<P>,
+        vh_name: &str,
+    ) -> String {
+        match ty {
+            Type::Primitive(prim) => {
+                let java_type = self.formatter.fmt_primitive_as_java(*prim);
+                format!("({java_type}) {vh_name}.get(seg, 0L)")
+            }
+            Type::Enum(_) => {
+                let type_id = ty.id().expect("enum must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!("{type_name}.fromNative((int) {vh_name}.get(seg, 0L))")
+            }
+            Type::Opaque(_) => {
+                let type_id = ty.id().expect("opaque must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!("new {type_name}((MemorySegment) {vh_name}.get(seg, 0L))")
+            }
+            _ => format!("{vh_name}.get(seg, 0L)"),
+        }
+    }
+
     /// Generate the statement to write a field to a MemorySegment in toNative.
+    /// `shouty` is the SHOUTY_SNAKE_CASE version of the field name, used to reference VarHandles/offsets.
     fn field_to_native<P: hir::TyPosition>(
         &self,
         ty: &Type<P>,
         field_name: &str,
-        offset: usize,
+        shouty: &str,
     ) -> String {
         match ty {
-            Type::Primitive(prim) => {
-                let layout = self.formatter.fmt_primitive_as_ffi(*prim);
-                format!("seg.set({layout}, {offset}L, this.{field_name});")
+            Type::Primitive(_) => {
+                let vh = format!("VH_{shouty}");
+                format!("{vh}.set(seg, 0L, this.{field_name});")
             }
             Type::Opaque(_) => {
-                format!("seg.set(ValueLayout.ADDRESS, {offset}L, this.{field_name}.handle);")
+                let vh = format!("VH_{shouty}");
+                format!("{vh}.set(seg, 0L, this.{field_name}.handle);")
             }
             Type::Enum(_) => {
-                format!("seg.set(ValueLayout.JAVA_INT, {offset}L, this.{field_name}.toNative());")
+                let vh = format!("VH_{shouty}");
+                format!("{vh}.set(seg, 0L, this.{field_name}.toNative());")
             }
             Type::Struct(_) => {
                 let type_id = ty.id().expect("struct must have id");
                 let type_name = self.formatter.fmt_type_name(type_id);
+                let offset_const = format!("OFFSET_{shouty}");
                 format!(
-                    "seg.asSlice({offset}L, {type_name}.LAYOUT.byteSize()).copyFrom(this.{field_name}.toNative(arena));"
+                    "seg.asSlice({offset_const}, {type_name}.LAYOUT.byteSize()).copyFrom(this.{field_name}.toNative(arena));"
                 )
             }
             Type::Slice(slc) => {
-                let data_offset = offset;
-                let len_offset = offset + 8;
+                let vh_data = format!("VH_{shouty}_DATA");
+                let vh_len = format!("VH_{shouty}_LEN");
                 match slc {
                     Slice::Str(_, encoding) => {
                         let (charset, elem_layout) = match encoding {
@@ -1830,24 +2007,23 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                             _ => format!("{field_name}Bytes.length"),
                         };
                         format!(
-                            "{{ byte[] {field_name}Bytes = this.{field_name}.getBytes({charset}); var {field_name}Seg = arena.allocateFrom({elem_layout}, {field_name}Bytes); seg.set(ValueLayout.ADDRESS, {data_offset}L, {field_name}Seg); seg.set(ValueLayout.JAVA_LONG, {len_offset}L, (long) {len_expr}); }}"
+                            "{{ byte[] {field_name}Bytes = this.{field_name}.getBytes({charset}); var {field_name}Seg = arena.allocateFrom({elem_layout}, {field_name}Bytes); {vh_data}.set(seg, 0L, {field_name}Seg); {vh_len}.set(seg, 0L, (long) {len_expr}); }}"
                         )
                     }
                     Slice::Primitive(_, prim) => {
                         let layout = self.formatter.fmt_primitive_as_ffi(*prim);
                         format!(
-                            "{{ var {field_name}Seg = arena.allocateFrom({layout}, this.{field_name}); seg.set(ValueLayout.ADDRESS, {data_offset}L, {field_name}Seg); seg.set(ValueLayout.JAVA_LONG, {len_offset}L, (long) this.{field_name}.length); }}"
+                            "{{ var {field_name}Seg = arena.allocateFrom({layout}, this.{field_name}); {vh_data}.set(seg, 0L, {field_name}Seg); {vh_len}.set(seg, 0L, (long) this.{field_name}.length); }}"
                         )
                     }
                     _ => format!("// unsupported slice field {field_name}"),
                 }
             }
             Type::DiplomatOption(inner) => {
-                let (inner_size, _inner_align) = field_size_align_generic(inner.as_ref(), self.formatter);
-                let is_ok_offset = offset + inner_size;
-                let inner_to_native = self.field_to_native_value(inner.as_ref(), field_name, offset);
+                let vh_is_ok = format!("VH_{shouty}_IS_OK");
+                let inner_to_native = self.field_to_native_value(inner.as_ref(), field_name, shouty);
                 format!(
-                    "if (this.{field_name} != null) {{ {inner_to_native} seg.set(ValueLayout.JAVA_BOOLEAN, {is_ok_offset}L, true); }} else {{ seg.set(ValueLayout.JAVA_BOOLEAN, {is_ok_offset}L, false); }}"
+                    "if (this.{field_name} != null) {{ {inner_to_native} {vh_is_ok}.set(seg, 0L, true); }} else {{ {vh_is_ok}.set(seg, 0L, false); }}"
                 )
             }
             _ => format!("// unsupported field {field_name}"),
@@ -1855,30 +2031,33 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     }
 
     /// Generate the statement to write a field's inner value to a MemorySegment (for Option unwrapping).
+    /// `shouty` is the SHOUTY_SNAKE_CASE version of the field name.
     fn field_to_native_value<P: hir::TyPosition>(
         &self,
         ty: &Type<P>,
         field_name: &str,
-        offset: usize,
+        shouty: &str,
     ) -> String {
         match ty {
-            Type::Primitive(prim) => {
-                let layout = self.formatter.fmt_primitive_as_ffi(*prim);
-                format!("seg.set({layout}, {offset}L, this.{field_name});")
+            Type::Primitive(_) | Type::Opaque(_) => {
+                let vh = format!("VH_{shouty}_VALUE");
+                format!("{vh}.set(seg, 0L, this.{field_name});")
             }
             Type::Enum(_) => {
-                format!("seg.set(ValueLayout.JAVA_INT, {offset}L, this.{field_name}.toNative());")
+                let vh = format!("VH_{shouty}_VALUE");
+                format!("{vh}.set(seg, 0L, this.{field_name}.toNative());")
             }
             Type::Struct(_) => {
                 let type_id = ty.id().expect("struct must have id");
                 let type_name = self.formatter.fmt_type_name(type_id);
+                let offset_const = format!("OFFSET_{shouty}");
                 format!(
-                    "seg.asSlice({offset}L, {type_name}.LAYOUT.byteSize()).copyFrom(this.{field_name}.toNative(arena));"
+                    "seg.asSlice({offset_const}, {type_name}.LAYOUT.byteSize()).copyFrom(this.{field_name}.toNative(arena));"
                 )
             }
             Type::Slice(slc) => {
-                let data_offset = offset;
-                let len_offset = offset + 8;
+                let vh_data = format!("VH_{shouty}_DATA");
+                let vh_len = format!("VH_{shouty}_LEN");
                 match slc {
                     Slice::Str(_, encoding) => {
                         let charset = match encoding {
@@ -1890,13 +2069,13 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                             _ => format!("{field_name}Bytes.length"),
                         };
                         format!(
-                            "byte[] {field_name}Bytes = this.{field_name}.getBytes({charset}); var {field_name}Seg = arena.allocateFrom(ValueLayout.JAVA_BYTE, {field_name}Bytes); seg.set(ValueLayout.ADDRESS, {data_offset}L, {field_name}Seg); seg.set(ValueLayout.JAVA_LONG, {len_offset}L, (long) {len_expr});"
+                            "byte[] {field_name}Bytes = this.{field_name}.getBytes({charset}); var {field_name}Seg = arena.allocateFrom(ValueLayout.JAVA_BYTE, {field_name}Bytes); {vh_data}.set(seg, 0L, {field_name}Seg); {vh_len}.set(seg, 0L, (long) {len_expr});"
                         )
                     }
                     Slice::Primitive(_, prim) => {
                         let layout = self.formatter.fmt_primitive_as_ffi(*prim);
                         format!(
-                            "var {field_name}Seg = arena.allocateFrom({layout}, this.{field_name}); seg.set(ValueLayout.ADDRESS, {data_offset}L, {field_name}Seg); seg.set(ValueLayout.JAVA_LONG, {len_offset}L, (long) this.{field_name}.length);"
+                            "var {field_name}Seg = arena.allocateFrom({layout}, this.{field_name}); {vh_data}.set(seg, 0L, {field_name}Seg); {vh_len}.set(seg, 0L, (long) this.{field_name}.length);"
                         )
                     }
                     _ => format!("// unsupported option inner slice field {field_name}"),

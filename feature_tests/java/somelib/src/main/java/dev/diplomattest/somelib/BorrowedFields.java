@@ -2,6 +2,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class BorrowedFields {
@@ -11,6 +12,12 @@ public class BorrowedFields {
         DiplomatLib.DIPLOMAT_STRING_VIEW.withName("b"),
         DiplomatLib.DIPLOMAT_STRING_VIEW.withName("c")
     );
+    private static final VarHandle VH_A_DATA = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("a"), MemoryLayout.PathElement.groupElement("data"));
+    private static final VarHandle VH_A_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("a"), MemoryLayout.PathElement.groupElement("len"));
+    private static final VarHandle VH_B_DATA = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("b"), MemoryLayout.PathElement.groupElement("data"));
+    private static final VarHandle VH_B_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("b"), MemoryLayout.PathElement.groupElement("len"));
+    private static final VarHandle VH_C_DATA = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("c"), MemoryLayout.PathElement.groupElement("data"));
+    private static final VarHandle VH_C_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("c"), MemoryLayout.PathElement.groupElement("len"));
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
@@ -42,17 +49,17 @@ public class BorrowedFields {
 
     static BorrowedFields fromNative(MemorySegment seg) {
         return new BorrowedFields(
-            new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L) * 2).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_16LE),
-            new String(seg.get(ValueLayout.ADDRESS, 16L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 24L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
-            new String(seg.get(ValueLayout.ADDRESS, 32L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 40L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8)
+            new String(((MemorySegment) VH_A_DATA.get(seg, 0L)).reinterpret((long) VH_A_LEN.get(seg, 0L) * 2).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_16LE),
+            new String(((MemorySegment) VH_B_DATA.get(seg, 0L)).reinterpret((long) VH_B_LEN.get(seg, 0L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
+            new String(((MemorySegment) VH_C_DATA.get(seg, 0L)).reinterpret((long) VH_C_LEN.get(seg, 0L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8)
         );
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        { byte[] aBytes = this.a.getBytes(StandardCharsets.UTF_16LE); var aSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, aBytes); seg.set(ValueLayout.ADDRESS, 0L, aSeg); seg.set(ValueLayout.JAVA_LONG, 8L, (long) aBytes.length / 2); }
-        { byte[] bBytes = this.b.getBytes(StandardCharsets.UTF_8); var bSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, bBytes); seg.set(ValueLayout.ADDRESS, 16L, bSeg); seg.set(ValueLayout.JAVA_LONG, 24L, (long) bBytes.length); }
-        { byte[] cBytes = this.c.getBytes(StandardCharsets.UTF_8); var cSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, cBytes); seg.set(ValueLayout.ADDRESS, 32L, cSeg); seg.set(ValueLayout.JAVA_LONG, 40L, (long) cBytes.length); }
+        { byte[] aBytes = this.a.getBytes(StandardCharsets.UTF_16LE); var aSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, aBytes); VH_A_DATA.set(seg, 0L, aSeg); VH_A_LEN.set(seg, 0L, (long) aBytes.length / 2); }
+        { byte[] bBytes = this.b.getBytes(StandardCharsets.UTF_8); var bSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, bBytes); VH_B_DATA.set(seg, 0L, bSeg); VH_B_LEN.set(seg, 0L, (long) bBytes.length); }
+        { byte[] cBytes = this.c.getBytes(StandardCharsets.UTF_8); var cSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, cBytes); VH_C_DATA.set(seg, 0L, cSeg); VH_C_LEN.set(seg, 0L, (long) cBytes.length); }
         return seg;
     }
 

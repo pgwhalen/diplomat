@@ -6,6 +6,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class MyStruct {
@@ -15,6 +16,8 @@ public class MyStruct {
         ValueLayout.JAVA_BOOLEAN.withName("b"),
         MemoryLayout.paddingLayout(3)
     );
+    private static final VarHandle VH_A = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("a"));
+    private static final VarHandle VH_B = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("b"));
 
     public int a;
 
@@ -30,8 +33,8 @@ public class MyStruct {
 
     static MyStruct fromNative(MemorySegment seg) {
         return new MyStruct(
-            (int) seg.get(ValueLayout.JAVA_INT, 0L),
-            (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 4L)
+            (int) VH_A.get(seg, 0L),
+            (boolean) VH_B.get(seg, 0L)
         );
     }
 }

@@ -2,6 +2,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class ImportedStruct {
@@ -11,6 +12,8 @@ public class ImportedStruct {
         ValueLayout.JAVA_BYTE.withName("count"),
         MemoryLayout.paddingLayout(3)
     );
+    private static final VarHandle VH_FOO = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("foo"));
+    private static final VarHandle VH_COUNT = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("count"));
 
     public UnimportedEnum foo;
 
@@ -26,15 +29,15 @@ public class ImportedStruct {
 
     static ImportedStruct fromNative(MemorySegment seg) {
         return new ImportedStruct(
-            UnimportedEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 0L)),
-            (byte) seg.get(ValueLayout.JAVA_BYTE, 4L)
+            UnimportedEnum.fromNative((int) VH_FOO.get(seg, 0L)),
+            (byte) VH_COUNT.get(seg, 0L)
         );
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        seg.set(ValueLayout.JAVA_INT, 0L, this.foo.toNative());
-        seg.set(ValueLayout.JAVA_BYTE, 4L, this.count);
+        VH_FOO.set(seg, 0L, this.foo.toNative());
+        VH_COUNT.set(seg, 0L, this.count);
         return seg;
     }
 }

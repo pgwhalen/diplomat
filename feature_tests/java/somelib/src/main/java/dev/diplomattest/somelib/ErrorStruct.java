@@ -2,6 +2,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class ErrorStruct extends RuntimeException {
@@ -10,6 +11,8 @@ public class ErrorStruct extends RuntimeException {
         ValueLayout.JAVA_INT.withName("i"),
         ValueLayout.JAVA_INT.withName("j")
     );
+    private static final VarHandle VH_I = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("i"));
+    private static final VarHandle VH_J = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("j"));
 
     public int i;
 
@@ -27,15 +30,15 @@ public class ErrorStruct extends RuntimeException {
 
     static ErrorStruct fromNative(MemorySegment seg) {
         return new ErrorStruct(
-            (int) seg.get(ValueLayout.JAVA_INT, 0L),
-            (int) seg.get(ValueLayout.JAVA_INT, 4L)
+            (int) VH_I.get(seg, 0L),
+            (int) VH_J.get(seg, 0L)
         );
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        seg.set(ValueLayout.JAVA_INT, 0L, this.i);
-        seg.set(ValueLayout.JAVA_INT, 4L, this.j);
+        VH_I.set(seg, 0L, this.i);
+        VH_J.set(seg, 0L, this.j);
         return seg;
     }
 }

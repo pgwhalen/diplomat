@@ -6,6 +6,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class Inner {
@@ -14,6 +15,8 @@ public class Inner {
         ValueLayout.JAVA_INT.withName("x"),
         ValueLayout.JAVA_INT.withName("y")
     );
+    private static final VarHandle VH_X = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("x"));
+    private static final VarHandle VH_Y = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("y"));
 
     public int x;
 
@@ -29,21 +32,22 @@ public class Inner {
 
     static Inner fromNative(MemorySegment seg) {
         return new Inner(
-            (int) seg.get(ValueLayout.JAVA_INT, 0L),
-            (int) seg.get(ValueLayout.JAVA_INT, 4L)
+            (int) VH_X.get(seg, 0L),
+            (int) VH_Y.get(seg, 0L)
         );
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        seg.set(ValueLayout.JAVA_INT, 0L, this.x);
-        seg.set(ValueLayout.JAVA_INT, 4L, this.y);
+        VH_X.set(seg, 0L, this.x);
+        VH_Y.set(seg, 0L, this.y);
         return seg;
     }
 }package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class Outer {
@@ -52,6 +56,8 @@ public class Outer {
         Inner.LAYOUT.withName("inner"),
         ValueLayout.JAVA_DOUBLE.withName("z")
     );
+    private static final VarHandle VH_Z = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("z"));
+    private static final long OFFSET_INNER = LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement("inner"));
 
     public Inner inner;
 
@@ -67,15 +73,15 @@ public class Outer {
 
     static Outer fromNative(MemorySegment seg) {
         return new Outer(
-            Inner.fromNative(seg.asSlice(0L, Inner.LAYOUT.byteSize())),
-            (double) seg.get(ValueLayout.JAVA_DOUBLE, 8L)
+            Inner.fromNative(seg.asSlice(OFFSET_INNER, Inner.LAYOUT.byteSize())),
+            (double) VH_Z.get(seg, 0L)
         );
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        seg.asSlice(0L, Inner.LAYOUT.byteSize()).copyFrom(this.inner.toNative(arena));
-        seg.set(ValueLayout.JAVA_DOUBLE, 8L, this.z);
+        seg.asSlice(OFFSET_INNER, Inner.LAYOUT.byteSize()).copyFrom(this.inner.toNative(arena));
+        VH_Z.set(seg, 0L, this.z);
         return seg;
     }
 }

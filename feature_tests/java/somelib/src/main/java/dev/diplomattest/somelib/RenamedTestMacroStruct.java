@@ -2,6 +2,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class RenamedTestMacroStruct {
@@ -9,6 +10,7 @@ public class RenamedTestMacroStruct {
     static final StructLayout LAYOUT = MemoryLayout.structLayout(
         ValueLayout.JAVA_LONG.withName("a")
     );
+    private static final VarHandle VH_A = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("a"));
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
@@ -36,7 +38,7 @@ public class RenamedTestMacroStruct {
     public RenamedTestMacroStruct() {
         try (var arena = Arena.ofConfined()) {
             var seg = (MemorySegment) NAMESPACE_TESTMACROSTRUCT_TEST_META.invokeExact((SegmentAllocator) arena);
-            this.a = (long) seg.get(ValueLayout.JAVA_LONG, 0L);
+            this.a = (long) VH_A.get(seg, 0L);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {
@@ -46,13 +48,13 @@ public class RenamedTestMacroStruct {
 
     static RenamedTestMacroStruct fromNative(MemorySegment seg) {
         var result = new RenamedTestMacroStruct((Void) null);
-        result.a = (long) seg.get(ValueLayout.JAVA_LONG, 0L);
+        result.a = (long) VH_A.get(seg, 0L);
         return result;
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        seg.set(ValueLayout.JAVA_LONG, 0L, this.a);
+        VH_A.set(seg, 0L, this.a);
         return seg;
     }
 

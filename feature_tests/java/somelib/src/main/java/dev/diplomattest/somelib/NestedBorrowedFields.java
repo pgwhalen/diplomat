@@ -2,6 +2,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class NestedBorrowedFields {
@@ -11,6 +12,9 @@ public class NestedBorrowedFields {
         BorrowedFieldsWithBounds.LAYOUT.withName("bounds"),
         BorrowedFieldsWithBounds.LAYOUT.withName("bounds2")
     );
+    private static final long OFFSET_FIELDS = LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement("fields"));
+    private static final long OFFSET_BOUNDS = LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement("bounds"));
+    private static final long OFFSET_BOUNDS2 = LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement("bounds2"));
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
@@ -42,17 +46,17 @@ public class NestedBorrowedFields {
 
     static NestedBorrowedFields fromNative(MemorySegment seg) {
         return new NestedBorrowedFields(
-            BorrowedFields.fromNative(seg.asSlice(0L, BorrowedFields.LAYOUT.byteSize())),
-            BorrowedFieldsWithBounds.fromNative(seg.asSlice(48L, BorrowedFieldsWithBounds.LAYOUT.byteSize())),
-            BorrowedFieldsWithBounds.fromNative(seg.asSlice(96L, BorrowedFieldsWithBounds.LAYOUT.byteSize()))
+            BorrowedFields.fromNative(seg.asSlice(OFFSET_FIELDS, BorrowedFields.LAYOUT.byteSize())),
+            BorrowedFieldsWithBounds.fromNative(seg.asSlice(OFFSET_BOUNDS, BorrowedFieldsWithBounds.LAYOUT.byteSize())),
+            BorrowedFieldsWithBounds.fromNative(seg.asSlice(OFFSET_BOUNDS2, BorrowedFieldsWithBounds.LAYOUT.byteSize()))
         );
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        seg.asSlice(0L, BorrowedFields.LAYOUT.byteSize()).copyFrom(this.fields.toNative(arena));
-        seg.asSlice(48L, BorrowedFieldsWithBounds.LAYOUT.byteSize()).copyFrom(this.bounds.toNative(arena));
-        seg.asSlice(96L, BorrowedFieldsWithBounds.LAYOUT.byteSize()).copyFrom(this.bounds2.toNative(arena));
+        seg.asSlice(OFFSET_FIELDS, BorrowedFields.LAYOUT.byteSize()).copyFrom(this.fields.toNative(arena));
+        seg.asSlice(OFFSET_BOUNDS, BorrowedFieldsWithBounds.LAYOUT.byteSize()).copyFrom(this.bounds.toNative(arena));
+        seg.asSlice(OFFSET_BOUNDS2, BorrowedFieldsWithBounds.LAYOUT.byteSize()).copyFrom(this.bounds2.toNative(arena));
         return seg;
     }
 

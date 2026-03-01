@@ -2,6 +2,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class StructWithSlices {
@@ -10,6 +11,10 @@ public class StructWithSlices {
         DiplomatLib.DIPLOMAT_STRING_VIEW.withName("first"),
         DiplomatLib.DIPLOMAT_STRING_VIEW.withName("second")
     );
+    private static final VarHandle VH_FIRST_DATA = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("first"), MemoryLayout.PathElement.groupElement("data"));
+    private static final VarHandle VH_FIRST_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("first"), MemoryLayout.PathElement.groupElement("len"));
+    private static final VarHandle VH_SECOND_DATA = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("second"), MemoryLayout.PathElement.groupElement("data"));
+    private static final VarHandle VH_SECOND_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("second"), MemoryLayout.PathElement.groupElement("len"));
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
@@ -38,15 +43,15 @@ public class StructWithSlices {
 
     static StructWithSlices fromNative(MemorySegment seg) {
         return new StructWithSlices(
-            new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
-            seg.get(ValueLayout.ADDRESS, 16L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 24L) * 2L).toArray(ValueLayout.JAVA_SHORT)
+            new String(((MemorySegment) VH_FIRST_DATA.get(seg, 0L)).reinterpret((long) VH_FIRST_LEN.get(seg, 0L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
+            ((MemorySegment) VH_SECOND_DATA.get(seg, 0L)).reinterpret((long) VH_SECOND_LEN.get(seg, 0L) * 2L).toArray(ValueLayout.JAVA_SHORT)
         );
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        { byte[] firstBytes = this.first.getBytes(StandardCharsets.UTF_8); var firstSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, firstBytes); seg.set(ValueLayout.ADDRESS, 0L, firstSeg); seg.set(ValueLayout.JAVA_LONG, 8L, (long) firstBytes.length); }
-        { var secondSeg = arena.allocateFrom(ValueLayout.JAVA_SHORT, this.second); seg.set(ValueLayout.ADDRESS, 16L, secondSeg); seg.set(ValueLayout.JAVA_LONG, 24L, (long) this.second.length); }
+        { byte[] firstBytes = this.first.getBytes(StandardCharsets.UTF_8); var firstSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, firstBytes); VH_FIRST_DATA.set(seg, 0L, firstSeg); VH_FIRST_LEN.set(seg, 0L, (long) firstBytes.length); }
+        { var secondSeg = arena.allocateFrom(ValueLayout.JAVA_SHORT, this.second); VH_SECOND_DATA.set(seg, 0L, secondSeg); VH_SECOND_LEN.set(seg, 0L, (long) this.second.length); }
         return seg;
     }
 

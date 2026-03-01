@@ -2,6 +2,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class FixedDecimalFormatterOptions {
@@ -11,6 +12,8 @@ public class FixedDecimalFormatterOptions {
         ValueLayout.JAVA_BOOLEAN.withName("someOtherConfig"),
         MemoryLayout.paddingLayout(3)
     );
+    private static final VarHandle VH_GROUPING_STRATEGY = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("groupingStrategy"));
+    private static final VarHandle VH_SOME_OTHER_CONFIG = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("someOtherConfig"));
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
@@ -35,8 +38,8 @@ public class FixedDecimalFormatterOptions {
     public FixedDecimalFormatterOptions() {
         try (var arena = Arena.ofConfined()) {
             var seg = (MemorySegment) ICU4X_FIXEDDECIMALFORMATTEROPTIONS_DEFAULT_MV1.invokeExact((SegmentAllocator) arena);
-            this.groupingStrategy = FixedDecimalGroupingStrategy.fromNative((int) seg.get(ValueLayout.JAVA_INT, 0L));
-            this.someOtherConfig = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 4L);
+            this.groupingStrategy = FixedDecimalGroupingStrategy.fromNative((int) VH_GROUPING_STRATEGY.get(seg, 0L));
+            this.someOtherConfig = (boolean) VH_SOME_OTHER_CONFIG.get(seg, 0L);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {
@@ -46,15 +49,15 @@ public class FixedDecimalFormatterOptions {
 
     static FixedDecimalFormatterOptions fromNative(MemorySegment seg) {
         var result = new FixedDecimalFormatterOptions((Void) null);
-        result.groupingStrategy = FixedDecimalGroupingStrategy.fromNative((int) seg.get(ValueLayout.JAVA_INT, 0L));
-        result.someOtherConfig = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 4L);
+        result.groupingStrategy = FixedDecimalGroupingStrategy.fromNative((int) VH_GROUPING_STRATEGY.get(seg, 0L));
+        result.someOtherConfig = (boolean) VH_SOME_OTHER_CONFIG.get(seg, 0L);
         return result;
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        seg.set(ValueLayout.JAVA_INT, 0L, this.groupingStrategy.toNative());
-        seg.set(ValueLayout.JAVA_BOOLEAN, 4L, this.someOtherConfig);
+        VH_GROUPING_STRATEGY.set(seg, 0L, this.groupingStrategy.toNative());
+        VH_SOME_OTHER_CONFIG.set(seg, 0L, this.someOtherConfig);
         return seg;
     }
 }

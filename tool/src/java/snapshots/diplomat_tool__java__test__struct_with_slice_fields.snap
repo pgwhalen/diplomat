@@ -6,6 +6,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class SliceFields {
@@ -14,6 +15,10 @@ public class SliceFields {
         DiplomatLib.DIPLOMAT_STRING_VIEW.withName("name"),
         DiplomatLib.DIPLOMAT_STRING_VIEW.withName("data")
     );
+    private static final VarHandle VH_NAME_DATA = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("name"), MemoryLayout.PathElement.groupElement("data"));
+    private static final VarHandle VH_NAME_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("name"), MemoryLayout.PathElement.groupElement("len"));
+    private static final VarHandle VH_DATA_DATA = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("data"), MemoryLayout.PathElement.groupElement("data"));
+    private static final VarHandle VH_DATA_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("data"), MemoryLayout.PathElement.groupElement("len"));
 
     public String name;
 
@@ -29,15 +34,15 @@ public class SliceFields {
 
     static SliceFields fromNative(MemorySegment seg) {
         return new SliceFields(
-            new String(seg.get(ValueLayout.ADDRESS, 0L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 8L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
-            seg.get(ValueLayout.ADDRESS, 16L).reinterpret(seg.get(ValueLayout.JAVA_LONG, 24L) * 2L).toArray(ValueLayout.JAVA_SHORT)
+            new String(((MemorySegment) VH_NAME_DATA.get(seg, 0L)).reinterpret((long) VH_NAME_LEN.get(seg, 0L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8),
+            ((MemorySegment) VH_DATA_DATA.get(seg, 0L)).reinterpret((long) VH_DATA_LEN.get(seg, 0L) * 2L).toArray(ValueLayout.JAVA_SHORT)
         );
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        { byte[] nameBytes = this.name.getBytes(StandardCharsets.UTF_8); var nameSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, nameBytes); seg.set(ValueLayout.ADDRESS, 0L, nameSeg); seg.set(ValueLayout.JAVA_LONG, 8L, (long) nameBytes.length); }
-        { var dataSeg = arena.allocateFrom(ValueLayout.JAVA_SHORT, this.data); seg.set(ValueLayout.ADDRESS, 16L, dataSeg); seg.set(ValueLayout.JAVA_LONG, 24L, (long) this.data.length); }
+        { byte[] nameBytes = this.name.getBytes(StandardCharsets.UTF_8); var nameSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, nameBytes); VH_NAME_DATA.set(seg, 0L, nameSeg); VH_NAME_LEN.set(seg, 0L, (long) nameBytes.length); }
+        { var dataSeg = arena.allocateFrom(ValueLayout.JAVA_SHORT, this.data); VH_DATA_DATA.set(seg, 0L, dataSeg); VH_DATA_LEN.set(seg, 0L, (long) this.data.length); }
         return seg;
     }
 }

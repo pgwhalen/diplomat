@@ -2,6 +2,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 public class MyStruct {
@@ -17,6 +18,13 @@ public class MyStruct {
         ValueLayout.JAVA_INT.withName("g"),
         MemoryLayout.paddingLayout(4)
     );
+    private static final VarHandle VH_A = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("a"));
+    private static final VarHandle VH_B = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("b"));
+    private static final VarHandle VH_C = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("c"));
+    private static final VarHandle VH_D = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("d"));
+    private static final VarHandle VH_E = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("e"));
+    private static final VarHandle VH_F = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("f"));
+    private static final VarHandle VH_G = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("g"));
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
@@ -72,13 +80,13 @@ public class MyStruct {
     public MyStruct() {
         try (var arena = Arena.ofConfined()) {
             var seg = (MemorySegment) MYSTRUCT_NEW.invokeExact((SegmentAllocator) arena);
-            this.a = (byte) seg.get(ValueLayout.JAVA_BYTE, 0L);
-            this.b = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 1L);
-            this.c = (byte) seg.get(ValueLayout.JAVA_BYTE, 2L);
-            this.d = (long) seg.get(ValueLayout.JAVA_LONG, 8L);
-            this.e = (int) seg.get(ValueLayout.JAVA_INT, 16L);
-            this.f = (int) seg.get(ValueLayout.JAVA_INT, 20L);
-            this.g = MyEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 24L));
+            this.a = (byte) VH_A.get(seg, 0L);
+            this.b = (boolean) VH_B.get(seg, 0L);
+            this.c = (byte) VH_C.get(seg, 0L);
+            this.d = (long) VH_D.get(seg, 0L);
+            this.e = (int) VH_E.get(seg, 0L);
+            this.f = (int) VH_F.get(seg, 0L);
+            this.g = MyEnum.fromNative((int) VH_G.get(seg, 0L));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {
@@ -88,25 +96,25 @@ public class MyStruct {
 
     static MyStruct fromNative(MemorySegment seg) {
         var result = new MyStruct((Void) null);
-        result.a = (byte) seg.get(ValueLayout.JAVA_BYTE, 0L);
-        result.b = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 1L);
-        result.c = (byte) seg.get(ValueLayout.JAVA_BYTE, 2L);
-        result.d = (long) seg.get(ValueLayout.JAVA_LONG, 8L);
-        result.e = (int) seg.get(ValueLayout.JAVA_INT, 16L);
-        result.f = (int) seg.get(ValueLayout.JAVA_INT, 20L);
-        result.g = MyEnum.fromNative((int) seg.get(ValueLayout.JAVA_INT, 24L));
+        result.a = (byte) VH_A.get(seg, 0L);
+        result.b = (boolean) VH_B.get(seg, 0L);
+        result.c = (byte) VH_C.get(seg, 0L);
+        result.d = (long) VH_D.get(seg, 0L);
+        result.e = (int) VH_E.get(seg, 0L);
+        result.f = (int) VH_F.get(seg, 0L);
+        result.g = MyEnum.fromNative((int) VH_G.get(seg, 0L));
         return result;
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        seg.set(ValueLayout.JAVA_BYTE, 0L, this.a);
-        seg.set(ValueLayout.JAVA_BOOLEAN, 1L, this.b);
-        seg.set(ValueLayout.JAVA_BYTE, 2L, this.c);
-        seg.set(ValueLayout.JAVA_LONG, 8L, this.d);
-        seg.set(ValueLayout.JAVA_INT, 16L, this.e);
-        seg.set(ValueLayout.JAVA_INT, 20L, this.f);
-        seg.set(ValueLayout.JAVA_INT, 24L, this.g.toNative());
+        VH_A.set(seg, 0L, this.a);
+        VH_B.set(seg, 0L, this.b);
+        VH_C.set(seg, 0L, this.c);
+        VH_D.set(seg, 0L, this.d);
+        VH_E.set(seg, 0L, this.e);
+        VH_F.set(seg, 0L, this.f);
+        VH_G.set(seg, 0L, this.g.toNative());
         return seg;
     }
 

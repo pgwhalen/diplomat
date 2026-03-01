@@ -2,6 +2,7 @@ package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
@@ -10,6 +11,7 @@ public class CyclicStructB {
     static final StructLayout LAYOUT = MemoryLayout.structLayout(
         ValueLayout.JAVA_BYTE.withName("field")
     );
+    private static final VarHandle VH_FIELD = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("field"));
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
@@ -44,13 +46,13 @@ public class CyclicStructB {
 
     static CyclicStructB fromNative(MemorySegment seg) {
         return new CyclicStructB(
-            (byte) seg.get(ValueLayout.JAVA_BYTE, 0L)
+            (byte) VH_FIELD.get(seg, 0L)
         );
     }
 
     MemorySegment toNative(Arena arena) {
         var seg = arena.allocate(LAYOUT);
-        seg.set(ValueLayout.JAVA_BYTE, 0L, this.field);
+        VH_FIELD.set(seg, 0L, this.field);
         return seg;
     }
 

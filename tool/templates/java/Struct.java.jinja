@@ -2,6 +2,7 @@ package {{domain}}.{{lib_name}};
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 {%- if uses_optional %}
 import java.util.Optional;
@@ -12,6 +13,12 @@ public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} 
     static final StructLayout LAYOUT = MemoryLayout.structLayout(
         {{layout_members}}
     );
+    {%- for vh in var_handles %}
+    private static final VarHandle {{vh.handle_name}} = {{vh.declaration}};
+    {%- endfor %}
+    {%- for oc in offset_consts %}
+    private static final long {{oc.const_name}} = {{oc.declaration}};
+    {%- endfor %}
     {%- if !native_methods.is_empty() %}
 
     private static final Linker LINKER = Linker.nativeLinker();
