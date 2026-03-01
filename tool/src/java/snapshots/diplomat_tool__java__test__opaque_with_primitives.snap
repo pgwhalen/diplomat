@@ -57,6 +57,8 @@ public class Counter implements AutoCloseable {
     public static Counter new_(int start) {
         try {
             return new Counter((MemorySegment) COUNTER_NEW.invokeExact(start));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -65,6 +67,8 @@ public class Counter implements AutoCloseable {
     public int getValue() {
         try {
             return (int) COUNTER_GET_VALUE.invokeExact(handle);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -73,6 +77,8 @@ public class Counter implements AutoCloseable {
     public void add(int amount) {
         try {
             COUNTER_ADD.invokeExact(handle, amount);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

@@ -50,6 +50,8 @@ public class Locale implements AutoCloseable {
 
             var nameSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, nameBytes);
             return new Locale((MemorySegment) ICU4X_LOCALE_NEW_MV1.invokeExact(nameSeg, (long) nameBytes.length));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

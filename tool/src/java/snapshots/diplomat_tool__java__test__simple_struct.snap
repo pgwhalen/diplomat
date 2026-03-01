@@ -1,0 +1,95 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_struct_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class MyStruct {
+
+    static final StructLayout LAYOUT = MemoryLayout.structLayout(
+        ValueLayout.JAVA_BYTE.withName("a"),
+        ValueLayout.JAVA_BOOLEAN.withName("b"),
+        MemoryLayout.paddingLayout(6),
+        ValueLayout.JAVA_LONG.withName("c"),
+        ValueLayout.JAVA_INT.withName("d"),
+        MemoryLayout.paddingLayout(4)
+    );
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+    private static final MethodHandle MYSTRUCT_NEW;
+    private static final MethodHandle MYSTRUCT_INTO_A;
+
+    static {
+        System.loadLibrary("diplomat_example");
+        LIB = SymbolLookup.loaderLookup();
+        MYSTRUCT_NEW = LINKER.downcallHandle(
+            LIB.find("MyStruct_new").orElseThrow(),
+            FunctionDescriptor.of(MyStruct.LAYOUT, ValueLayout.JAVA_BYTE, ValueLayout.JAVA_BOOLEAN, ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT)
+        );
+        MYSTRUCT_INTO_A = LINKER.downcallHandle(
+            LIB.find("MyStruct_into_a").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.JAVA_BYTE, MyStruct.LAYOUT)
+        );
+    }
+
+    public byte a;
+
+    public boolean b;
+
+    public long c;
+
+    public int d;
+
+    public MyStruct() {
+    }
+
+    MyStruct(byte a, boolean b, long c, int d) {
+        this.a = a;
+        this.b = b;
+        this.c = c;
+        this.d = d;
+    }
+
+    static MyStruct fromNative(MemorySegment seg) {
+        var result = new MyStruct();
+        result.a = (byte) seg.get(ValueLayout.JAVA_BYTE, 0L);
+        result.b = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 1L);
+        result.c = (long) seg.get(ValueLayout.JAVA_LONG, 8L);
+        result.d = (int) seg.get(ValueLayout.JAVA_INT, 16L);
+        return result;
+    }
+
+    MemorySegment toNative(Arena arena) {
+        var seg = arena.allocate(LAYOUT);
+        seg.set(ValueLayout.JAVA_BYTE, 0L, this.a);
+        seg.set(ValueLayout.JAVA_BOOLEAN, 1L, this.b);
+        seg.set(ValueLayout.JAVA_LONG, 8L, this.c);
+        seg.set(ValueLayout.JAVA_INT, 16L, this.d);
+        return seg;
+    }
+
+    public static MyStruct new_(byte a, boolean b, long c, int d) {
+        try (var arena = Arena.ofConfined()) {
+            return MyStruct.fromNative((MemorySegment) MYSTRUCT_NEW.invokeExact((SegmentAllocator) arena, a, b, c, d));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public byte intoA() {
+        try (var arena = Arena.ofConfined()) {
+            return (byte) MYSTRUCT_INTO_A.invokeExact(this.toNative(arena));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+}

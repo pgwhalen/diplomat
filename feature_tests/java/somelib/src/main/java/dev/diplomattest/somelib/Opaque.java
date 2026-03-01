@@ -15,7 +15,9 @@ public class Opaque implements AutoCloseable {
     private static final MethodHandle OPAQUE_TRY_FROM_UTF8;
     private static final MethodHandle OPAQUE_FROM_STR;
     private static final MethodHandle OPAQUE_GET_DEBUG_STR;
+    private static final MethodHandle OPAQUE_ASSERT_STRUCT;
     private static final MethodHandle OPAQUE_RETURNS_USIZE;
+    private static final MethodHandle OPAQUE_RETURNS_IMPORTED;
     private static final MethodHandle OPAQUE_CMP;
 
     static {
@@ -41,9 +43,17 @@ public class Opaque implements AutoCloseable {
             LIB.find("Opaque_get_debug_str").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
+        OPAQUE_ASSERT_STRUCT = LINKER.downcallHandle(
+            LIB.find("Opaque_assert_struct").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, MyStruct.LAYOUT)
+        );
         OPAQUE_RETURNS_USIZE = LINKER.downcallHandle(
             LIB.find("Opaque_returns_usize").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_LONG)
+        );
+        OPAQUE_RETURNS_IMPORTED = LINKER.downcallHandle(
+            LIB.find("Opaque_returns_imported").orElseThrow(),
+            FunctionDescriptor.of(ImportedStruct.LAYOUT)
         );
         OPAQUE_CMP = LINKER.downcallHandle(
             LIB.find("Opaque_cmp").orElseThrow(),
@@ -69,6 +79,8 @@ public class Opaque implements AutoCloseable {
     public static Opaque new_() {
         try {
             return new Opaque((MemorySegment) OPAQUE_NEW.invokeExact());
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -81,6 +93,8 @@ public class Opaque implements AutoCloseable {
             var inputSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, inputBytes);
             var resultAddr = (MemorySegment) OPAQUE_TRY_FROM_UTF8.invokeExact(inputSeg, (long) inputBytes.length);
             return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new Opaque(resultAddr));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -92,6 +106,8 @@ public class Opaque implements AutoCloseable {
 
             var inputSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, inputBytes);
             return new Opaque((MemorySegment) OPAQUE_FROM_STR.invokeExact(inputSeg, (long) inputBytes.length));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -100,6 +116,18 @@ public class Opaque implements AutoCloseable {
     public static long returnsUsize() {
         try {
             return (long) OPAQUE_RETURNS_USIZE.invokeExact();
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static ImportedStruct returnsImported() {
+        try (var arena = Arena.ofConfined()) {
+            return ImportedStruct.fromNative((MemorySegment) OPAQUE_RETURNS_IMPORTED.invokeExact((SegmentAllocator) arena));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -108,6 +136,8 @@ public class Opaque implements AutoCloseable {
     public static byte cmp() {
         try {
             return (byte) OPAQUE_CMP.invokeExact();
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -118,6 +148,18 @@ public class Opaque implements AutoCloseable {
         try {
             OPAQUE_GET_DEBUG_STR.invokeExact(handle, write);
             return DiplomatLib.writeToString(write);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public void assertStruct(MyStruct s) {
+        try (var arena = Arena.ofConfined()) {
+            OPAQUE_ASSERT_STRUCT.invokeExact(handle, s.toNative(arena));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

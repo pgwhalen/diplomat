@@ -50,6 +50,14 @@ public final class DiplomatLib {
         }
     }
 
+    static void destroyWrite(MemorySegment write) {
+        try {
+            DIPLOMAT_BUFFER_WRITE_DESTROY.invokeExact(write);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
     static String writeToString(MemorySegment write) {
         try {
             var bytes = (MemorySegment) DIPLOMAT_BUFFER_WRITE_GET_BYTES.invokeExact(write);

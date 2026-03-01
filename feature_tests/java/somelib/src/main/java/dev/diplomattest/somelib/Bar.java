@@ -43,6 +43,8 @@ public class Bar implements AutoCloseable {
     public Foo foo() {
         try {
             return new Foo((MemorySegment) BAR_FOO.invokeExact(handle));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

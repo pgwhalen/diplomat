@@ -74,6 +74,10 @@ impl<'tcx> JavaFormatter<'tcx> {
         Self { tcx, docs_url_gen }
     }
 
+    pub fn tcx(&self) -> &'tcx TypeContext {
+        self.tcx
+    }
+
     pub fn fmt_primitive_as_java(&self, prim: PrimitiveType) -> &'static str {
         match prim {
             PrimitiveType::Bool => "boolean",
@@ -140,10 +144,54 @@ impl<'tcx> JavaFormatter<'tcx> {
         }
     }
 
+    pub fn fmt_field_name<'a>(&self, ident: &'a str) -> Cow<'tcx, str> {
+        self.fmt_param_name(ident)
+    }
+
+    pub fn fmt_primitive_as_java_boxed(&self, prim: PrimitiveType) -> &'static str {
+        match prim {
+            PrimitiveType::Bool => "Boolean",
+            PrimitiveType::Char => "Integer",
+            PrimitiveType::Int(IntType::I8) | PrimitiveType::Ordering => "Byte",
+            PrimitiveType::Int(IntType::I16) => "Short",
+            PrimitiveType::Int(IntType::I32) => "Integer",
+            PrimitiveType::Int(IntType::I64) => "Long",
+            PrimitiveType::Int(IntType::U8) => "Byte",
+            PrimitiveType::Int(IntType::U16) => "Short",
+            PrimitiveType::Int(IntType::U32) => "Integer",
+            PrimitiveType::Int(IntType::U64) => "Long",
+            PrimitiveType::Byte => "Byte",
+            PrimitiveType::IntSize(IntSizeType::Isize) => "Long",
+            PrimitiveType::IntSize(IntSizeType::Usize) => "Long",
+            PrimitiveType::Float(FloatType::F32) => "Float",
+            PrimitiveType::Float(FloatType::F64) => "Double",
+            PrimitiveType::Int128(_) => panic!("i128 not supported in Java"),
+        }
+    }
+
     pub fn fmt_type_name(&self, id: TypeId) -> Cow<'tcx, str> {
         let resolved = self.tcx.resolve_type(id);
         let candidate: Cow<str> = resolved.name().as_str().into();
         resolved.attrs().rename.apply(candidate)
+    }
+
+    /// Returns (size, alignment) in bytes for a primitive type in the C ABI.
+    pub fn primitive_size_align(&self, prim: PrimitiveType) -> (usize, usize) {
+        match prim {
+            PrimitiveType::Bool => (1, 1),
+            PrimitiveType::Char => (4, 4), // DiplomatChar = u32
+            PrimitiveType::Int(IntType::I8)
+            | PrimitiveType::Int(IntType::U8)
+            | PrimitiveType::Ordering
+            | PrimitiveType::Byte => (1, 1),
+            PrimitiveType::Int(IntType::I16) | PrimitiveType::Int(IntType::U16) => (2, 2),
+            PrimitiveType::Int(IntType::I32) | PrimitiveType::Int(IntType::U32) => (4, 4),
+            PrimitiveType::Int(IntType::I64) | PrimitiveType::Int(IntType::U64) => (8, 8),
+            PrimitiveType::IntSize(IntSizeType::Isize | IntSizeType::Usize) => (8, 8),
+            PrimitiveType::Float(FloatType::F32) => (4, 4),
+            PrimitiveType::Float(FloatType::F64) => (8, 8),
+            PrimitiveType::Int128(_) => panic!("i128 not supported in Java"),
+        }
     }
 
     #[allow(dead_code)]

@@ -43,6 +43,8 @@ public class OptionOpaqueChar implements AutoCloseable {
     public void assertChar(int ch) {
         try {
             OPTIONOPAQUECHAR_ASSERT_CHAR.invokeExact(handle, ch);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

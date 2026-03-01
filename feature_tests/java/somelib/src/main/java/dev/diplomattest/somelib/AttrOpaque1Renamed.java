@@ -73,6 +73,8 @@ public class AttrOpaque1Renamed implements AutoCloseable {
     public static AttrOpaque1Renamed totally_not_new() {
         try {
             return new AttrOpaque1Renamed((MemorySegment) NAMESPACE_ATTROPAQUE1_NEW.invokeExact());
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -81,6 +83,8 @@ public class AttrOpaque1Renamed implements AutoCloseable {
     public static int macTest() {
         try {
             return (int) NAMESPACE_ATTROPAQUE1_MAC_TEST.invokeExact();
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -89,6 +93,8 @@ public class AttrOpaque1Renamed implements AutoCloseable {
     public static int hello() {
         try {
             return (int) NAMESPACE_ATTROPAQUE1_HELLO.invokeExact();
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -97,6 +103,8 @@ public class AttrOpaque1Renamed implements AutoCloseable {
     public byte method_renamed() {
         try {
             return (byte) NAMESPACE_ATTROPAQUE1_METHOD.invokeExact(handle);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -105,6 +113,8 @@ public class AttrOpaque1Renamed implements AutoCloseable {
     public byte abirenamed() {
         try {
             return (byte) RENAMED_ON_ABI_ONLY.invokeExact(handle);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -113,6 +123,8 @@ public class AttrOpaque1Renamed implements AutoCloseable {
     public void useUnnamespaced(Unnamespaced un) {
         try {
             NAMESPACE_ATTROPAQUE1_USE_UNNAMESPACED.invokeExact(handle, un.handle);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -121,6 +133,8 @@ public class AttrOpaque1Renamed implements AutoCloseable {
     public void useNamespaced(int n) {
         try {
             NAMESPACE_ATTROPAQUE1_USE_NAMESPACED.invokeExact(handle, n);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

@@ -7,12 +7,16 @@ import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 {%- endif %}
 
-public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} implements AutoCloseable {
+public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} {
+
+    static final StructLayout LAYOUT = MemoryLayout.structLayout(
+        {{layout_members}}
+    );
+    {%- if !native_methods.is_empty() %}
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
 
-    private static final MethodHandle DESTROY;
     {%- for m in native_methods %}
     private static final MethodHandle {{m.handle_name}};
     {%- endfor %}
@@ -25,10 +29,6 @@ public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} 
     static {
         System.loadLibrary("{{dylib_name}}");
         LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("{{dtor_abi_name}}").orElseThrow(),
-            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
-        );
         {%- for m in native_methods %}
         {{m.handle_name}} = LINKER.downcallHandle(
             LIB.find("{{m.abi_name}}").orElseThrow(),
@@ -36,24 +36,47 @@ public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} 
         );
         {%- endfor %}
     }
+    {%- endif %}
+    {%- for f in fields %}
 
-    final MemorySegment handle;
+    public {{f.java_type}} {{f.field_name}};
+    {%- endfor %}
 
-    {{type_name}}(MemorySegment handle) {
+    public {{type_name}}() {
         {%- if is_error %}
         super("{{type_name}}");
         {%- endif %}
-        this.handle = handle;
     }
 
-    @Override
-    public void close() {
-        try {
-            DESTROY.invokeExact(handle);
-        } catch (Throwable ex) {
-            throw new RuntimeException(ex);
-        }
+    {%- if !fields.is_empty() %}
+
+    {{type_name}}({% for f in fields %}{{f.java_type}} {{f.field_name}}{% if !loop.last %}, {% endif %}{% endfor %}) {
+        {%- if is_error %}
+        super("{{type_name}}");
+        {%- endif %}
+        {%- for f in fields %}
+        this.{{f.field_name}} = {{f.field_name}};
+        {%- endfor %}
     }
+    {%- endif %}
+
+    static {{type_name}} fromNative(MemorySegment seg) {
+        var result = new {{type_name}}();
+        {%- for f in fields %}
+        result.{{f.field_name}} = {{f.from_native_expr}};
+        {%- endfor %}
+        return result;
+    }
+    {%- if !is_out_struct %}
+
+    MemorySegment toNative(Arena arena) {
+        var seg = arena.allocate(LAYOUT);
+        {%- for f in fields %}
+        {{f.to_native_stmt}}
+        {%- endfor %}
+        return seg;
+    }
+    {%- endif %}
     {%- for m in companion_methods %}
 
     {{m.definition}}

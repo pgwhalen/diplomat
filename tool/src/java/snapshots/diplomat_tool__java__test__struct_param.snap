@@ -1,0 +1,95 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_all_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class Config {
+
+    static final StructLayout LAYOUT = MemoryLayout.structLayout(
+        ValueLayout.JAVA_INT.withName("width"),
+        ValueLayout.JAVA_INT.withName("height")
+    );
+
+    public int width;
+
+    public int height;
+
+    public Config() {
+    }
+
+    Config(int width, int height) {
+        this.width = width;
+        this.height = height;
+    }
+
+    static Config fromNative(MemorySegment seg) {
+        var result = new Config();
+        result.width = (int) seg.get(ValueLayout.JAVA_INT, 0L);
+        result.height = (int) seg.get(ValueLayout.JAVA_INT, 4L);
+        return result;
+    }
+
+    MemorySegment toNative(Arena arena) {
+        var seg = arena.allocate(LAYOUT);
+        seg.set(ValueLayout.JAVA_INT, 0L, this.width);
+        seg.set(ValueLayout.JAVA_INT, 4L, this.height);
+        return seg;
+    }
+}
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class Renderer implements AutoCloseable {
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    private static final MethodHandle DESTROY;
+    private static final MethodHandle RENDERER_NEW;
+
+    static {
+        System.loadLibrary("diplomat_example");
+        LIB = SymbolLookup.loaderLookup();
+        DESTROY = LINKER.downcallHandle(
+            LIB.find("Renderer_destroy").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        RENDERER_NEW = LINKER.downcallHandle(
+            LIB.find("Renderer_new").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, Config.LAYOUT)
+        );
+    }
+
+    final MemorySegment handle;
+
+    Renderer(MemorySegment handle) {
+        this.handle = handle;
+    }
+
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static Renderer new_(Config config) {
+        try (var arena = Arena.ofConfined()) {
+            return new Renderer((MemorySegment) RENDERER_NEW.invokeExact(config.toNative(arena)));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+}

@@ -1,0 +1,81 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_struct_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class Inner {
+
+    static final StructLayout LAYOUT = MemoryLayout.structLayout(
+        ValueLayout.JAVA_INT.withName("x"),
+        ValueLayout.JAVA_INT.withName("y")
+    );
+
+    public int x;
+
+    public int y;
+
+    public Inner() {
+    }
+
+    Inner(int x, int y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    static Inner fromNative(MemorySegment seg) {
+        var result = new Inner();
+        result.x = (int) seg.get(ValueLayout.JAVA_INT, 0L);
+        result.y = (int) seg.get(ValueLayout.JAVA_INT, 4L);
+        return result;
+    }
+
+    MemorySegment toNative(Arena arena) {
+        var seg = arena.allocate(LAYOUT);
+        seg.set(ValueLayout.JAVA_INT, 0L, this.x);
+        seg.set(ValueLayout.JAVA_INT, 4L, this.y);
+        return seg;
+    }
+}package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class Outer {
+
+    static final StructLayout LAYOUT = MemoryLayout.structLayout(
+        Inner.LAYOUT.withName("inner"),
+        ValueLayout.JAVA_DOUBLE.withName("z")
+    );
+
+    public Inner inner;
+
+    public double z;
+
+    public Outer() {
+    }
+
+    Outer(Inner inner, double z) {
+        this.inner = inner;
+        this.z = z;
+    }
+
+    static Outer fromNative(MemorySegment seg) {
+        var result = new Outer();
+        result.inner = Inner.fromNative(seg.asSlice(0L, Inner.LAYOUT.byteSize()));
+        result.z = (double) seg.get(ValueLayout.JAVA_DOUBLE, 8L);
+        return result;
+    }
+
+    MemorySegment toNative(Arena arena) {
+        var seg = arena.allocate(LAYOUT);
+        seg.asSlice(0L, Inner.LAYOUT.byteSize()).copyFrom(this.inner.toNative(arena));
+        seg.set(ValueLayout.JAVA_DOUBLE, 8L, this.z);
+        return seg;
+    }
+}

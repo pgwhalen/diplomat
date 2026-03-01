@@ -48,6 +48,8 @@ public class Unnamespaced implements AutoCloseable {
     public static Unnamespaced make(int e) {
         try {
             return new Unnamespaced((MemorySegment) NAMESPACE_UNNAMESPACED_MAKE.invokeExact(e));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -56,6 +58,8 @@ public class Unnamespaced implements AutoCloseable {
     public void useNamespaced(AttrOpaque1Renamed n) {
         try {
             NAMESPACE_UNNAMESPACED_USE_NAMESPACED.invokeExact(handle, n.handle);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

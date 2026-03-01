@@ -48,6 +48,8 @@ public class MyOpaqueEnum implements AutoCloseable {
     public static MyOpaqueEnum new_() {
         try {
             return new MyOpaqueEnum((MemorySegment) MYOPAQUEENUM_NEW.invokeExact());
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -58,6 +60,8 @@ public class MyOpaqueEnum implements AutoCloseable {
         try {
             MYOPAQUEENUM_TO_STRING.invokeExact(handle, write);
             return DiplomatLib.writeToString(write);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

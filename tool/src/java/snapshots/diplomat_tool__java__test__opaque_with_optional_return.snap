@@ -1,6 +1,5 @@
 ---
 source: tool/src/java/mod.rs
-assertion_line: 757
 expression: gen_opaque_for_test(tk_stream)
 ---
 package dev.diplomattest.somelib;
@@ -60,6 +59,8 @@ public class MyData implements AutoCloseable {
         try {
             var resultAddr = (MemorySegment) MYDATA_CREATE.invokeExact(v);
             return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new MyData(resultAddr));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -69,6 +70,8 @@ public class MyData implements AutoCloseable {
         try {
             MemorySegment dataAddr = data == null ? MemorySegment.NULL : data.handle;
             return (boolean) MYDATA_CHECK.invokeExact(dataAddr);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -77,6 +80,8 @@ public class MyData implements AutoCloseable {
     public int getValue() {
         try {
             return (int) MYDATA_GET_VALUE.invokeExact(handle);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

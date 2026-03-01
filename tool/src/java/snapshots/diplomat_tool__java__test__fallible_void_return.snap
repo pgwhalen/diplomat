@@ -8,30 +8,33 @@ import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
-public class Utf16Wrap implements AutoCloseable {
+public class Foo implements AutoCloseable {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
 
     private static final MethodHandle DESTROY;
-    private static final MethodHandle UTF16WRAP_FROM_UTF16;
+    private static final MethodHandle FOO_DO_THING;
+    static final StructLayout FOO_DO_THING_RESULT = MemoryLayout.structLayout(
+            ValueLayout.JAVA_BOOLEAN.withName("is_ok")
+        );
 
     static {
         System.loadLibrary("diplomat_example");
         LIB = SymbolLookup.loaderLookup();
         DESTROY = LINKER.downcallHandle(
-            LIB.find("Utf16Wrap_destroy").orElseThrow(),
+            LIB.find("Foo_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        UTF16WRAP_FROM_UTF16 = LINKER.downcallHandle(
-            LIB.find("Utf16Wrap_from_utf16").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+        FOO_DO_THING = LINKER.downcallHandle(
+            LIB.find("Foo_do_thing").orElseThrow(),
+            FunctionDescriptor.of(FOO_DO_THING_RESULT, ValueLayout.ADDRESS)
         );
     }
 
     final MemorySegment handle;
 
-    Utf16Wrap(MemorySegment handle) {
+    Foo(MemorySegment handle) {
         this.handle = handle;
     }
 
@@ -44,12 +47,15 @@ public class Utf16Wrap implements AutoCloseable {
         }
     }
 
-    public static Utf16Wrap fromUtf16(String input) {
+    public void doThing() {
         try (var arena = Arena.ofConfined()) {
-            char[] inputChars = input.toCharArray();
-
-            var inputSeg = arena.allocateFrom(ValueLayout.JAVA_CHAR, inputChars);
-            return new Utf16Wrap((MemorySegment) UTF16WRAP_FROM_UTF16.invokeExact(inputSeg, (long) inputChars.length));
+            var result = (MemorySegment) FOO_DO_THING.invokeExact((SegmentAllocator) arena, handle);
+            var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 0L);
+            if (isOk) {
+                return;
+            } else {
+                throw new RuntimeException("Diplomat error");
+            }
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

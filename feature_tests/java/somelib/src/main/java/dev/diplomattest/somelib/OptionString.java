@@ -12,6 +12,10 @@ public class OptionString implements AutoCloseable {
 
     private static final MethodHandle DESTROY;
     private static final MethodHandle OPTIONSTRING_NEW;
+    private static final MethodHandle OPTIONSTRING_WRITE;
+    static final StructLayout OPTIONSTRING_WRITE_RESULT = MemoryLayout.structLayout(
+            ValueLayout.JAVA_BOOLEAN.withName("is_ok")
+        );
 
     static {
         System.loadLibrary("diplomat_feature_tests");
@@ -23,6 +27,10 @@ public class OptionString implements AutoCloseable {
         OPTIONSTRING_NEW = LINKER.downcallHandle(
             LIB.find("OptionString_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+        );
+        OPTIONSTRING_WRITE = LINKER.downcallHandle(
+            LIB.find("OptionString_write").orElseThrow(),
+            FunctionDescriptor.of(OPTIONSTRING_WRITE_RESULT, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }
 
@@ -48,6 +56,26 @@ public class OptionString implements AutoCloseable {
             var diplomatStrSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, diplomatStrBytes);
             var resultAddr = (MemorySegment) OPTIONSTRING_NEW.invokeExact(diplomatStrSeg, (long) diplomatStrBytes.length);
             return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OptionString(resultAddr));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public String write() {
+        var write = DiplomatLib.createWrite();
+        try (var arena = Arena.ofConfined()) {
+            var result = (MemorySegment) OPTIONSTRING_WRITE.invokeExact((SegmentAllocator) arena, handle, write);
+            var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 0L);
+            if (isOk) {
+                return DiplomatLib.writeToString(write);
+            } else {
+                DiplomatLib.destroyWrite(write);
+                throw new RuntimeException("Diplomat error");
+            }
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

@@ -1,7 +1,7 @@
 use askama::Template;
 use diplomat_core::hir::{
     self, BackendAttrSupport, DocsUrlGenerator, Method, OutType, ReturnType, SelfType, Slice,
-    StringEncoding, SuccessType, Type, TypeContext, TypeDef,
+    StringEncoding, StructField, SuccessType, Type, TypeContext, TypeDef, TypeId,
 };
 use std::borrow::Cow;
 
@@ -16,7 +16,7 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
 
     a.namespacing = false;
     a.memory_sharing = false;
-    a.non_exhaustive_structs = false;
+    a.non_exhaustive_structs = true;
     a.method_overloading = true;
     a.utf8_strings = true;
     a.utf16_strings = true;
@@ -35,7 +35,7 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.indexing = false;
     a.callbacks = false;
     a.traits = false;
-    a.custom_errors = false;
+    a.custom_errors = true;
     a.traits_are_send = false;
     a.traits_are_sync = false;
     a.generate_mocking_interface = false;
@@ -104,11 +104,22 @@ pub(crate) fn run<'tcx>(
         match ty {
             TypeDef::Opaque(o) => {
                 let type_name = formatter.fmt_type_name(id);
-                let (file_name, body) = ty_gen_cx.gen_opaque_def(o, &type_name);
+                let is_error = o.attrs.custom_errors;
+                let (file_name, body) = ty_gen_cx.gen_opaque_def(o, &type_name, is_error);
+                files.add_file(file_name, body);
+            }
+            TypeDef::Struct(s) => {
+                let type_name = formatter.fmt_type_name(id);
+                let (file_name, body) = ty_gen_cx.gen_struct_def(s, &type_name, false);
+                files.add_file(file_name, body);
+            }
+            TypeDef::OutStruct(s) => {
+                let type_name = formatter.fmt_type_name(id);
+                let (file_name, body) = ty_gen_cx.gen_struct_def(s, &type_name, true);
                 files.add_file(file_name, body);
             }
             _ => {
-                // Skip unsupported type kinds (structs, enums, etc.)
+                // Skip unsupported type kinds (enums, etc.)
             }
         }
     }
@@ -159,24 +170,127 @@ struct JavaNativeMethodInfo {
     handle_name: String,
     abi_name: String,
     descriptor: String,
+    result_layout: Option<String>,
+    result_layout_name: Option<String>,
+}
+
+struct JavaStructFieldInfo {
+    field_name: String,
+    java_type: String,
+    from_native_expr: String,
+    to_native_stmt: String,
+}
+
+/// Alignment helper: compute (size, alignment) for an OutType in the C ABI.
+fn out_type_size_align(ty: &OutType, formatter: &JavaFormatter) -> (usize, usize) {
+    match ty {
+        Type::Primitive(prim) => formatter.primitive_size_align(*prim),
+        Type::Opaque(_) => (8, 8), // pointer
+        Type::Enum(_) => (4, 4),   // i32
+        Type::Struct(_) => {
+            // Resolve the struct and compute its layout recursively
+            let type_id = ty.id().expect("struct must have id");
+            struct_size_align_by_id(type_id, formatter)
+        }
+        _ => (0, 0),
+    }
+}
+
+/// Compute (size, alignment) for a type by its TypeId (works for any position).
+fn type_size_align_by_id(type_id: TypeId, formatter: &JavaFormatter) -> (usize, usize) {
+    let resolved = formatter.tcx().resolve_type(type_id);
+    match resolved {
+        TypeDef::Struct(s) => {
+            compute_struct_fields_size_align(
+                s.fields.iter().map(|f| field_size_align_generic(&f.ty, formatter)),
+            )
+        }
+        TypeDef::OutStruct(s) => {
+            compute_struct_fields_size_align(
+                s.fields.iter().map(|f| field_size_align_generic(&f.ty, formatter)),
+            )
+        }
+        TypeDef::Opaque(_) => (8, 8), // pointer
+        TypeDef::Enum(_) => (4, 4),   // i32
+        _ => (0, 0),
+    }
+}
+
+/// Alias for backward compat
+fn struct_size_align_by_id(type_id: TypeId, formatter: &JavaFormatter) -> (usize, usize) {
+    type_size_align_by_id(type_id, formatter)
+}
+
+/// Get (size, align) for any Type<P>.
+fn field_size_align_generic<P: hir::TyPosition>(ty: &Type<P>, formatter: &JavaFormatter) -> (usize, usize) {
+    match ty {
+        Type::Primitive(prim) => formatter.primitive_size_align(*prim),
+        Type::Opaque(_) => (8, 8),
+        Type::Enum(_) => (4, 4),
+        Type::Struct(_) => {
+            let type_id = ty.id().expect("struct must have id");
+            struct_size_align_by_id(type_id, formatter)
+        }
+        _ => (0, 0),
+    }
+}
+
+/// Compute overall (size, alignment) from an iterator of field (size, align) pairs.
+fn compute_struct_fields_size_align(
+    fields: impl Iterator<Item = (usize, usize)>,
+) -> (usize, usize) {
+    let mut offset: usize = 0;
+    let mut max_align: usize = 1;
+    for (f_size, f_align) in fields {
+        if f_align > 0 {
+            let padding = (f_align - (offset % f_align)) % f_align;
+            offset += padding;
+        }
+        offset += f_size;
+        if f_align > max_align {
+            max_align = f_align;
+        }
+    }
+    // Trailing padding
+    if max_align > 0 {
+        let trailing = (max_align - (offset % max_align)) % max_align;
+        offset += trailing;
+    }
+    (offset, max_align)
 }
 
 impl<'cx> ItemGenContext<'_, 'cx> {
     /// Check if a method uses only supported types
     fn is_method_supported(&self, method: &Method) -> bool {
         // Check return type
+        let success_supported = |success: &SuccessType| -> bool {
+            match success {
+                SuccessType::Unit | SuccessType::Write => true,
+                SuccessType::OutType(ty) => self.is_out_type_supported(ty),
+                _ => false,
+            }
+        };
         match &method.output {
-            ReturnType::Infallible(success) => match success {
-                SuccessType::Unit => {}
-                SuccessType::OutType(ty) => {
-                    if !self.is_out_type_supported(ty) {
+            ReturnType::Infallible(success) => {
+                if !success_supported(success) {
+                    return false;
+                }
+            }
+            ReturnType::Fallible(ok, err) => {
+                if !success_supported(ok) {
+                    return false;
+                }
+                if let Some(err_ty) = err {
+                    if !self.is_out_type_supported(err_ty) {
                         return false;
                     }
                 }
-                SuccessType::Write => {}
-                _ => return false,
-            },
-            _ => return false, // Fallible/Nullable not supported
+            }
+            ReturnType::Nullable(ok) => {
+                if !success_supported(ok) {
+                    return false;
+                }
+            }
         }
 
         // Check params
@@ -192,15 +306,27 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     fn is_param_type_supported<P: hir::TyPosition>(&self, ty: &Type<P>) -> bool {
         matches!(
             ty,
-            Type::Primitive(_) | Type::Opaque(_) | Type::Slice(Slice::Str(_, _)) | Type::Enum(_)
+            Type::Primitive(_)
+                | Type::Opaque(_)
+                | Type::Slice(Slice::Str(_, _))
+                | Type::Enum(_)
+                | Type::Struct(_)
         )
     }
 
     fn is_out_type_supported(&self, ty: &OutType) -> bool {
-        matches!(ty, Type::Primitive(_) | Type::Opaque(_) | Type::Enum(_))
+        matches!(
+            ty,
+            Type::Primitive(_) | Type::Opaque(_) | Type::Enum(_) | Type::Struct(_)
+        )
     }
 
-    fn gen_opaque_def(&self, ty: &'cx hir::OpaqueDef, type_name: &str) -> (String, String) {
+    fn gen_opaque_def(
+        &self,
+        ty: &'cx hir::OpaqueDef,
+        type_name: &str,
+        is_error: bool,
+    ) -> (String, String) {
         let supported_methods: Vec<&Method> = ty
             .methods
             .iter()
@@ -213,6 +339,10 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 if op.is_optional() {
                     return true;
                 }
+            }
+            // Nullable returns use Optional
+            if matches!(&method.output, ReturnType::Nullable(_)) {
+                return true;
             }
             // Check params for optional opaque
             method
@@ -251,6 +381,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             dylib_name: &'a str,
             type_name: &'a str,
             dtor_abi_name: &'a str,
+            is_error: bool,
             uses_optional: bool,
             native_methods: &'a [JavaNativeMethodInfo],
             companion_methods: &'a [JavaMethodInfo],
@@ -269,6 +400,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 dylib_name: self.dylib_name,
                 type_name,
                 dtor_abi_name: ty.dtor_abi_name.as_str(),
+                is_error,
                 uses_optional,
                 native_methods: &native_methods,
                 companion_methods: &companion_methods,
@@ -286,8 +418,17 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let mut param_layouts = Vec::new();
 
         // Self parameter
-        if method.param_self.is_some() {
-            param_layouts.push("ValueLayout.ADDRESS".to_string());
+        if let Some(ref ps) = method.param_self {
+            match &ps.ty {
+                SelfType::Struct(s) => {
+                    let type_id: TypeId = s.tcx_id.into();
+                    let type_name = self.formatter.fmt_type_name(type_id);
+                    param_layouts.push(format!("{type_name}.LAYOUT"));
+                }
+                _ => {
+                    param_layouts.push("ValueLayout.ADDRESS".to_string());
+                }
+            }
         }
 
         // Regular parameters
@@ -296,15 +437,28 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
 
         // Write returns pass a write buffer pointer as the last parameter
-        if matches!(
-            &method.output,
-            ReturnType::Infallible(SuccessType::Write)
-        ) {
+        let is_write_return = matches!(method.output, ReturnType::Infallible(SuccessType::Write))
+            || matches!(
+                method.output,
+                ReturnType::Fallible(SuccessType::Write, _)
+                    | ReturnType::Nullable(SuccessType::Write)
+            );
+        if is_write_return {
             param_layouts.push("ValueLayout.ADDRESS".to_string());
         }
 
+        // Compute result layout for fallible/nullable returns
+        let (result_layout, result_layout_name) = match self.compute_result_layout(method) {
+            Some((layout_def, _is_ok_offset)) => {
+                let layout_name = format!("{handle_name}_RESULT");
+                (Some(layout_def), Some(layout_name))
+            }
+            None => (None, None),
+        };
+
         // Build the descriptor
-        let return_layout = self.get_return_layout(&method.output);
+        let return_layout =
+            self.get_return_layout(method, result_layout_name.as_deref());
         let descriptor = if let Some(ret) = return_layout {
             if param_layouts.is_empty() {
                 format!("FunctionDescriptor.of({ret})")
@@ -321,6 +475,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             handle_name,
             abi_name,
             descriptor,
+            result_layout,
+            result_layout_name,
         }
     }
 
@@ -340,6 +496,11 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             Type::Enum(_) => {
                 layouts.push("ValueLayout.JAVA_INT".to_string());
             }
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                layouts.push(format!("{type_name}.LAYOUT"));
+            }
             _ => {
                 self.errors
                     .push_error(format!("Unsupported parameter type in Java backend: {ty:?}"));
@@ -347,14 +508,16 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
     }
 
-    fn get_return_layout(&self, output: &ReturnType) -> Option<String> {
-        match output {
+    fn get_return_layout(
+        &self,
+        method: &Method,
+        result_layout_name: Option<&str>,
+    ) -> Option<String> {
+        match &method.output {
             ReturnType::Infallible(success) => self.get_success_layout(success),
             ReturnType::Fallible(_, _) | ReturnType::Nullable(_) => {
-                self.errors.push_error(
-                    "Fallible/Nullable return types not yet supported in Java backend".into(),
-                );
-                None
+                // Result/Option returns use a per-method result layout constant
+                result_layout_name.map(|n| n.to_string())
             }
         }
     }
@@ -377,12 +540,122 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             Type::Primitive(prim) => Some(self.formatter.fmt_primitive_as_ffi(*prim).to_string()),
             Type::Opaque(_) => Some("ValueLayout.ADDRESS".to_string()),
             Type::Enum(_) => Some("ValueLayout.JAVA_INT".to_string()),
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                Some(format!("{type_name}.LAYOUT"))
+            }
             _ => {
                 self.errors
                     .push_error(format!("Unsupported return type in Java backend: {ty:?}"));
                 None
             }
         }
+    }
+
+    /// Get the (size, alignment) of the FFI layout for an output type.
+    fn get_out_type_size_align(&self, ty: &OutType) -> (usize, usize) {
+        out_type_size_align(ty, self.formatter)
+    }
+
+    /// Compute the result struct layout string for a fallible/nullable return.
+    /// Returns (layout_definition, is_ok_offset) or None for infallible.
+    fn compute_result_layout(&self, method: &Method) -> Option<(String, usize)> {
+        match &method.output {
+            ReturnType::Infallible(_) => None,
+            ReturnType::Fallible(ok, err) => {
+                let ok_layout = self.get_success_layout(ok);
+                let err_layout = err.as_ref().and_then(|e| self.get_type_layout(e));
+
+                let ok_size_align = match ok {
+                    SuccessType::OutType(ty) => self.get_out_type_size_align(ty),
+                    SuccessType::Write => (0, 0), // Write is handled separately
+                    SuccessType::Unit => (0, 0),
+                    _ => (0, 0),
+                };
+                let err_size_align = match err {
+                    Some(ty) => self.get_out_type_size_align(ty),
+                    None => (0, 0),
+                };
+
+                self.build_result_layout_string(
+                    ok_layout.as_deref(),
+                    err_layout.as_deref(),
+                    ok_size_align,
+                    err_size_align,
+                )
+            }
+            ReturnType::Nullable(ok) => {
+                let ok_layout = self.get_success_layout(ok);
+                let ok_size_align = match ok {
+                    SuccessType::OutType(ty) => self.get_out_type_size_align(ty),
+                    SuccessType::Write => (0, 0),
+                    SuccessType::Unit => (0, 0),
+                    _ => (0, 0),
+                };
+
+                self.build_result_layout_string(ok_layout.as_deref(), None, ok_size_align, (0, 0))
+            }
+        }
+    }
+
+    /// Build the StructLayout definition string for a result type.
+    /// The C ABI result layout is: union { Ok ok; Err err; } + bool is_ok;
+    /// Returns (layout_string, is_ok_offset).
+    fn build_result_layout_string(
+        &self,
+        ok_layout: Option<&str>,
+        err_layout: Option<&str>,
+        ok_size_align: (usize, usize),
+        err_size_align: (usize, usize),
+    ) -> Option<(String, usize)> {
+        // Union size is max of ok/err sizes, alignment is max of ok/err alignments
+        let union_size = ok_size_align.0.max(err_size_align.0);
+        let union_align = ok_size_align.1.max(err_size_align.1).max(1);
+
+        // Pick the layout element for the union (use the larger one, or ok if equal)
+        let union_layout = if ok_size_align.0 >= err_size_align.0 {
+            ok_layout
+        } else {
+            err_layout
+        };
+
+        let mut members = Vec::new();
+        if let Some(layout) = union_layout {
+            members.push(format!("{layout}.withName(\"union_val\")"));
+            // If the other type is smaller, the union is already sized by the larger
+            // But we may need padding after the union to reach union_size
+            let used_size = ok_size_align.0.max(err_size_align.0);
+            let larger_size = ok_size_align.0.max(err_size_align.0);
+            if used_size < larger_size {
+                members.push(format!(
+                    "MemoryLayout.paddingLayout({})",
+                    larger_size - used_size
+                ));
+            }
+        }
+
+        // is_ok field comes after the union, aligned
+        let is_ok_offset = if union_size > 0 {
+            // Align to 1 (bool alignment)
+            union_size
+        } else {
+            0
+        };
+        members.push("ValueLayout.JAVA_BOOLEAN.withName(\"is_ok\")".to_string());
+
+        // Trailing padding to align struct to union_align
+        let total_before_padding = is_ok_offset + 1; // +1 for bool
+        let trailing = (union_align - (total_before_padding % union_align)) % union_align;
+        if trailing > 0 {
+            members.push(format!("MemoryLayout.paddingLayout({trailing})"));
+        }
+
+        let layout_str = format!(
+            "MemoryLayout.structLayout(\n            {}\n        )",
+            members.join(",\n            ")
+        );
+        Some((layout_str, is_ok_offset))
     }
 
     fn gen_method(
@@ -407,13 +680,27 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let mut string_params: Vec<(String, StringEncoding)> = Vec::new();
         // Track nullable opaque params that need local variable setup
         let mut nullable_setup_lines: Vec<String> = Vec::new();
+        // Track if any struct params need arena for toNative
+        let mut has_struct_param = false;
 
-        if self_type.is_some() {
-            invoke_args.push("handle".to_string());
+        let _has_struct_self = matches!(self_type, Some(SelfType::Struct(_)));
+        if let Some(st) = self_type {
+            match st {
+                SelfType::Struct(_) => {
+                    has_struct_param = true;
+                    invoke_args.push("this.toNative(arena)".to_string());
+                }
+                _ => {
+                    invoke_args.push("handle".to_string());
+                }
+            }
         }
 
         for param in method.params.iter() {
             let param_name = self.formatter.fmt_param_name(param.name.as_str());
+            if matches!(&param.ty, Type::Struct(_)) {
+                has_struct_param = true;
+            }
             self.gen_java_param(
                 &param.ty,
                 &param_name,
@@ -425,17 +712,43 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
 
         let is_write_return = matches!(
-            &method.output,
+            method.output,
             ReturnType::Infallible(SuccessType::Write)
+                | ReturnType::Fallible(SuccessType::Write, _)
+                | ReturnType::Nullable(SuccessType::Write)
+        );
+        let is_fallible = matches!(method.output, ReturnType::Fallible(_, _));
+        let is_nullable = matches!(method.output, ReturnType::Nullable(_));
+        let returns_struct = matches!(
+            method.output,
+            ReturnType::Infallible(SuccessType::OutType(Type::Struct(_)))
+        ) || matches!(
+            method.output,
+            ReturnType::Fallible(SuccessType::OutType(Type::Struct(_)), _)
+        ) || matches!(
+            method.output,
+            ReturnType::Nullable(SuccessType::OutType(Type::Struct(_)))
         );
 
         if is_write_return {
             invoke_args.push("write".to_string());
         }
 
+        // Determine if we need an arena
+        let needs_arena = !string_params.is_empty()
+            || has_struct_param
+            || returns_struct
+            || is_fallible
+            || is_nullable;
+
+        // When returning a struct or result layout, FFM prepends SegmentAllocator
+        let returns_struct_layout = returns_struct || is_fallible || is_nullable;
+        if returns_struct_layout {
+            invoke_args.insert(0, "(SegmentAllocator) arena".to_string());
+        }
+
         let java_params_str = java_params.join(", ");
         let args_str = invoke_args.join(", ");
-        let has_string_param = !string_params.is_empty();
         let nullable_setup = nullable_setup_lines
             .iter()
             .map(|line| format!("            {line}\n"))
@@ -443,7 +756,11 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         // Build invoke expression
         let invoke_call = format!("{abi_handle}.invokeExact({args_str})");
-        let return_stmt = if is_write_return {
+
+        // Build the return statement based on output type
+        let return_stmt = if is_fallible || is_nullable {
+            self.gen_result_return_stmt(method, &invoke_call, &abi_handle, is_write_return)
+        } else if is_write_return {
             format!("{invoke_call};\n            return DiplomatLib.writeToString(write);")
         } else {
             match &method.output {
@@ -475,7 +792,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         } else {
             ""
         };
-        let body = if has_string_param {
+        let body = if needs_arena {
             let mut setup_lines = String::new();
             for (sp, encoding) in &string_params {
                 match encoding {
@@ -493,9 +810,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     }
                 }
             }
-            format!("{write_setup}        try (var arena = Arena.ofConfined()) {{\n{setup_lines}{nullable_setup}            {return_stmt}\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
+            format!("{write_setup}        try (var arena = Arena.ofConfined()) {{\n{setup_lines}{nullable_setup}            {return_stmt}\n        }} catch (RuntimeException ex) {{\n            throw ex;\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
         } else {
-            format!("{write_setup}        try {{\n{nullable_setup}            {return_stmt}\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
+            format!("{write_setup}        try {{\n{nullable_setup}            {return_stmt}\n        }} catch (RuntimeException ex) {{\n            throw ex;\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
         };
 
         let static_kw = if is_static { "static " } else { "" };
@@ -505,6 +822,147 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         );
 
         JavaMethodInfo { definition }
+    }
+
+    /// Generate the return statement for a fallible or nullable method.
+    fn gen_result_return_stmt(
+        &self,
+        method: &Method,
+        invoke_call: &str,
+        _abi_handle: &str,
+        is_write_return: bool,
+    ) -> String {
+        // Compute is_ok offset
+        let is_ok_offset = match self.compute_result_layout(method) {
+            Some((_layout, offset)) => offset,
+            None => 0,
+        };
+
+        let mut lines = Vec::new();
+        lines.push(format!("var result = (MemorySegment) {invoke_call};"));
+        lines.push(format!(
+            "var isOk = result.get(ValueLayout.JAVA_BOOLEAN, {is_ok_offset}L);"
+        ));
+
+        match &method.output {
+            ReturnType::Fallible(ok, err) => {
+                let ok_extract = self.gen_ok_extract(ok, is_write_return);
+                let err_throw = self.gen_err_throw(err);
+                lines.push("if (isOk) {".to_string());
+                lines.push(format!("    {ok_extract}"));
+                lines.push("} else {".to_string());
+                if is_write_return {
+                    lines.push("    DiplomatLib.destroyWrite(write);".to_string());
+                }
+                lines.push(format!("    {err_throw}"));
+                lines.push("}".to_string());
+            }
+            ReturnType::Nullable(ok) => {
+                let ok_extract = self.gen_nullable_ok_extract(ok);
+                lines.push("if (isOk) {".to_string());
+                lines.push(format!("    {ok_extract}"));
+                lines.push("} else {".to_string());
+                lines.push("    return Optional.empty();".to_string());
+                lines.push("}".to_string());
+            }
+            _ => {}
+        }
+
+        lines.join("\n            ")
+    }
+
+    /// Generate the ok-branch extraction for a fallible return.
+    fn gen_ok_extract(&self, ok: &SuccessType, is_write_return: bool) -> String {
+        if is_write_return {
+            return "return DiplomatLib.writeToString(write);".to_string();
+        }
+        match ok {
+            SuccessType::Unit => "return;".to_string(),
+            SuccessType::OutType(ty) => {
+                let extract = self.gen_result_value_extract(ty, "result");
+                format!("return {extract};")
+            }
+            SuccessType::Write => "return DiplomatLib.writeToString(write);".to_string(),
+            _ => "return;".to_string(),
+        }
+    }
+
+    /// Generate the ok-branch extraction for a nullable return (wrapped in Optional).
+    fn gen_nullable_ok_extract(&self, ok: &SuccessType) -> String {
+        match ok {
+            SuccessType::OutType(ty) => {
+                let extract = self.gen_result_value_extract(ty, "result");
+                format!("return Optional.of({extract});")
+            }
+            SuccessType::Write => {
+                "return Optional.of(DiplomatLib.writeToString(write));".to_string()
+            }
+            _ => "return Optional.empty();".to_string(),
+        }
+    }
+
+    /// Extract a value at offset 0 from a result MemorySegment.
+    fn gen_result_value_extract(&self, ty: &OutType, seg_name: &str) -> String {
+        match ty {
+            Type::Primitive(prim) => {
+                let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                let cast = self.formatter.fmt_primitive_as_java(*prim);
+                format!("({cast}) {seg_name}.get({layout}, 0L)")
+            }
+            Type::Opaque(_) => {
+                let type_id = ty.id().expect("opaque must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!("new {type_name}({seg_name}.get(ValueLayout.ADDRESS, 0L))")
+            }
+            Type::Enum(_) => {
+                format!("(int) {seg_name}.get(ValueLayout.JAVA_INT, 0L)")
+            }
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!(
+                    "{type_name}.fromNative({seg_name}.asSlice(0L, {type_name}.LAYOUT.byteSize()))"
+                )
+            }
+            _ => "null".to_string(),
+        }
+    }
+
+    /// Generate the error throw statement for a fallible return.
+    fn gen_err_throw(&self, err: &Option<OutType>) -> String {
+        match err {
+            None => {
+                // Result<T, ()> — unit error
+                "throw new RuntimeException(\"Diplomat error\");".to_string()
+            }
+            Some(err_ty) => match err_ty {
+                Type::Enum(_) => {
+                    "throw new RuntimeException(\"Diplomat enum error: \" + (int) result.get(ValueLayout.JAVA_INT, 0L));".to_string()
+                }
+                Type::Opaque(_) => {
+                    let type_id = err_ty.id().expect("opaque must have id");
+                    let type_name = self.formatter.fmt_type_name(type_id);
+                    format!(
+                        "throw new {type_name}(result.get(ValueLayout.ADDRESS, 0L));"
+                    )
+                }
+                Type::Struct(_) => {
+                    let type_id = err_ty.id().expect("struct must have id");
+                    let type_name = self.formatter.fmt_type_name(type_id);
+                    format!(
+                        "throw {type_name}.fromNative(result.asSlice(0L, {type_name}.LAYOUT.byteSize()));"
+                    )
+                }
+                Type::Primitive(prim) => {
+                    let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                    let cast = self.formatter.fmt_primitive_as_java(*prim);
+                    format!(
+                        "throw new RuntimeException(\"Diplomat error: \" + ({cast}) result.get({layout}, 0L));"
+                    )
+                }
+                _ => "throw new RuntimeException(\"Diplomat error\");".to_string(),
+            },
+        }
     }
 
     fn gen_java_param<P: hir::TyPosition>(
@@ -556,6 +1014,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 java_params.push(format!("int {param_name}"));
                 invoke_args.push(param_name.to_string());
             }
+            Type::Struct(_) => {
+                let type_name: Cow<str> = ty
+                    .id()
+                    .map(|id| self.formatter.fmt_type_name(id))
+                    .unwrap_or("MemorySegment".into());
+                java_params.push(format!("{type_name} {param_name}"));
+                invoke_args.push(format!("{param_name}.toNative(arena)"));
+            }
             _ => {
                 self.errors
                     .push_error(format!("Unsupported parameter type in Java: {ty:?}"));
@@ -577,11 +1043,25 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     "Object".to_string()
                 }
             },
-            _ => {
-                self.errors.push_error(
-                    "Fallible/Nullable return types not yet supported in Java backend".into(),
-                );
-                "Object".to_string()
+            ReturnType::Fallible(ok, _err) => {
+                // Errors are thrown, so return type is just the ok type
+                match ok {
+                    SuccessType::Unit => "void".to_string(),
+                    SuccessType::OutType(ty) => self.gen_out_type_java(ty, owner_type_name),
+                    SuccessType::Write => "String".to_string(),
+                    _ => "void".to_string(),
+                }
+            }
+            ReturnType::Nullable(ok) => {
+                // Nullable returns use Optional<T>
+                match ok {
+                    SuccessType::OutType(ty) => {
+                        let inner = self.gen_out_type_java_boxed(ty, owner_type_name);
+                        format!("Optional<{inner}>")
+                    }
+                    SuccessType::Write => "Optional<String>".to_string(),
+                    _ => "Optional<Void>".to_string(),
+                }
             }
         }
     }
@@ -599,12 +1079,26 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 }
             }
             Type::Enum(_) => "int".to_string(),
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                self.formatter.fmt_type_name(type_id).to_string()
+            }
             _ => {
                 self.errors.push_error(format!(
                     "Unsupported return type in Java backend for {owner_type_name}: {ty:?}"
                 ));
                 "Object".to_string()
             }
+        }
+    }
+
+    /// Like gen_out_type_java but returns boxed types for primitives (for use in generics).
+    fn gen_out_type_java_boxed(&self, ty: &OutType, owner_type_name: &str) -> String {
+        match ty {
+            Type::Primitive(prim) => {
+                self.formatter.fmt_primitive_as_java_boxed(*prim).to_string()
+            }
+            _ => self.gen_out_type_java(ty, owner_type_name),
         }
     }
 
@@ -621,11 +1115,304 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 format!("new {type_name}((MemorySegment) {invoke_call})")
             }
             Type::Enum(_) => format!("(int) {invoke_call}"),
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!(
+                    "{type_name}.fromNative((MemorySegment) {invoke_call})"
+                )
+            }
             _ => invoke_call.to_string(),
         }
     }
 
+    fn gen_struct_def<P: hir::TyPosition + 'cx>(
+        &self,
+        ty: &'cx hir::StructDef<P>,
+        type_name: &str,
+        is_out_struct: bool,
+    ) -> (String, String) {
+        let is_error = ty.attrs.custom_errors;
 
+        // Compute field info
+        let fields: Vec<JavaStructFieldInfo> =
+            self.compute_struct_fields(&ty.fields, type_name);
+
+        // Compute layout members string with padding
+        let layout_members = self.compute_layout_members(&ty.fields, type_name);
+
+        // Filter supported methods
+        let supported_methods: Vec<&Method> = ty
+            .methods
+            .iter()
+            .filter(|m| !m.attrs.disable && self.is_method_supported(m))
+            .collect();
+
+        let uses_optional = supported_methods.iter().any(|method| {
+            if let ReturnType::Infallible(SuccessType::OutType(Type::Opaque(op))) = &method.output {
+                if op.is_optional() {
+                    return true;
+                }
+            }
+            if matches!(&method.output, ReturnType::Nullable(_)) {
+                return true;
+            }
+            method
+                .params
+                .iter()
+                .any(|p| matches!(&p.ty, Type::Opaque(op) if op.is_optional()))
+        });
+
+        let native_methods: Vec<JavaNativeMethodInfo> = supported_methods
+            .iter()
+            .map(|method| self.gen_native_method_info(method))
+            .collect();
+
+        let companion_methods: Vec<JavaMethodInfo> = supported_methods
+            .iter()
+            .filter(|method| method.param_self.is_none())
+            .map(|method| self.gen_method(method, None, type_name))
+            .collect();
+
+        let self_methods: Vec<JavaMethodInfo> = supported_methods
+            .iter()
+            .filter_map(|method| {
+                method
+                    .param_self
+                    .as_ref()
+                    .map(|self_param| (*method, &self_param.ty))
+            })
+            .map(|(method, self_type)| self.gen_method(method, Some(self_type), type_name))
+            .collect();
+
+        #[derive(Template)]
+        #[template(path = "java/Struct.java.jinja", escape = "none")]
+        struct StructTemplate<'a> {
+            domain: &'a str,
+            lib_name: &'a str,
+            dylib_name: &'a str,
+            type_name: &'a str,
+            is_error: bool,
+            is_out_struct: bool,
+            uses_optional: bool,
+            layout_members: &'a str,
+            fields: &'a [JavaStructFieldInfo],
+            native_methods: &'a [JavaNativeMethodInfo],
+            companion_methods: &'a [JavaMethodInfo],
+            self_methods: &'a [JavaMethodInfo],
+        }
+
+        (
+            format!(
+                "src/main/java/{}/{lib_name}/{type_name}.java",
+                self.domain.replace('.', "/"),
+                lib_name = self.lib_name,
+            ),
+            StructTemplate {
+                domain: self.domain,
+                lib_name: self.lib_name,
+                dylib_name: self.dylib_name,
+                type_name,
+                is_error,
+                is_out_struct,
+                uses_optional,
+                layout_members: &layout_members,
+                fields: &fields,
+                native_methods: &native_methods,
+                companion_methods: &companion_methods,
+                self_methods: &self_methods,
+            }
+            .render()
+            .expect("failed to render struct type"),
+        )
+    }
+
+    /// Compute Java field info for each struct field.
+    fn compute_struct_fields<P: hir::TyPosition>(
+        &self,
+        fields: &[StructField<P>],
+        _type_name: &str,
+    ) -> Vec<JavaStructFieldInfo> {
+        // First compute offsets for each field (needed for fromNative/toNative with nested structs)
+        let mut offset: usize = 0;
+        let mut field_offsets = Vec::new();
+        for field in fields.iter() {
+            let (f_size, f_align) = self.get_field_size_align(&field.ty);
+            if f_align > 0 {
+                let padding = (f_align - (offset % f_align)) % f_align;
+                offset += padding;
+            }
+            field_offsets.push(offset);
+            offset += f_size;
+        }
+
+        fields
+            .iter()
+            .zip(field_offsets.iter())
+            .map(|(field, &field_offset)| {
+                let field_name = self.formatter.fmt_field_name(field.name.as_str()).to_string();
+                let java_type = self.field_java_type(&field.ty);
+                let from_native_expr = self.field_from_native(&field.ty, &field_name, field_offset);
+                let to_native_stmt = self.field_to_native(&field.ty, &field_name, field_offset);
+
+                JavaStructFieldInfo {
+                    field_name,
+                    java_type,
+                    from_native_expr,
+                    to_native_stmt,
+                }
+            })
+            .collect()
+    }
+
+    /// Compute the StructLayout members string with padding for a struct's fields.
+    fn compute_layout_members<P: hir::TyPosition>(
+        &self,
+        fields: &[StructField<P>],
+        _type_name: &str,
+    ) -> String {
+        let mut members = Vec::new();
+        let mut offset: usize = 0;
+        let mut max_align: usize = 1;
+
+        for field in fields.iter() {
+            let field_name = self.formatter.fmt_field_name(field.name.as_str());
+            let (f_size, f_align) = self.get_field_size_align(&field.ty);
+            let layout_element = self.field_layout_element(&field.ty);
+
+            if f_align > 0 {
+                let padding = (f_align - (offset % f_align)) % f_align;
+                if padding > 0 {
+                    members.push(format!("MemoryLayout.paddingLayout({padding})"));
+                    offset += padding;
+                }
+            }
+
+            members.push(format!("{layout_element}.withName(\"{field_name}\")"));
+            offset += f_size;
+            if f_align > max_align {
+                max_align = f_align;
+            }
+        }
+
+        // Trailing padding
+        if max_align > 0 {
+            let trailing = (max_align - (offset % max_align)) % max_align;
+            if trailing > 0 {
+                members.push(format!("MemoryLayout.paddingLayout({trailing})"));
+            }
+        }
+
+        if members.is_empty() {
+            // ZST: structLayout requires at least one element
+            "MemoryLayout.paddingLayout(0)".to_string()
+        } else {
+            members.join(",\n        ")
+        }
+    }
+
+    fn get_field_size_align<P: hir::TyPosition>(&self, ty: &Type<P>) -> (usize, usize) {
+        match ty {
+            Type::Primitive(prim) => self.formatter.primitive_size_align(*prim),
+            Type::Opaque(_) => (8, 8),
+            Type::Enum(_) => (4, 4),
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                struct_size_align_by_id(type_id, self.formatter)
+            }
+            _ => (0, 0),
+        }
+    }
+
+    fn field_layout_element<P: hir::TyPosition>(&self, ty: &Type<P>) -> String {
+        match ty {
+            Type::Primitive(prim) => self.formatter.fmt_primitive_as_ffi(*prim).to_string(),
+            Type::Opaque(_) => "ValueLayout.ADDRESS".to_string(),
+            Type::Enum(_) => "ValueLayout.JAVA_INT".to_string(),
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!("{type_name}.LAYOUT")
+            }
+            _ => "ValueLayout.JAVA_BYTE".to_string(),
+        }
+    }
+
+    fn field_java_type<P: hir::TyPosition>(&self, ty: &Type<P>) -> String {
+        match ty {
+            Type::Primitive(prim) => self.formatter.fmt_primitive_as_java(*prim).to_string(),
+            Type::Opaque(_) => {
+                let type_id = ty.id().expect("opaque must have id");
+                self.formatter.fmt_type_name(type_id).to_string()
+            }
+            Type::Enum(_) => "int".to_string(),
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                self.formatter.fmt_type_name(type_id).to_string()
+            }
+            _ => "Object".to_string(),
+        }
+    }
+
+    /// Generate the expression to read a field from a MemorySegment in fromNative.
+    fn field_from_native<P: hir::TyPosition>(
+        &self,
+        ty: &Type<P>,
+        field_name: &str,
+        offset: usize,
+    ) -> String {
+        match ty {
+            Type::Primitive(prim) => {
+                let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                format!("({java_type}) seg.get({layout}, {offset}L)", java_type = self.formatter.fmt_primitive_as_java(*prim))
+            }
+            Type::Opaque(_) => {
+                let type_id = ty.id().expect("opaque must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!("new {type_name}(seg.get(ValueLayout.ADDRESS, {offset}L))")
+            }
+            Type::Enum(_) => {
+                format!("(int) seg.get(ValueLayout.JAVA_INT, {offset}L)")
+            }
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!(
+                    "{type_name}.fromNative(seg.asSlice({offset}L, {type_name}.LAYOUT.byteSize()))"
+                )
+            }
+            _ => format!("null /* unsupported field {field_name} */"),
+        }
+    }
+
+    /// Generate the statement to write a field to a MemorySegment in toNative.
+    fn field_to_native<P: hir::TyPosition>(
+        &self,
+        ty: &Type<P>,
+        field_name: &str,
+        offset: usize,
+    ) -> String {
+        match ty {
+            Type::Primitive(prim) => {
+                let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                format!("seg.set({layout}, {offset}L, this.{field_name});")
+            }
+            Type::Opaque(_) => {
+                format!("seg.set(ValueLayout.ADDRESS, {offset}L, this.{field_name}.handle);")
+            }
+            Type::Enum(_) => {
+                format!("seg.set(ValueLayout.JAVA_INT, {offset}L, this.{field_name});")
+            }
+            Type::Struct(_) => {
+                let type_id = ty.id().expect("struct must have id");
+                let type_name = self.formatter.fmt_type_name(type_id);
+                format!(
+                    "seg.asSlice({offset}L, {type_name}.LAYOUT.byteSize()).copyFrom(this.{field_name}.toNative(arena));"
+                )
+            }
+            _ => format!("// unsupported field {field_name}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -657,7 +1444,7 @@ mod test {
         let mut result = String::new();
         for (_id, ty) in tcx.all_types() {
             if let TypeDef::Opaque(o) = ty {
-                let (_file, body) = cx.gen_opaque_def(o, &o.name.to_string());
+                let (_file, body) = cx.gen_opaque_def(o, o.name.as_str(), false);
                 result.push_str(&body);
             }
         }
@@ -773,6 +1560,278 @@ mod test {
                     }
 
                     pub fn string_transform(foo: &DiplomatStr, write: &mut DiplomatWrite) {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
+    }
+
+    fn gen_struct_for_test(tk_stream: proc_macro2::TokenStream) -> String {
+        let tcx = new_tcx(tk_stream);
+        let docs_urls = std::collections::HashMap::new();
+        let docs_generator = &diplomat_core::hir::DocsUrlGenerator::with_base_urls(None, docs_urls);
+        let formatter = JavaFormatter::new(&tcx, docs_generator);
+        let errors = ErrorStore::default();
+
+        let cx = ItemGenContext {
+            tcx: &tcx,
+            formatter: &formatter,
+            errors: &errors,
+            lib_name: "somelib",
+            dylib_name: "diplomat_example",
+            domain: "dev.diplomattest",
+        };
+
+        let mut result = String::new();
+        for (_id, ty) in tcx.all_types() {
+            match ty {
+                TypeDef::Struct(s) => {
+                    let (_file, body) = cx.gen_struct_def(s, s.name.as_str(), false);
+                    result.push_str(&body);
+                }
+                TypeDef::OutStruct(s) => {
+                    let (_file, body) = cx.gen_struct_def(s, s.name.as_str(), true);
+                    result.push_str(&body);
+                }
+                _ => {}
+            }
+        }
+        result
+    }
+
+    fn gen_all_for_test(tk_stream: proc_macro2::TokenStream) -> String {
+        let tcx = new_tcx(tk_stream);
+        let docs_urls = std::collections::HashMap::new();
+        let docs_generator = &diplomat_core::hir::DocsUrlGenerator::with_base_urls(None, docs_urls);
+        let formatter = JavaFormatter::new(&tcx, docs_generator);
+        let errors = ErrorStore::default();
+
+        let cx = ItemGenContext {
+            tcx: &tcx,
+            formatter: &formatter,
+            errors: &errors,
+            lib_name: "somelib",
+            dylib_name: "diplomat_example",
+            domain: "dev.diplomattest",
+        };
+
+        let mut result = String::new();
+        for (_id, ty) in tcx.all_types() {
+            match ty {
+                TypeDef::Opaque(o) => {
+                    let (_file, body) = cx.gen_opaque_def(o, o.name.as_str(), o.attrs.custom_errors);
+                    result.push_str(&body);
+                    result.push('\n');
+                }
+                TypeDef::Struct(s) => {
+                    let (_file, body) = cx.gen_struct_def(s, s.name.as_str(), false);
+                    result.push_str(&body);
+                    result.push('\n');
+                }
+                TypeDef::OutStruct(s) => {
+                    let (_file, body) = cx.gen_struct_def(s, s.name.as_str(), true);
+                    result.push_str(&body);
+                    result.push('\n');
+                }
+                _ => {}
+            }
+        }
+        result
+    }
+
+    #[test]
+    fn test_simple_struct() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub struct MyStruct {
+                    a: u8,
+                    b: bool,
+                    c: u64,
+                    d: i32,
+                }
+
+                impl MyStruct {
+                    pub fn new(a: u8, b: bool, c: u64, d: i32) -> MyStruct {
+                        unimplemented!()
+                    }
+
+                    pub fn into_a(self) -> u8 {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_struct_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_nested_struct() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub struct Inner {
+                    x: i32,
+                    y: i32,
+                }
+
+                pub struct Outer {
+                    inner: Inner,
+                    z: f64,
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_struct_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_fallible_int_return() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::opaque]
+                struct Foo(());
+
+                impl Foo {
+                    pub fn try_int(i: i32) -> Result<i32, ()> {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_fallible_opaque_return() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::opaque]
+                struct Foo(());
+
+                impl Foo {
+                    pub fn try_new(i: i32) -> Result<Box<Foo>, ()> {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_fallible_with_struct_error() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::attr(auto, error)]
+                pub struct ErrorStruct {
+                    i: i32,
+                    j: i32,
+                }
+
+                #[diplomat::opaque]
+                struct Foo(());
+
+                impl Foo {
+                    pub fn try_new(i: i32) -> Result<Box<Foo>, ErrorStruct> {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_all_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_fallible_void_return() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::opaque]
+                struct Foo(());
+
+                impl Foo {
+                    pub fn do_thing(&self) -> Result<(), ()> {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_nullable_struct_return() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::out]
+                pub struct MyStruct {
+                    a: i32,
+                    b: bool,
+                }
+
+                #[diplomat::opaque]
+                struct Foo(());
+
+                impl Foo {
+                    pub fn get_struct(&self) -> Option<MyStruct> {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_all_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_struct_param() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                pub struct Config {
+                    width: i32,
+                    height: i32,
+                }
+
+                #[diplomat::opaque]
+                struct Renderer(());
+
+                impl Renderer {
+                    pub fn new(config: Config) -> Box<Renderer> {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_all_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_fallible_write_return() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                use diplomat_runtime::DiplomatWrite;
+
+                #[diplomat::opaque]
+                struct Foo(());
+
+                impl Foo {
+                    pub fn try_to_string(&self, write: &mut DiplomatWrite) -> Result<(), ()> {
                         unimplemented!()
                     }
                 }

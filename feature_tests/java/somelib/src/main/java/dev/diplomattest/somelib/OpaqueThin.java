@@ -53,6 +53,8 @@ public class OpaqueThin implements AutoCloseable {
     public int a() {
         try {
             return (int) OPAQUETHIN_A.invokeExact(handle);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -61,6 +63,8 @@ public class OpaqueThin implements AutoCloseable {
     public float b() {
         try {
             return (float) OPAQUETHIN_B.invokeExact(handle);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -71,6 +75,8 @@ public class OpaqueThin implements AutoCloseable {
         try {
             OPAQUETHIN_C.invokeExact(handle, write);
             return DiplomatLib.writeToString(write);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

@@ -78,6 +78,8 @@ public class OpaqueMutexedString implements AutoCloseable {
     public static OpaqueMutexedString fromUsize(long number) {
         try {
             return new OpaqueMutexedString((MemorySegment) OPAQUEMUTEXEDSTRING_FROM_USIZE.invokeExact(number));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -86,6 +88,8 @@ public class OpaqueMutexedString implements AutoCloseable {
     public static OpaqueMutexedString borrowOther(OpaqueMutexedString other) {
         try {
             return new OpaqueMutexedString((MemorySegment) OPAQUEMUTEXEDSTRING_BORROW_OTHER.invokeExact(other.handle));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -94,6 +98,8 @@ public class OpaqueMutexedString implements AutoCloseable {
     public void change(long number) {
         try {
             OPAQUEMUTEXEDSTRING_CHANGE.invokeExact(handle, number);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -102,6 +108,8 @@ public class OpaqueMutexedString implements AutoCloseable {
     public OpaqueMutexedString borrow() {
         try {
             return new OpaqueMutexedString((MemorySegment) OPAQUEMUTEXEDSTRING_BORROW.invokeExact(handle));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -110,6 +118,8 @@ public class OpaqueMutexedString implements AutoCloseable {
     public OpaqueMutexedString borrowSelfOrOther(OpaqueMutexedString other) {
         try {
             return new OpaqueMutexedString((MemorySegment) OPAQUEMUTEXEDSTRING_BORROW_SELF_OR_OTHER.invokeExact(handle, other.handle));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -118,6 +128,8 @@ public class OpaqueMutexedString implements AutoCloseable {
     public long getLenAndAdd(long other) {
         try {
             return (long) OPAQUEMUTEXEDSTRING_GET_LEN_AND_ADD.invokeExact(handle, other);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -126,6 +138,8 @@ public class OpaqueMutexedString implements AutoCloseable {
     public Utf16Wrap wrapper() {
         try {
             return new Utf16Wrap((MemorySegment) OPAQUEMUTEXEDSTRING_WRAPPER.invokeExact(handle));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -134,6 +148,8 @@ public class OpaqueMutexedString implements AutoCloseable {
     public short toUnsignedFromUnsigned(short input) {
         try {
             return (short) OPAQUEMUTEXEDSTRING_TO_UNSIGNED_FROM_UNSIGNED.invokeExact(handle, input);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

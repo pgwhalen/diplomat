@@ -66,6 +66,8 @@ public class MyString implements AutoCloseable {
 
             var vSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, vBytes);
             return new MyString((MemorySegment) MYSTRING_NEW.invokeExact(vSeg, (long) vBytes.length));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -77,6 +79,8 @@ public class MyString implements AutoCloseable {
 
             var vSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, vBytes);
             return new MyString((MemorySegment) MYSTRING_NEW_UNSAFE.invokeExact(vSeg, (long) vBytes.length));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -90,6 +94,8 @@ public class MyString implements AutoCloseable {
             var fooSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, fooBytes);
             MYSTRING_STRING_TRANSFORM.invokeExact(fooSeg, (long) fooBytes.length, write);
             return DiplomatLib.writeToString(write);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -101,6 +107,8 @@ public class MyString implements AutoCloseable {
 
             var newStrSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, newStrBytes);
             MYSTRING_SET_STR.invokeExact(handle, newStrSeg, (long) newStrBytes.length);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -111,6 +119,8 @@ public class MyString implements AutoCloseable {
         try {
             MYSTRING_GET_STR.invokeExact(handle, write);
             return DiplomatLib.writeToString(write);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

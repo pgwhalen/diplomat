@@ -51,6 +51,8 @@ public class Utf16Wrap implements AutoCloseable {
 
             var inputSeg = arena.allocateFrom(ValueLayout.JAVA_CHAR, inputChars);
             return new Utf16Wrap((MemorySegment) UTF16WRAP_FROM_UTF16.invokeExact(inputSeg, (long) inputChars.length));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -61,6 +63,8 @@ public class Utf16Wrap implements AutoCloseable {
         try {
             UTF16WRAP_GET_DEBUG_STR.invokeExact(handle, write);
             return DiplomatLib.writeToString(write);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

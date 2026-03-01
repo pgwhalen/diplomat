@@ -1,0 +1,101 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_all_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class MyStruct {
+
+    static final StructLayout LAYOUT = MemoryLayout.structLayout(
+        ValueLayout.JAVA_INT.withName("a"),
+        ValueLayout.JAVA_BOOLEAN.withName("b"),
+        MemoryLayout.paddingLayout(3)
+    );
+
+    public int a;
+
+    public boolean b;
+
+    public MyStruct() {
+    }
+
+    MyStruct(int a, boolean b) {
+        this.a = a;
+        this.b = b;
+    }
+
+    static MyStruct fromNative(MemorySegment seg) {
+        var result = new MyStruct();
+        result.a = (int) seg.get(ValueLayout.JAVA_INT, 0L);
+        result.b = (boolean) seg.get(ValueLayout.JAVA_BOOLEAN, 4L);
+        return result;
+    }
+}
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
+
+public class Foo implements AutoCloseable {
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    private static final MethodHandle DESTROY;
+    private static final MethodHandle FOO_GET_STRUCT;
+    static final StructLayout FOO_GET_STRUCT_RESULT = MemoryLayout.structLayout(
+            MyStruct.LAYOUT.withName("union_val"),
+            ValueLayout.JAVA_BOOLEAN.withName("is_ok"),
+            MemoryLayout.paddingLayout(3)
+        );
+
+    static {
+        System.loadLibrary("diplomat_example");
+        LIB = SymbolLookup.loaderLookup();
+        DESTROY = LINKER.downcallHandle(
+            LIB.find("Foo_destroy").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        FOO_GET_STRUCT = LINKER.downcallHandle(
+            LIB.find("Foo_get_struct").orElseThrow(),
+            FunctionDescriptor.of(FOO_GET_STRUCT_RESULT, ValueLayout.ADDRESS)
+        );
+    }
+
+    final MemorySegment handle;
+
+    Foo(MemorySegment handle) {
+        this.handle = handle;
+    }
+
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public Optional<MyStruct> getStruct() {
+        try (var arena = Arena.ofConfined()) {
+            var result = (MemorySegment) FOO_GET_STRUCT.invokeExact((SegmentAllocator) arena, handle);
+            var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 8L);
+            if (isOk) {
+                return Optional.of(MyStruct.fromNative(result.asSlice(0L, MyStruct.LAYOUT.byteSize())));
+            } else {
+                return Optional.empty();
+            }
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+}

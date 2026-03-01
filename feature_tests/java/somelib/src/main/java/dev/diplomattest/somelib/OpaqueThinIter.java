@@ -45,6 +45,8 @@ public class OpaqueThinIter implements AutoCloseable {
         try {
             var resultAddr = (MemorySegment) OPAQUETHINITER_NEXT.invokeExact(handle);
             return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OpaqueThin(resultAddr));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

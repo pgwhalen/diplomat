@@ -43,6 +43,8 @@ public class RefList implements AutoCloseable {
     public static RefList node(RefListParameter data) {
         try {
             return new RefList((MemorySegment) REFLIST_NODE.invokeExact(data.handle));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

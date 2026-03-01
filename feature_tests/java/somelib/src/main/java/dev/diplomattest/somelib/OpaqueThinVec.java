@@ -59,6 +59,8 @@ public class OpaqueThinVec implements AutoCloseable {
     public OpaqueThinIter iter() {
         try {
             return new OpaqueThinIter((MemorySegment) OPAQUETHINVEC_ITER.invokeExact(handle));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -67,6 +69,8 @@ public class OpaqueThinVec implements AutoCloseable {
     public long len() {
         try {
             return (long) OPAQUETHINVEC_LEN.invokeExact(handle);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -76,6 +80,8 @@ public class OpaqueThinVec implements AutoCloseable {
         try {
             var resultAddr = (MemorySegment) OPAQUETHINVEC_GET.invokeExact(handle, idx);
             return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OpaqueThin(resultAddr));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }
@@ -85,6 +91,8 @@ public class OpaqueThinVec implements AutoCloseable {
         try {
             var resultAddr = (MemorySegment) OPAQUETHINVEC_FIRST.invokeExact(handle);
             return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OpaqueThin(resultAddr));
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Throwable ex) {
             throw new RuntimeException(ex);
         }

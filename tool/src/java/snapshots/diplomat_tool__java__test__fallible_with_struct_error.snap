@@ -1,0 +1,108 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_all_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class ErrorStruct extends RuntimeException {
+
+    static final StructLayout LAYOUT = MemoryLayout.structLayout(
+        ValueLayout.JAVA_INT.withName("i"),
+        ValueLayout.JAVA_INT.withName("j")
+    );
+
+    public int i;
+
+    public int j;
+
+    public ErrorStruct() {
+        super("ErrorStruct");
+    }
+
+    ErrorStruct(int i, int j) {
+        super("ErrorStruct");
+        this.i = i;
+        this.j = j;
+    }
+
+    static ErrorStruct fromNative(MemorySegment seg) {
+        var result = new ErrorStruct();
+        result.i = (int) seg.get(ValueLayout.JAVA_INT, 0L);
+        result.j = (int) seg.get(ValueLayout.JAVA_INT, 4L);
+        return result;
+    }
+
+    MemorySegment toNative(Arena arena) {
+        var seg = arena.allocate(LAYOUT);
+        seg.set(ValueLayout.JAVA_INT, 0L, this.i);
+        seg.set(ValueLayout.JAVA_INT, 4L, this.j);
+        return seg;
+    }
+}
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class Foo implements AutoCloseable {
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    private static final MethodHandle DESTROY;
+    private static final MethodHandle FOO_TRY_NEW;
+    static final StructLayout FOO_TRY_NEW_RESULT = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("union_val"),
+            ValueLayout.JAVA_BOOLEAN.withName("is_ok"),
+            MemoryLayout.paddingLayout(7)
+        );
+
+    static {
+        System.loadLibrary("diplomat_example");
+        LIB = SymbolLookup.loaderLookup();
+        DESTROY = LINKER.downcallHandle(
+            LIB.find("Foo_destroy").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        FOO_TRY_NEW = LINKER.downcallHandle(
+            LIB.find("Foo_try_new").orElseThrow(),
+            FunctionDescriptor.of(FOO_TRY_NEW_RESULT, ValueLayout.JAVA_INT)
+        );
+    }
+
+    final MemorySegment handle;
+
+    Foo(MemorySegment handle) {
+        this.handle = handle;
+    }
+
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static Foo tryNew(int i) {
+        try (var arena = Arena.ofConfined()) {
+            var result = (MemorySegment) FOO_TRY_NEW.invokeExact((SegmentAllocator) arena, i);
+            var isOk = result.get(ValueLayout.JAVA_BOOLEAN, 8L);
+            if (isOk) {
+                return new Foo(result.get(ValueLayout.ADDRESS, 0L));
+            } else {
+                throw ErrorStruct.fromNative(result.asSlice(0L, ErrorStruct.LAYOUT.byteSize()));
+            }
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+}
