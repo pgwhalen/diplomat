@@ -69,6 +69,14 @@ static KEYWORDS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
     .collect()
 });
 
+fn censor_symbol_for_keywords(name: Cow<'_, str>) -> Cow<'_, str> {
+    if KEYWORDS.contains(&&*name) {
+        format!("{name}_").into()
+    } else {
+        name
+    }
+}
+
 impl<'tcx> JavaFormatter<'tcx> {
     pub fn new(tcx: &'tcx TypeContext, docs_url_gen: &'tcx DocsUrlGenerator) -> Self {
         Self { tcx, docs_url_gen }
@@ -128,20 +136,12 @@ impl<'tcx> JavaFormatter<'tcx> {
     pub fn fmt_method_name<'a>(&self, method: &'a hir::Method) -> Cow<'a, str> {
         let name = method.name.as_str().to_lower_camel_case();
         let name = method.attrs.rename.apply(name.into());
-        if KEYWORDS.contains(&&*name) {
-            format!("{name}_").into()
-        } else {
-            name
-        }
+        censor_symbol_for_keywords(name)
     }
 
     pub fn fmt_param_name<'a>(&self, ident: &'a str) -> Cow<'tcx, str> {
         let name = ident.to_lower_camel_case();
-        if KEYWORDS.contains(&*name) {
-            format!("{name}_").into()
-        } else {
-            name.into()
-        }
+        censor_symbol_for_keywords(name.into())
     }
 
     pub fn fmt_field_name<'a>(&self, ident: &'a str) -> Cow<'tcx, str> {
@@ -172,11 +172,7 @@ impl<'tcx> JavaFormatter<'tcx> {
     pub fn fmt_enum_variant_name<'a>(&self, variant: &'a hir::EnumVariant) -> Cow<'a, str> {
         let name = variant.name.as_str().to_shouty_snake_case();
         let name = variant.attrs.rename.apply(name.into());
-        if KEYWORDS.contains(&&*name) {
-            format!("{name}_").into()
-        } else {
-            name
-        }
+        censor_symbol_for_keywords(name)
     }
 
     pub fn fmt_type_name(&self, id: TypeId) -> Cow<'tcx, str> {
