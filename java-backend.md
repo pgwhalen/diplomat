@@ -88,7 +88,7 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 
 - **Primitive slice parameters/returns** (`&[u8]`, `&[i32]`, etc.) — not supported as method parameters or return types. Primitive slices do work as struct fields.
 - **Owned slices** — Rust-allocated slices transferred to Java are not supported.
-- **Slices of strings** (`&[&DiplomatStr]`, `DiplomatStrSlice`) — not supported.
+- **Slices of strings** (`&[&DiplomatStr]`, `DiplomatStrSlice`) — supported. Java `String[]` arrays are converted to an array of `DiplomatStringView` structs via arena allocation.
 - **Borrows / lifetime tracking** — no mechanism to prevent GC cleanup of objects while something depends on them. Lifetimes are parsed but not enforced on the Java side (no reference stashing like JS, no documentation like C++).
 - **Comparators** — `#[diplomat::attr(auto, comparison)]` not yet mapped to `Comparable<T>`.
 - **Accessors** — `#[diplomat::attr(auto, getter/setter)]` not yet mapped to JavaBeans-style `getXxx()`/`setXxx()` methods.
@@ -131,7 +131,7 @@ Based on `book/src/developer.md` and the full Diplomat book. Check off features 
   - [x] str slices (`&DiplomatStr` mapped to Java `String` via UTF-8)
   - [x] str16 slices (`&DiplomatStr16` mapped to Java `String` via UTF-16)
   - [ ] owned slices
-  - [ ] slices of strings
+  - [x] slices of strings
   - [ ] slices of opaque (`&[Box<T>]`)
 - [ ] **borrows / lifetime tracking** — ensure managed objects aren't cleaned up while something depends on them
   - [ ] borrows of parameters

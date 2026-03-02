@@ -331,6 +331,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 Slice::Primitive(_, prim) => {
                     format!("{}[]", self.formatter.fmt_primitive_as_java(*prim))
                 }
+                Slice::Strs(_) => "String[]".to_string(),
                 _ => "Object".to_string(),
             },
             _ => "Object".to_string(),
@@ -479,6 +480,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 | Type::Opaque(_)
                 | Type::Slice(Slice::Str(_, _))
                 | Type::Slice(Slice::Primitive(_, _))
+                | Type::Slice(Slice::Strs(_))
                 | Type::Enum(_)
                 | Type::Struct(_)
                 | Type::Callback(_)
@@ -758,7 +760,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             return;
         }
         match ty {
-            Type::Slice(Slice::Str(_, _)) | Type::Slice(Slice::Primitive(_, _)) => {
+            Type::Slice(Slice::Str(_, _))
+            | Type::Slice(Slice::Primitive(_, _))
+            | Type::Slice(Slice::Strs(_)) => {
                 // Slices are passed as { ADDRESS data, JAVA_LONG len }
                 layouts.push("ValueLayout.ADDRESS".to_string());
                 layouts.push("ValueLayout.JAVA_LONG".to_string());
@@ -1016,6 +1020,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let mut string_params: Vec<(String, StringEncoding)> = Vec::new();
         // Track primitive slice params that need Arena allocation
         let mut slice_params: Vec<(String, hir::PrimitiveType)> = Vec::new();
+        // Track string slice params (&[DiplomatStrSlice]) that need Arena allocation
+        let mut str_slice_params: Vec<(String, StringEncoding)> = Vec::new();
         // Track nullable opaque params that need local variable setup
         let mut nullable_setup_lines: Vec<String> = Vec::new();
         // Track callback params
@@ -1055,6 +1061,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 &mut invoke_args,
                 &mut string_params,
                 &mut slice_params,
+                &mut str_slice_params,
                 &mut nullable_setup_lines,
                 &mut callback_infos,
                 &mut trait_setup_params,
@@ -1091,6 +1098,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         // Determine if we need an arena
         let needs_arena = !string_params.is_empty()
             || !slice_params.is_empty()
+            || !str_slice_params.is_empty()
             || has_struct_param
             || returns_struct
             || is_fallible
@@ -1197,6 +1205,34 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     setup_lines.push_str(&format!(
                         "            var {sp}Seg = arena.allocateFrom({layout}, {sp});\n"
                     ));
+                }
+            }
+            for (sp, encoding) in &str_slice_params {
+                match encoding {
+                    StringEncoding::UnvalidatedUtf16 => {
+                        setup_lines.push_str(&format!(
+                            "            MemorySegment {sp}Seg = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW, {sp}.length);\n\
+                             \x20           for (int i = 0; i < {sp}.length; i++) {{\n\
+                             \x20               char[] {sp}Chars_i = {sp}[i].toCharArray();\n\
+                             \x20               var {sp}Data_i = arena.allocateFrom(ValueLayout.JAVA_CHAR, {sp}Chars_i);\n\
+                             \x20               long {sp}Off = i * 16L;\n\
+                             \x20               {sp}Seg.set(ValueLayout.ADDRESS, {sp}Off, {sp}Data_i);\n\
+                             \x20               {sp}Seg.set(ValueLayout.JAVA_LONG, {sp}Off + 8L, (long) {sp}Chars_i.length);\n\
+                             \x20           }}\n"
+                        ));
+                    }
+                    _ => {
+                        setup_lines.push_str(&format!(
+                            "            MemorySegment {sp}Seg = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW, {sp}.length);\n\
+                             \x20           for (int i = 0; i < {sp}.length; i++) {{\n\
+                             \x20               byte[] {sp}Bytes_i = {sp}[i].getBytes(StandardCharsets.UTF_8);\n\
+                             \x20               var {sp}Data_i = arena.allocateFrom(ValueLayout.JAVA_BYTE, {sp}Bytes_i);\n\
+                             \x20               long {sp}Off = i * 16L;\n\
+                             \x20               {sp}Seg.set(ValueLayout.ADDRESS, {sp}Off, {sp}Data_i);\n\
+                             \x20               {sp}Seg.set(ValueLayout.JAVA_LONG, {sp}Off + 8L, (long) {sp}Bytes_i.length);\n\
+                             \x20           }}\n"
+                        ));
+                    }
                 }
             }
             for cb_info in &callback_infos {
@@ -1515,6 +1551,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn gen_java_param<P: hir::TyPosition>(
         &self,
         ty: &Type<P>,
@@ -1523,6 +1560,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         invoke_args: &mut Vec<String>,
         string_params: &mut Vec<(String, StringEncoding)>,
         slice_params: &mut Vec<(String, hir::PrimitiveType)>,
+        str_slice_params: &mut Vec<(String, StringEncoding)>,
         nullable_setup_lines: &mut Vec<String>,
         callback_infos: &mut Vec<JavaCallbackInfo>,
         trait_setup_params: &mut Vec<(String, String)>, // (param_name, trait_name)
@@ -1568,6 +1606,12 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let java_type = self.formatter.fmt_primitive_as_java(*prim);
                 java_params.push(format!("{java_type}[] {param_name}"));
                 slice_params.push((param_name.to_string(), *prim));
+                invoke_args.push(format!("{param_name}Seg"));
+                invoke_args.push(format!("(long) {param_name}.length"));
+            }
+            Type::Slice(Slice::Strs(encoding)) => {
+                java_params.push(format!("String[] {param_name}"));
+                str_slice_params.push((param_name.to_string(), *encoding));
                 invoke_args.push(format!("{param_name}Seg"));
                 invoke_args.push(format!("(long) {param_name}.length"));
             }

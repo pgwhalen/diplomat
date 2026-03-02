@@ -12,6 +12,7 @@ public class MyString implements AutoCloseable {
     private static final MethodHandle DESTROY;
     private static final MethodHandle MYSTRING_NEW;
     private static final MethodHandle MYSTRING_NEW_UNSAFE;
+    private static final MethodHandle MYSTRING_NEW_FROM_FIRST;
     private static final MethodHandle MYSTRING_SET_STR;
     private static final MethodHandle MYSTRING_GET_STR;
     private static final MethodHandle MYSTRING_STRING_TRANSFORM;
@@ -29,6 +30,10 @@ public class MyString implements AutoCloseable {
         );
         MYSTRING_NEW_UNSAFE = LINKER.downcallHandle(
             LIB.find("MyString_new_unsafe").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+        );
+        MYSTRING_NEW_FROM_FIRST = LINKER.downcallHandle(
+            LIB.find("MyString_new_from_first").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
         MYSTRING_SET_STR = LINKER.downcallHandle(
@@ -79,6 +84,24 @@ public class MyString implements AutoCloseable {
 
             var vSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, vBytes);
             return new MyString((MemorySegment) MYSTRING_NEW_UNSAFE.invokeExact(vSeg, (long) vBytes.length));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static MyString newFromFirst(String[] v) {
+        try (var arena = Arena.ofConfined()) {
+            MemorySegment vSeg = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW, v.length);
+            for (int i = 0; i < v.length; i++) {
+                byte[] vBytes_i = v[i].getBytes(StandardCharsets.UTF_8);
+                var vData_i = arena.allocateFrom(ValueLayout.JAVA_BYTE, vBytes_i);
+                long vOff = i * 16L;
+                vSeg.set(ValueLayout.ADDRESS, vOff, vData_i);
+                vSeg.set(ValueLayout.JAVA_LONG, vOff + 8L, (long) vBytes_i.length);
+            }
+            return new MyString((MemorySegment) MYSTRING_NEW_FROM_FIRST.invokeExact(vSeg, (long) v.length));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

@@ -32,4 +32,11 @@ class MyStringTest {
         String result = MyString.stringTransform("anything");
         assertEquals("", result);
     }
+
+    @Test
+    void testNewFromFirst() {
+        try (MyString s = MyString.newFromFirst(new String[]{"hello", "world"})) {
+            assertEquals("hello", s.getStr());
+        }
+    }
 }
