@@ -326,6 +326,13 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         match ty {
             Type::Primitive(prim) => self.formatter.fmt_primitive_as_java(*prim).to_string(),
             Type::Enum(_) | Type::Struct(_) | Type::Opaque(_) => self.fmt_type_name_str(ty),
+            Type::Slice(slice) => match slice {
+                Slice::Str(_, _) => "String".to_string(),
+                Slice::Primitive(_, prim) => {
+                    format!("{}[]", self.formatter.fmt_primitive_as_java(*prim))
+                }
+                _ => "Object".to_string(),
+            },
             _ => "Object".to_string(),
         }
     }
@@ -471,6 +478,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             Type::Primitive(_)
                 | Type::Opaque(_)
                 | Type::Slice(Slice::Str(_, _))
+                | Type::Slice(Slice::Primitive(_, _))
                 | Type::Enum(_)
                 | Type::Struct(_)
                 | Type::Callback(_)
@@ -750,8 +758,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             return;
         }
         match ty {
-            Type::Slice(Slice::Str(_, _)) => {
-                // DiplomatStr is passed as { ADDRESS data, JAVA_LONG len }
+            Type::Slice(Slice::Str(_, _)) | Type::Slice(Slice::Primitive(_, _)) => {
+                // Slices are passed as { ADDRESS data, JAVA_LONG len }
                 layouts.push("ValueLayout.ADDRESS".to_string());
                 layouts.push("ValueLayout.JAVA_LONG".to_string());
             }
@@ -1003,6 +1011,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let mut invoke_args = Vec::new();
         // Track string params that need Arena allocation, with their encoding
         let mut string_params: Vec<(String, StringEncoding)> = Vec::new();
+        // Track primitive slice params that need Arena allocation
+        let mut slice_params: Vec<(String, hir::PrimitiveType)> = Vec::new();
         // Track nullable opaque params that need local variable setup
         let mut nullable_setup_lines: Vec<String> = Vec::new();
         // Track callback params
@@ -1041,6 +1051,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 &mut java_params,
                 &mut invoke_args,
                 &mut string_params,
+                &mut slice_params,
                 &mut nullable_setup_lines,
                 &mut callback_infos,
                 &mut trait_setup_params,
@@ -1076,6 +1087,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         // Determine if we need an arena
         let needs_arena = !string_params.is_empty()
+            || !slice_params.is_empty()
             || has_struct_param
             || returns_struct
             || is_fallible
@@ -1167,6 +1179,21 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                              \n            var {sp}Seg = arena.allocateFrom(ValueLayout.JAVA_BYTE, {sp}Bytes);\n"
                         ));
                     }
+                }
+            }
+            for (sp, prim) in &slice_params {
+                if matches!(prim, hir::PrimitiveType::Bool) {
+                    // boolean[] not supported by allocateFrom, convert to byte[]
+                    setup_lines.push_str(&format!(
+                        "            byte[] {sp}Bytes = new byte[{sp}.length];\n\
+                         \x20           for (int i = 0; i < {sp}.length; i++) {sp}Bytes[i] = {sp}[i] ? (byte) 1 : (byte) 0;\n\
+                         \x20           var {sp}Seg = arena.allocateFrom(ValueLayout.JAVA_BYTE, {sp}Bytes);\n"
+                    ));
+                } else {
+                    let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                    setup_lines.push_str(&format!(
+                        "            var {sp}Seg = arena.allocateFrom({layout}, {sp});\n"
+                    ));
                 }
             }
             for cb_info in &callback_infos {
@@ -1492,6 +1519,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         java_params: &mut Vec<String>,
         invoke_args: &mut Vec<String>,
         string_params: &mut Vec<(String, StringEncoding)>,
+        slice_params: &mut Vec<(String, hir::PrimitiveType)>,
         nullable_setup_lines: &mut Vec<String>,
         callback_infos: &mut Vec<JavaCallbackInfo>,
         trait_setup_params: &mut Vec<(String, String)>, // (param_name, trait_name)
@@ -1532,6 +1560,13 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                         invoke_args.push(format!("(long) {param_name}Bytes.length"));
                     }
                 }
+            }
+            Type::Slice(Slice::Primitive(_, prim)) => {
+                let java_type = self.formatter.fmt_primitive_as_java(*prim);
+                java_params.push(format!("{java_type}[] {param_name}"));
+                slice_params.push((param_name.to_string(), *prim));
+                invoke_args.push(format!("{param_name}Seg"));
+                invoke_args.push(format!("(long) {param_name}.length"));
             }
             Type::Enum(_) => {
                 let type_name: Cow<str> = ty
@@ -1764,6 +1799,52 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     native_type: "MemorySegment".to_string(),
                     layout: "ValueLayout.ADDRESS".to_string(),
                     conversion: format!("new {type_name}({arg_name})"),
+                }
+            }
+            Type::Slice(slice) => {
+                let (java_type, conversion) = match slice {
+                    Slice::Str(_, encoding) => {
+                        let charset = match encoding {
+                            StringEncoding::UnvalidatedUtf8 | StringEncoding::Utf8 => {
+                                "StandardCharsets.UTF_8"
+                            }
+                            StringEncoding::UnvalidatedUtf16 => "StandardCharsets.UTF_16LE",
+                            _ => "StandardCharsets.UTF_8",
+                        };
+                        let byte_multiplier = match encoding {
+                            StringEncoding::UnvalidatedUtf16 => " * 2",
+                            _ => "",
+                        };
+                        (
+                            "String".to_string(),
+                            format!(
+                                "new String(((MemorySegment) DiplomatLib.VH_SV_DATA.get({arg_name}, 0L))\
+                                 .reinterpret((long) DiplomatLib.VH_SV_LEN.get({arg_name}, 0L){byte_multiplier})\
+                                 .toArray(ValueLayout.JAVA_BYTE), {charset})"
+                            ),
+                        )
+                    }
+                    Slice::Primitive(_, prim) => {
+                        let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                        let (elem_size, _) = self.formatter.primitive_size_align(*prim);
+                        let java_arr_type =
+                            format!("{}[]", self.formatter.fmt_primitive_as_java(*prim));
+                        (
+                            java_arr_type,
+                            format!(
+                                "((MemorySegment) DiplomatLib.VH_SV_DATA.get({arg_name}, 0L))\
+                                 .reinterpret((long) DiplomatLib.VH_SV_LEN.get({arg_name}, 0L) * {elem_size}L)\
+                                 .toArray({layout})"
+                            ),
+                        )
+                    }
+                    _ => ("Object".to_string(), arg_name.to_string()),
+                };
+                CallbackParamTypeInfo {
+                    java_type,
+                    native_type: "MemorySegment".to_string(),
+                    layout: "DiplomatLib.DIPLOMAT_STRING_VIEW".to_string(),
+                    conversion,
                 }
             }
             _ => CallbackParamTypeInfo {

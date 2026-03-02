@@ -16,6 +16,10 @@ public final class DiplomatLib {
         ValueLayout.ADDRESS.withName("data"),
         ValueLayout.JAVA_LONG.withName("len")
     );
+    static final java.lang.invoke.VarHandle VH_SV_DATA =
+        DIPLOMAT_STRING_VIEW.varHandle(MemoryLayout.PathElement.groupElement("data"));
+    static final java.lang.invoke.VarHandle VH_SV_LEN =
+        DIPLOMAT_STRING_VIEW.varHandle(MemoryLayout.PathElement.groupElement("len"));
 
     // Callback support: DiplomatCallback = { ADDRESS data, ADDRESS run_callback, ADDRESS destructor }
     static final StructLayout DIPLOMAT_CALLBACK_LAYOUT = MemoryLayout.structLayout(

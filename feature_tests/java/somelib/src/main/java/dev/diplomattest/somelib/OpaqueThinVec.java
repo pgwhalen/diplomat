@@ -12,6 +12,7 @@ public class OpaqueThinVec implements AutoCloseable, Iterable<OpaqueThin> {
     private static final SymbolLookup LIB;
 
     private static final MethodHandle DESTROY;
+    private static final MethodHandle OPAQUETHINVEC_CREATE;
     private static final MethodHandle OPAQUETHINVEC_ITER;
     private static final MethodHandle OPAQUETHINVEC_LEN;
     private static final MethodHandle OPAQUETHINVEC_GET;
@@ -23,6 +24,10 @@ public class OpaqueThinVec implements AutoCloseable, Iterable<OpaqueThin> {
         DESTROY = LINKER.downcallHandle(
             LIB.find("OpaqueThinVec_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        OPAQUETHINVEC_CREATE = LINKER.downcallHandle(
+            LIB.find("OpaqueThinVec_create").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
         OPAQUETHINVEC_ITER = LINKER.downcallHandle(
             LIB.find("OpaqueThinVec_iter").orElseThrow(),
@@ -46,6 +51,21 @@ public class OpaqueThinVec implements AutoCloseable, Iterable<OpaqueThin> {
 
     OpaqueThinVec(MemorySegment handle) {
         this.handle = handle;
+    }
+
+    public OpaqueThinVec(int[] a, float[] b, String c) {
+        try (var arena = Arena.ofConfined()) {
+            byte[] cBytes = c.getBytes(StandardCharsets.UTF_8);
+
+            var cSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, cBytes);
+            var aSeg = arena.allocateFrom(ValueLayout.JAVA_INT, a);
+            var bSeg = arena.allocateFrom(ValueLayout.JAVA_FLOAT, b);
+            this.handle = (MemorySegment) OPAQUETHINVEC_CREATE.invokeExact(aSeg, (long) a.length, bSeg, (long) b.length, cSeg, (long) cBytes.length);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     @Override

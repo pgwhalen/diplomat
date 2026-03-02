@@ -27,4 +27,18 @@ class CallbackWrapperTest {
         int result = CallbackWrapper.testMultipleCbArgs(() -> 10, x -> x * 2);
         assertEquals(20, result);
     }
+
+    @Test
+    void testStrCbArg() {
+        int result = CallbackWrapper.testStrCbArg(s -> s.length());
+        assertEquals(7, result);
+    }
+
+    @Test
+    void testSliceCbArg() {
+        byte[] input = new byte[]{1, 2, 3};
+        CallbackWrapper.testSliceCbArg(input, arr -> {
+            assertEquals(3, arr.length);
+        });
+    }
 }

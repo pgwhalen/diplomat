@@ -20,6 +20,8 @@ public class CallbackWrapper {
     private static final MethodHandle CALLBACKWRAPPER_TEST_NO_ARGS;
     private static final MethodHandle CALLBACKWRAPPER_TEST_CB_WITH_STRUCT;
     private static final MethodHandle CALLBACKWRAPPER_TEST_MULTIPLE_CB_ARGS;
+    private static final MethodHandle CALLBACKWRAPPER_TEST_STR_CB_ARG;
+    private static final MethodHandle CALLBACKWRAPPER_TEST_SLICE_CB_ARG;
 
     static {
         System.loadLibrary("diplomat_feature_tests");
@@ -39,6 +41,14 @@ public class CallbackWrapper {
         CALLBACKWRAPPER_TEST_MULTIPLE_CB_ARGS = LINKER.downcallHandle(
             LIB.find("CallbackWrapper_test_multiple_cb_args").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
+        );
+        CALLBACKWRAPPER_TEST_STR_CB_ARG = LINKER.downcallHandle(
+            LIB.find("CallbackWrapper_test_str_cb_arg").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
+        );
+        CALLBACKWRAPPER_TEST_SLICE_CB_ARG = LINKER.downcallHandle(
+            LIB.find("CallbackWrapper_test_slice_cb_arg").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
         );
     }
 
@@ -65,6 +75,16 @@ public class CallbackWrapper {
     @FunctionalInterface
     public interface TestMultipleCbArgsG {
         int invoke(int arg0);
+    }
+
+    @FunctionalInterface
+    public interface TestStrCbArgF {
+        int invoke(String arg0);
+    }
+
+    @FunctionalInterface
+    public interface TestSliceCbArgF {
+        void invoke(byte[] arg0);
     }
 
     private static int runCallback_testMultiArgCallback_f(MemorySegment data, int arg0) {
@@ -95,6 +115,18 @@ public class CallbackWrapper {
         @SuppressWarnings("unchecked")
         TestMultipleCbArgsG cb = DiplomatLib.getCallback(data.address(), TestMultipleCbArgsG.class);
         return cb.invoke(arg0);
+    }
+
+    private static int runCallback_testStrCbArg_f(MemorySegment data, MemorySegment arg0) {
+        @SuppressWarnings("unchecked")
+        TestStrCbArgF cb = DiplomatLib.getCallback(data.address(), TestStrCbArgF.class);
+        return cb.invoke(new String(((MemorySegment) DiplomatLib.VH_SV_DATA.get(arg0, 0L)).reinterpret((long) DiplomatLib.VH_SV_LEN.get(arg0, 0L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8));
+    }
+
+    private static void runCallback_testSliceCbArg_f(MemorySegment data, MemorySegment arg0) {
+        @SuppressWarnings("unchecked")
+        TestSliceCbArgF cb = DiplomatLib.getCallback(data.address(), TestSliceCbArgF.class);
+        cb.invoke(((MemorySegment) DiplomatLib.VH_SV_DATA.get(arg0, 0L)).reinterpret((long) DiplomatLib.VH_SV_LEN.get(arg0, 0L) * 1L).toArray(ValueLayout.JAVA_BYTE));
     }
 
     private static final MethodHandle MH_RUN_testMultiArgCallback_f;
@@ -171,6 +203,38 @@ public class CallbackWrapper {
             UPCALL_testMultipleCbArgs_g = DiplomatLib.LINKER_SHARED.upcallStub(
                 MH_RUN_testMultipleCbArgs_g,
                 FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT),
+                Arena.global());
+        } catch (ReflectiveOperationException ex) {
+            throw new ExceptionInInitializerError(ex);
+        }
+    }
+
+    private static final MethodHandle MH_RUN_testStrCbArg_f;
+    private static final MemorySegment UPCALL_testStrCbArg_f;
+    static {
+        try {
+            MH_RUN_testStrCbArg_f = MethodHandles.lookup().findStatic(
+                CallbackWrapper.class, "runCallback_testStrCbArg_f",
+                MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class));
+            UPCALL_testStrCbArg_f = DiplomatLib.LINKER_SHARED.upcallStub(
+                MH_RUN_testStrCbArg_f,
+                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW),
+                Arena.global());
+        } catch (ReflectiveOperationException ex) {
+            throw new ExceptionInInitializerError(ex);
+        }
+    }
+
+    private static final MethodHandle MH_RUN_testSliceCbArg_f;
+    private static final MemorySegment UPCALL_testSliceCbArg_f;
+    static {
+        try {
+            MH_RUN_testSliceCbArg_f = MethodHandles.lookup().findStatic(
+                CallbackWrapper.class, "runCallback_testSliceCbArg_f",
+                MethodType.methodType(void.class, MemorySegment.class, MemorySegment.class));
+            UPCALL_testSliceCbArg_f = DiplomatLib.LINKER_SHARED.upcallStub(
+                MH_RUN_testSliceCbArg_f,
+                FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW),
                 Arena.global());
         } catch (ReflectiveOperationException ex) {
             throw new ExceptionInInitializerError(ex);
@@ -256,6 +320,37 @@ public class CallbackWrapper {
             DiplomatLib.VH_CB_RUN.set(gNative, 0L, UPCALL_testMultipleCbArgs_g);
             DiplomatLib.VH_CB_DESTRUCTOR.set(gNative, 0L, DiplomatLib.DESTRUCTOR_STUB);
             return (int) CALLBACKWRAPPER_TEST_MULTIPLE_CB_ARGS.invokeExact(fNative, gNative);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static int testStrCbArg(TestStrCbArgF f) {
+        try (var arena = Arena.ofConfined()) {
+            long fId = DiplomatLib.registerCallback(f);
+            var fNative = arena.allocate(DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT);
+            DiplomatLib.VH_CB_DATA.set(fNative, 0L, MemorySegment.ofAddress(fId));
+            DiplomatLib.VH_CB_RUN.set(fNative, 0L, UPCALL_testStrCbArg_f);
+            DiplomatLib.VH_CB_DESTRUCTOR.set(fNative, 0L, DiplomatLib.DESTRUCTOR_STUB);
+            return (int) CALLBACKWRAPPER_TEST_STR_CB_ARG.invokeExact(fNative);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static void testSliceCbArg(byte[] arg, TestSliceCbArgF f) {
+        try (var arena = Arena.ofConfined()) {
+            var argSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, arg);
+            long fId = DiplomatLib.registerCallback(f);
+            var fNative = arena.allocate(DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT);
+            DiplomatLib.VH_CB_DATA.set(fNative, 0L, MemorySegment.ofAddress(fId));
+            DiplomatLib.VH_CB_RUN.set(fNative, 0L, UPCALL_testSliceCbArg_f);
+            DiplomatLib.VH_CB_DESTRUCTOR.set(fNative, 0L, DiplomatLib.DESTRUCTOR_STUB);
+            CALLBACKWRAPPER_TEST_SLICE_CB_ARG.invokeExact(argSeg, (long) arg.length, fNative);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

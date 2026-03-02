@@ -28,7 +28,6 @@ mod ffi {
             f() + g(5)
         }
         #[diplomat::attr(kotlin, disable)]
-        #[diplomat::attr(java, disable)]
         pub fn test_str_cb_arg(f: impl Fn(&str) -> i32) -> i32 {
             f("bananna")
         }
@@ -39,7 +38,6 @@ mod ffi {
             cb(a);
         }
 
-        #[diplomat::attr(java, disable)]
         pub fn test_slice_cb_arg(arg: &[u8], f: impl Fn(&[u8])) {
             f(arg);
         }
