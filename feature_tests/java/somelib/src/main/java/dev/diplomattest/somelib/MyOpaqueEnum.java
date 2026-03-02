@@ -55,6 +55,7 @@ public class MyOpaqueEnum implements AutoCloseable {
         }
     }
 
+    @Override
     public String toString() {
         var write = DiplomatLib.createWrite();
         try {

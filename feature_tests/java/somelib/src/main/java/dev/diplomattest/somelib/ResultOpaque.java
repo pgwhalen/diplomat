@@ -334,7 +334,8 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
         }
     }
 
-    public String stringifyError() {
+    @Override
+    public String toString() {
         var write = DiplomatLib.createWrite();
         try (var arena = Arena.ofConfined()) {
             var result = (MemorySegment) RESULTOPAQUE_STRINGIFY_ERROR.invokeExact((SegmentAllocator) arena, handle, write);

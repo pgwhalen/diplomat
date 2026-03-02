@@ -30,7 +30,7 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.fallible_constructors = true;
     a.accessors = false;
     a.static_accessors = false;
-    a.stringifiers = false;
+    a.stringifiers = true;
     a.comparators = false;
     a.iterators = true;
     a.iterables = true;
@@ -961,6 +961,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let is_iterator = matches!(method.attrs.special_method, Some(SpecialMethod::Iterator));
         let is_iterable = matches!(method.attrs.special_method, Some(SpecialMethod::Iterable));
         let is_indexer = matches!(method.attrs.special_method, Some(SpecialMethod::Indexer));
+        let is_stringifier = matches!(method.attrs.special_method, Some(SpecialMethod::Stringifier));
 
         let method_name: Cow<'_, str> = if is_constructor {
             // Constructors use the class name, no method name needed
@@ -977,6 +978,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             "getInternal".into()
         } else if is_iterable {
             "iterator".into()
+        } else if is_stringifier {
+            "toString".into()
         } else {
             self.formatter.fmt_method_name(method)
         };
@@ -1225,7 +1228,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             format!(
                 "private {return_type_java} {method_name}({java_params_str}) {{\n{body}\n    }}"
             )
-        } else if is_iterable {
+        } else if is_iterable || is_stringifier {
             format!(
                 "@Override\n    public {return_type_java} {method_name}({java_params_str}) {{\n{body}\n    }}"
             )

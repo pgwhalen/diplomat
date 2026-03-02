@@ -180,6 +180,7 @@ public class Float64Vec implements AutoCloseable {
         }
     }
 
+    @Override
     public String toString() {
         var write = DiplomatLib.createWrite();
         try {

@@ -78,6 +78,7 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
   - Trait methods with primitive, void, and struct params/returns
   - **Disabled for Java**: trait methods returning `Result`
 - **JavaDoc documentation** — `/// doc comments` from Rust source are rendered as `/** ... */` JavaDoc blocks on types, methods, struct fields, enum variants, and trait interfaces/methods. Uses `{@link TypeName}` syntax for cross-type references.
+- **Stringifiers** — `#[diplomat::attr(auto, stringifier)]` generates an `@Override public String toString()` method. Methods with any Rust name (e.g., `to_string`, `stringify_error`) are renamed to `toString` and annotated with `@Override`. Both infallible and fallible stringifiers work (fallible uses `DiplomatWrite` + result check).
 - **Disabling APIs** — `#[diplomat::attr(java, disable)]` works to suppress types and methods from Java output. `#[diplomat::cfg(supports = ...)]` also works, gating on features the Java backend declares support for. Feature gates (`#[diplomat::attr(not(feature=...), disable)]`) are supported through the config system.
 - **Renaming** — `#[diplomat::attr(*, rename = "...")]` works on types, methods, fields, and enum variants. Java-side name formatting (lowerCamelCase for methods/params, SHOUTY_SNAKE_CASE for enum variants) is applied on top of renames.
 - **`#[diplomat::out]` structs** — output-only structs containing `Box<OpaqueType>` fields work. The struct is generated as a regular Java class with opaque-handle fields populated via `fromNative`.
@@ -89,7 +90,6 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 - **Owned slices** — Rust-allocated slices transferred to Java are not supported.
 - **Slices of strings** (`&[&DiplomatStr]`, `DiplomatStrSlice`) — not supported.
 - **Borrows / lifetime tracking** — no mechanism to prevent GC cleanup of objects while something depends on them. Lifetimes are parsed but not enforced on the Java side (no reference stashing like JS, no documentation like C++).
-- **Stringifiers** — `#[diplomat::attr(auto, stringifier)]` not yet mapped to `toString()` override.
 - **Comparators** — `#[diplomat::attr(auto, comparison)]` not yet mapped to `Comparable<T>`.
 - **Accessors** — `#[diplomat::attr(auto, getter/setter)]` not yet mapped to JavaBeans-style `getXxx()`/`setXxx()` methods.
 - **`&str` / `&DiplomatStr` returns** — string returns are only supported via `DiplomatWrite` (write buffer), not via direct borrowed string returns.
@@ -100,7 +100,7 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 
 ### `attr_support()` flags
 
-In `tool/src/java/mod.rs`, the following are set to `true`: `non_exhaustive_structs`, `method_overloading`, `utf8_strings`, `utf16_strings`, `option`, `custom_errors`, `constructors`, `named_constructors`, `fallible_constructors`, `iterators`, `iterables`, `indexing`, `callbacks`, `traits`. The following are explicitly set to `false`: `namespacing`, `memory_sharing`, `static_slices`, `accessors`, `static_accessors`, `stringifiers`, `comparators`, `traits_are_send`, `traits_are_sync`, `generate_mocking_interface`, `owned_slices`. The remaining flags (`defaults`, `arithmetic`, `abi_compatibles`, `struct_refs`, `free_functions`, `custom_bindings`, `default_args`) are not set and default to `false`. Flags should be flipped to `true` as features are implemented.
+In `tool/src/java/mod.rs`, the following are set to `true`: `non_exhaustive_structs`, `method_overloading`, `utf8_strings`, `utf16_strings`, `option`, `custom_errors`, `constructors`, `named_constructors`, `fallible_constructors`, `iterators`, `iterables`, `indexing`, `callbacks`, `traits`. The following are explicitly set to `false`: `namespacing`, `memory_sharing`, `static_slices`, `accessors`, `static_accessors`, `comparators`, `traits_are_send`, `traits_are_sync`, `generate_mocking_interface`, `owned_slices`. The remaining flags (`defaults`, `arithmetic`, `abi_compatibles`, `struct_refs`, `free_functions`, `custom_bindings`, `default_args`) are not set and default to `false`. Flags should be flipped to `true` as features are implemented.
 
 ## Feature Checklist
 
@@ -158,7 +158,7 @@ Based on `book/src/developer.md` and the full Diplomat book. Check off features 
 - [x] **Iterators** — `#[diplomat::attr(auto, iterator)]` mapped to `Iterator<T>`
 - [x] **Iterables** — `#[diplomat::attr(auto, iterable)]` mapped to `Iterable<T>`
 - [x] **Indexing** — `#[diplomat::attr(auto, indexer)]` mapped to `get()` with `IndexOutOfBoundsException`
-- [ ] **Stringifiers** — `#[diplomat::attr(auto, stringifier)]` → `toString()` override
+- [x] **Stringifiers** — `#[diplomat::attr(auto, stringifier)]` → `@Override toString()`
 - [ ] **Comparators** — `#[diplomat::attr(auto, comparison)]` → `Comparable<T>`
 - [ ] **Accessors** — `#[diplomat::attr(auto, getter/setter)]` → JavaBeans `getXxx()`/`setXxx()`
 
@@ -205,11 +205,11 @@ Cross-backend comparison is provided where relevant. The Kotlin backend (JNA-bas
 
 - [x] **`traits`** — Diplomat trait definitions generate Java `interface` files. Each interface includes the user-facing method signatures, a `VTABLE_LAYOUT` and `TRAIT_STRUCT_LAYOUT` for the native representation, a `Statics` inner class with per-method runner methods and upcall stubs, and a `createNative(Object impl_, Arena arena)` factory method. Trait methods returning `Result` are disabled for Java. Kotlin and C also support traits.
 
+- [x] **`stringifiers`** — Map the `#[diplomat::attr(*, stringifier)]` method to a `toString()` override. Every Java class inherits `Object.toString()`, and overriding it is deeply idiomatic — it's automatically called by string concatenation (`"Value: " + obj`), `System.out.println()`, `String.format()`, and logging frameworks. The Kotlin backend already implements this as `override fun toString(): String`. The Dart backend maps it to `toString()` as well. The method is renamed to `toString` regardless of the Rust function name, and annotated with `@Override`.
+
 ---
 
 ### TODO
-
-- [ ] **`stringifiers`** — Map the `#[diplomat::attr(*, stringifier)]` method to a `toString()` override. Every Java class inherits `Object.toString()`, and overriding it is deeply idiomatic — it's automatically called by string concatenation (`"Value: " + obj`), `System.out.println()`, `String.format()`, and logging frameworks. The Kotlin backend already implements this as `override fun toString(): String`. The Dart backend maps it to `toString()` as well. The backend already supports `DiplomatWrite`-based returns — this flag just needs special-case naming.
 
 - [ ] **`comparators`** — Map the `comparison` attribute to `Comparable<T>` implementation with a `compareTo()` method. Java's `Comparable<T>` interface is a standard part of the language, enabling natural use with `Collections.sort()`, `TreeMap`, `TreeSet`, and `Arrays.sort()`. Dart and C++ already support this. The Kotlin backend does *not* yet enable this flag, but Java's strongly-typed `Comparable<T>` makes it a clean fit. The Diplomat `comparison` method returns `std::cmp::Ordering`, which maps directly to Java's `compareTo()` contract (negative/zero/positive int).
 
