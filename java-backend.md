@@ -39,7 +39,7 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
   - Fallible constructors (throw on error path)
   - Named constructors (`#[diplomat::attr(auto, named_constructor = "...")]`) generate static factory methods
 - **Static factory methods** (non-constructor methods returning `Box<Self>`)
-- **Instance methods** with `&self` (opaque and struct)
+- **Instance methods** with `&self` and `&mut self` (opaque and struct)
 - **Primitive parameters and returns** (all integer sizes, float, double, boolean, char)
 - **Opaque parameters and returns** (passed as `MemorySegment`)
 - **`&DiplomatStr` parameters** (Java `String` converted to UTF-8 bytes via `Arena`)
@@ -78,29 +78,42 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
   - Trait methods with primitive, void, and struct params/returns
   - **Disabled for Java**: trait methods returning `Result`
 - **JavaDoc documentation** — `/// doc comments` from Rust source are rendered as `/** ... */` JavaDoc blocks on types, methods, struct fields, enum variants, and trait interfaces/methods. Uses `{@link TypeName}` syntax for cross-type references.
+- **Disabling APIs** — `#[diplomat::attr(java, disable)]` works to suppress types and methods from Java output. `#[diplomat::cfg(supports = ...)]` also works, gating on features the Java backend declares support for. Feature gates (`#[diplomat::attr(not(feature=...), disable)]`) are supported through the config system.
+- **Renaming** — `#[diplomat::attr(*, rename = "...")]` works on types, methods, fields, and enum variants. Java-side name formatting (lowerCamelCase for methods/params, SHOUTY_SNAKE_CASE for enum variants) is applied on top of renames.
+- **`#[diplomat::out]` structs** — output-only structs containing `Box<OpaqueType>` fields work. The struct is generated as a regular Java class with opaque-handle fields populated via `fromNative`.
 - **Feature tests** — `feature_tests/java/somelib/` Gradle project with JUnit 5 tests
 
 ### What doesn't work yet
 
-- Struct fields of certain unsupported types (e.g., struct slices, string view slices) — emit `Object` placeholder
-- Cyclic struct references in result layouts — circular static class initialization in Java (e.g., `CyclicStructA` ↔ `CyclicStructB` when result layouts create cross-type references)
-- Slice parameters/returns other than `&str` / `&DiplomatStr16` — not supported (primitive slices work as struct fields)
-- Accessors / comparators
-- Java is not yet included in CI meta-tasks (`test-example`, `test-feature`, `test-all`)
+- **Primitive slice parameters/returns** (`&[u8]`, `&[i32]`, etc.) — not supported as method parameters or return types. Primitive slices do work as struct fields.
+- **Owned slices** — Rust-allocated slices transferred to Java are not supported.
+- **Slices of strings** (`&[&DiplomatStr]`, `DiplomatStrSlice`) — not supported.
+- **Borrows / lifetime tracking** — no mechanism to prevent GC cleanup of objects while something depends on them. Lifetimes are parsed but not enforced on the Java side (no reference stashing like JS, no documentation like C++).
+- **Stringifiers** — `#[diplomat::attr(auto, stringifier)]` not yet mapped to `toString()` override.
+- **Comparators** — `#[diplomat::attr(auto, comparison)]` not yet mapped to `Comparable<T>`.
+- **Accessors** — `#[diplomat::attr(auto, getter/setter)]` not yet mapped to JavaBeans-style `getXxx()`/`setXxx()` methods.
+- **`&str` / `&DiplomatStr` returns** — string returns are only supported via `DiplomatWrite` (write buffer), not via direct borrowed string returns.
+- Struct fields of certain unsupported types (e.g., struct slices, string view slices) — emit `Object` placeholder.
+- Cyclic struct references in result layouts — circular static class initialization in Java (e.g., `CyclicStructA` ↔ `CyclicStructB` when result layouts create cross-type references).
+- **Macros** — `#[diplomat::macro_rules]` is a Diplomat language feature that should work with Java (it expands before backend codegen), but has not been tested with the Java backend.
+- Java is not yet included in CI meta-tasks (`test-example`, `test-feature`, `test-all`).
 
 ### `attr_support()` flags
 
-In `tool/src/java/mod.rs`, the following are set to `true`: `method_overloading`, `utf8_strings`, `utf16_strings`, `non_exhaustive_structs`, `option`, `custom_errors`, `constructors`, `named_constructors`, `fallible_constructors`, `iterators`, `iterables`, `indexing`, `callbacks`, `traits`. All others are `false`. Flags should be flipped to `true` as features are implemented.
+In `tool/src/java/mod.rs`, the following are set to `true`: `non_exhaustive_structs`, `method_overloading`, `utf8_strings`, `utf16_strings`, `option`, `custom_errors`, `constructors`, `named_constructors`, `fallible_constructors`, `iterators`, `iterables`, `indexing`, `callbacks`, `traits`. The following are explicitly set to `false`: `namespacing`, `memory_sharing`, `static_slices`, `accessors`, `static_accessors`, `stringifiers`, `comparators`, `traits_are_send`, `traits_are_sync`, `generate_mocking_interface`, `owned_slices`. The remaining flags (`defaults`, `arithmetic`, `abi_compatibles`, `struct_refs`, `free_functions`, `custom_bindings`, `default_args`) are not set and default to `false`. Flags should be flipped to `true` as features are implemented.
 
 ## Feature Checklist
 
-Copied from `book/src/developer.md` — check off features as they are added to the Java backend:
+Based on `book/src/developer.md` and the full Diplomat book. Check off features as they are added to the Java backend.
 
-- [x] **primitive types**: All integer sizes, float, double, boolean mapped to Java equivalents
+### Core types and concepts
+
+- [x] **primitive types**: All integer sizes, float, double, boolean, char mapped to Java equivalents
 - [x] **opaque types**:
   - [x] basic definition
   - [x] return a boxed opaque (with `AutoCloseable` / destroy cleanup)
-  - [x] as self parameter
+  - [x] as `&self` parameter
+  - [x] as `&mut self` parameter
   - [x] as another parameter
 - [x] **structs**:
   - [x] basic definition (primitive fields, nested struct fields)
@@ -109,25 +122,49 @@ Copied from `book/src/developer.md` — check off features as they are added to 
   - [x] struct self methods
   - [x] enum fields
   - [x] slice fields (str + primitive)
-  - [x] `Option<T>` fields
+  - [x] `DiplomatOption<T>` fields
+  - [x] `#[diplomat::out]` structs (output-only structs containing `Box<T>` fields)
 - [x] **enums** (as proper Java enum classes with `toNative()`/`fromNative()`)
-- [x] **writeable** (DiplomatWrite / stringifiers)
+- [x] **writeable** (`DiplomatWrite` returns converted to `String`)
 - [ ] **slices**:
-  - [ ] primitive slices
+  - [ ] primitive slices (`&[u8]`, `&[i32]`, etc.) as method params/returns
   - [x] str slices (`&DiplomatStr` mapped to Java `String` via UTF-8)
   - [x] str16 slices (`&DiplomatStr16` mapped to Java `String` via UTF-16)
   - [ ] owned slices
   - [ ] slices of strings
-  - [ ] strings
-- [ ] **borrows** — ensure managed objects aren't cleaned up while something depends on them
+  - [ ] slices of opaque (`&[Box<T>]`)
+- [ ] **borrows / lifetime tracking** — ensure managed objects aren't cleaned up while something depends on them
   - [ ] borrows of parameters
   - [ ] in struct fields
-- [x] **nullables** — returning `Option` types as `Optional<T>`
-- [x] **fallibles** — returning `Result` types (discriminated union with error throwing)
+- [x] **nullables** — `Option<T>` returns wrapped in `Optional<T>`, optional opaque params as nullable `MemorySegment`
+- [x] **fallibles** — `Result<T, E>` returns with discriminated union layout and error throwing
+- [x] **callbacks** — `impl Fn(args) -> ret` parameters with `@FunctionalInterface` inner interfaces and FFM upcall stubs
+- [x] **traits** — `impl Trait` parameters generate Java `interface` files with vtable layouts and `createNative()` factory
+
+### Documentation and metadata
+
+- [x] **JavaDoc documentation** — `///` doc comments rendered as `/** ... */` JavaDoc blocks on types, methods, fields, variants, trait interfaces
+- [x] **Intra-doc links** — ``[`TypeName`]`` syntax converted to `{@link TypeName}` in JavaDoc
+- [x] **`#[diplomat::rust_link]`** — auto-generated "See the Rust documentation for ..." links rendered in JavaDoc via `to_markdown()`
+- [x] **Backend-specific docs** — `#[diplomat::docs(java)]` / `#[diplomat::docs(not(java))]` filtering works via the HIR
+
+### Attributes and customization
+
+- [x] **Disabling APIs** — `#[diplomat::attr(java, disable)]` and `#[diplomat::cfg(supports = ...)]`
+- [x] **Feature gates** — `#[diplomat::attr(not(feature=...), disable)]` via config
+- [x] **Renaming** — `#[diplomat::attr(*, rename = "...")]` on types, methods, fields, variants
+- [x] **Constructors** — `#[diplomat::attr(auto, constructor)]` and named constructors
+- [x] **Fallible constructors** — constructors returning `Result` throw on error
+- [x] **Iterators** — `#[diplomat::attr(auto, iterator)]` mapped to `Iterator<T>`
+- [x] **Iterables** — `#[diplomat::attr(auto, iterable)]` mapped to `Iterable<T>`
+- [x] **Indexing** — `#[diplomat::attr(auto, indexer)]` mapped to `get()` with `IndexOutOfBoundsException`
+- [ ] **Stringifiers** — `#[diplomat::attr(auto, stringifier)]` → `toString()` override
+- [ ] **Comparators** — `#[diplomat::attr(auto, comparison)]` → `Comparable<T>`
+- [ ] **Accessors** — `#[diplomat::attr(auto, getter/setter)]` → JavaBeans `getXxx()`/`setXxx()`
 
 ## `BackendAttrSupport` Flag Checklist
 
-This section tracks every flag in `BackendAttrSupport` (defined in `core/src/hir/attrs.rs`) and its status for the Java backend. The current `attr_support()` in `tool/src/java/mod.rs` has only `method_overloading` set to `true`; all others default to `false`. Each flag below is categorized as:
+This section tracks every flag in `BackendAttrSupport` (defined in `core/src/hir/attrs.rs`) and its status for the Java backend. Each flag below is categorized as:
 
 - **DONE** — already implemented and set to `true`
 - **TODO** — should be implemented for the Java backend
@@ -150,21 +187,13 @@ Cross-backend comparison is provided where relevant. The Kotlin backend (JNA-bas
 
 - [x] **`option`** — `Option<T>` return types are wrapped in `Optional<T>` with boxed primitives. Optional opaque parameters pass `MemorySegment.NULL` when absent.
 
-- [x] **`custom_errors`** — Struct and opaque error types extend `RuntimeException` and are thrown directly from fallible methods. Enum errors are thrown as `RuntimeException` with the error value in the message (pending proper Java enum class generation).
+- [x] **`custom_errors`** — Struct and opaque error types extend `RuntimeException` and are thrown directly from fallible methods. Enum errors with `#[diplomat::attr(auto, error)]` generate a companion `*Exception` class that wraps the enum value.
 
 - [x] **`constructors`** — `#[diplomat::attr(auto, constructor)]` generates idiomatic `new TypeName(...)` Java constructors. Opaque constructors assign `this.handle`, struct constructors assign fields from native memory. Constructor syntax is not applied to enum types.
 
 - [x] **`named_constructors`** — `#[diplomat::attr(auto, named_constructor = "name")]` generates named static factory methods (e.g., `ResultOpaque.failingFoo()`). Names are converted to lowerCamelCase and keyword-censored.
 
 - [x] **`fallible_constructors`** — Constructors returning `Result<Box<Self>, E>` generate Java constructors that throw on error. The ok-branch assigns `this.handle` (opaque) or fields (struct); the error branch throws the appropriate exception type.
-
----
-
-### TODO
-
-- [ ] **`stringifiers`** — Map the `#[diplomat::attr(*, stringifier)]` method to a `toString()` override. Every Java class inherits `Object.toString()`, and overriding it is deeply idiomatic — it's automatically called by string concatenation (`"Value: " + obj`), `System.out.println()`, `String.format()`, and logging frameworks. The Kotlin backend already implements this as `override fun toString(): String`. The Dart backend maps it to `toString()` as well. The backend already supports `DiplomatWrite`-based returns — this flag just needs special-case naming.
-
-- [ ] **`comparators`** — Map the `comparison` attribute to `Comparable<T>` implementation with a `compareTo()` method. Java's `Comparable<T>` interface is a standard part of the language, enabling natural use with `Collections.sort()`, `TreeMap`, `TreeSet`, and `Arrays.sort()`. Dart and C++ already support this. The Kotlin backend does *not* yet enable this flag, but Java's strongly-typed `Comparable<T>` makes it a clean fit. The Diplomat `comparison` method returns `std::cmp::Ordering`, which maps directly to Java's `compareTo()` contract (negative/zero/positive int).
 
 - [x] **`iterators`** — Map the `iterator` attribute to Java's `Iterator<T>` interface (`hasNext()` + `next()`). Generates a private `nextInternal()` wrapper that returns raw nullable values, with one-ahead buffering to implement `hasNext()`. The `NoSuchElementException` is thrown when `next()` is called past the end. Supported by Kotlin, Dart, JS, C++, and nanobind.
 
@@ -175,6 +204,14 @@ Cross-backend comparison is provided where relevant. The Kotlin backend (JNA-bas
 - [x] **`callbacks`** — Callback function parameters (`impl Fn(args) -> ret`) generate `@FunctionalInterface` inner interfaces, static runner methods, and FFM `Linker.upcallStub()` stubs. At each call site, the Java lambda is registered in a `ConcurrentHashMap<Long, Object>` registry in `DiplomatLib.java`; a `DiplomatCallback` native struct is allocated with `{data=id, run_callback=stub, destructor=destructor_stub}`. Callbacks with str/opaque/slice args, result/option returns, and various conversion callbacks are disabled for Java via `#[diplomat::attr(java, disable)]`. Kotlin, C++, C, and nanobind also support this.
 
 - [x] **`traits`** — Diplomat trait definitions generate Java `interface` files. Each interface includes the user-facing method signatures, a `VTABLE_LAYOUT` and `TRAIT_STRUCT_LAYOUT` for the native representation, a `Statics` inner class with per-method runner methods and upcall stubs, and a `createNative(Object impl_, Arena arena)` factory method. Trait methods returning `Result` are disabled for Java. Kotlin and C also support traits.
+
+---
+
+### TODO
+
+- [ ] **`stringifiers`** — Map the `#[diplomat::attr(*, stringifier)]` method to a `toString()` override. Every Java class inherits `Object.toString()`, and overriding it is deeply idiomatic — it's automatically called by string concatenation (`"Value: " + obj`), `System.out.println()`, `String.format()`, and logging frameworks. The Kotlin backend already implements this as `override fun toString(): String`. The Dart backend maps it to `toString()` as well. The backend already supports `DiplomatWrite`-based returns — this flag just needs special-case naming.
+
+- [ ] **`comparators`** — Map the `comparison` attribute to `Comparable<T>` implementation with a `compareTo()` method. Java's `Comparable<T>` interface is a standard part of the language, enabling natural use with `Collections.sort()`, `TreeMap`, `TreeSet`, and `Arrays.sort()`. Dart and C++ already support this. The Kotlin backend does *not* yet enable this flag, but Java's strongly-typed `Comparable<T>` makes it a clean fit. The Diplomat `comparison` method returns `std::cmp::Ordering`, which maps directly to Java's `compareTo()` contract (negative/zero/positive int).
 
 - [ ] **`owned_slices`** — Support for Rust-allocated slices that transfer ownership to the foreign side. The FFM API can manage these via `MemorySegment` with custom cleanup actions (using `Arena` or manual `MemorySegment.ofAddress()` with deallocation). The Kotlin backend wraps these in an `OwnedSlice` class with a raw pointer and length. Kotlin, Dart, and JS support this. Requires implementing basic slice support first.
 
