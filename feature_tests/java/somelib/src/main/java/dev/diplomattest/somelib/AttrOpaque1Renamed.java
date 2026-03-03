@@ -73,7 +73,7 @@ public class AttrOpaque1Renamed implements AutoCloseable {
 
     private static void runCallback_testNamespacedCallback_t(MemorySegment data) {
         @SuppressWarnings("unchecked")
-        TestNamespacedCallbackT cb = DiplomatLib.getCallback(data.address(), TestNamespacedCallbackT.class);
+        TestNamespacedCallbackT cb = DiplomatLib.getCallback(data, TestNamespacedCallbackT.class);
         cb.invoke();
     }
 
@@ -123,9 +123,9 @@ public class AttrOpaque1Renamed implements AutoCloseable {
 
     public static void testNamespacedCallback(TestNamespacedCallbackT t) {
         try (var arena = Arena.ofConfined()) {
-            long tId = DiplomatLib.registerCallback(t);
+            var tId = DiplomatLib.registerCallback(t);
             var tNative = arena.allocate(DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT);
-            DiplomatLib.VH_CB_DATA.set(tNative, 0L, MemorySegment.ofAddress(tId));
+            DiplomatLib.VH_CB_DATA.set(tNative, 0L, tId);
             DiplomatLib.VH_CB_RUN.set(tNative, 0L, UPCALL_testNamespacedCallback_t);
             DiplomatLib.VH_CB_DESTRUCTOR.set(tNative, 0L, DiplomatLib.DESTRUCTOR_STUB);
             NAMESPACE_ATTROPAQUE1_TEST_NAMESPACED_CALLBACK.invokeExact(tNative);

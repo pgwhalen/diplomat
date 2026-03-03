@@ -2081,7 +2081,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         format!(
             "    private static {native_return_type} runCallback_{unique_name}({runner_params_str}) {{\n\
              \x20       @SuppressWarnings(\"unchecked\")\n\
-             \x20       {iface} cb = DiplomatLib.getCallback(data.address(), {iface}.class);\n\
+             \x20       {iface} cb = DiplomatLib.getCallback(data, {iface}.class);\n\
              {body}\n\
              \x20   }}",
             unique_name = info.unique_name,
@@ -2173,9 +2173,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let upcall_name = format!("UPCALL_{}", info.unique_name);
 
         format!(
-            "long {id_var} = DiplomatLib.registerCallback({param});\n\
+            "var {id_var} = DiplomatLib.registerCallback({param});\n\
              \x20           var {native_var} = arena.allocate(DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT);\n\
-             \x20           DiplomatLib.VH_CB_DATA.set({native_var}, 0L, MemorySegment.ofAddress({id_var}));\n\
+             \x20           DiplomatLib.VH_CB_DATA.set({native_var}, 0L, {id_var});\n\
              \x20           DiplomatLib.VH_CB_RUN.set({native_var}, 0L, {upcall_name});\n\
              \x20           DiplomatLib.VH_CB_DESTRUCTOR.set({native_var}, 0L, DiplomatLib.DESTRUCTOR_STUB);",
             param = info.param_name,
@@ -2264,9 +2264,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         // Build createNative method
         let mut create_native_lines = Vec::new();
         create_native_lines.push("    static MemorySegment createNative(Object impl_, Arena arena) {".to_string());
-        create_native_lines.push("        long id = DiplomatLib.registerCallback(impl_);".to_string());
+        create_native_lines.push("        var id = DiplomatLib.registerCallback(impl_);".to_string());
         create_native_lines.push("        var seg = arena.allocate(TRAIT_STRUCT_LAYOUT);".to_string());
-        create_native_lines.push("        VH_DATA.set(seg, 0L, MemorySegment.ofAddress(id));".to_string());
+        create_native_lines.push("        VH_DATA.set(seg, 0L, id);".to_string());
         create_native_lines.push("        VH_DESTRUCTOR.set(seg, 0L, DiplomatLib.DESTRUCTOR_STUB);".to_string());
         create_native_lines.push("        VH_SIZE.set(seg, 0L, 0L);".to_string());
         create_native_lines.push("        VH_ALIGNMENT.set(seg, 0L, 0L);".to_string());
@@ -2466,7 +2466,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         let runner = format!(
             "    private static {native_return_type} traitRunner_{method_name}({runner_params_str}) {{\n\
-             \x20       {trait_name} impl_ = DiplomatLib.getCallback(data.address(), {trait_name}.class);\n\
+             \x20       {trait_name} impl_ = DiplomatLib.getCallback(data, {trait_name}.class);\n\
              {body}\n\
              \x20   }}"
         );

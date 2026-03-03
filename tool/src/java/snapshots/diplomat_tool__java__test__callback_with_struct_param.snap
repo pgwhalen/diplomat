@@ -38,7 +38,7 @@ public class CallbackWrapper {
 
     private static int runCallback_testCbWithStruct_f(MemorySegment data, MemorySegment arg0) {
         @SuppressWarnings("unchecked")
-        TestCbWithStructF cb = DiplomatLib.getCallback(data.address(), TestCbWithStructF.class);
+        TestCbWithStructF cb = DiplomatLib.getCallback(data, TestCbWithStructF.class);
         return cb.invoke(SomeStruct.fromNative(arg0));
     }
 
@@ -81,9 +81,9 @@ public class CallbackWrapper {
 
     public static int testCbWithStruct(TestCbWithStructF f) {
         try (var arena = Arena.ofConfined()) {
-            long fId = DiplomatLib.registerCallback(f);
+            var fId = DiplomatLib.registerCallback(f);
             var fNative = arena.allocate(DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT);
-            DiplomatLib.VH_CB_DATA.set(fNative, 0L, MemorySegment.ofAddress(fId));
+            DiplomatLib.VH_CB_DATA.set(fNative, 0L, fId);
             DiplomatLib.VH_CB_RUN.set(fNative, 0L, UPCALL_testCbWithStruct_f);
             DiplomatLib.VH_CB_DESTRUCTOR.set(fNative, 0L, DiplomatLib.DESTRUCTOR_STUB);
             return (int) CALLBACKWRAPPER_TEST_CB_WITH_STRUCT.invokeExact(fNative);

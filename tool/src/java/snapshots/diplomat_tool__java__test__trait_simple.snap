@@ -155,15 +155,15 @@ public interface TesterTrait {
     final class Statics {
         private Statics() {}
         private static int traitRunner_testTraitFn(MemorySegment data, int x) {
-            TesterTrait impl_ = DiplomatLib.getCallback(data.address(), TesterTrait.class);
+            TesterTrait impl_ = DiplomatLib.getCallback(data, TesterTrait.class);
             return impl_.testTraitFn(x);
         }
         private static void traitRunner_testVoidTraitFn(MemorySegment data) {
-            TesterTrait impl_ = DiplomatLib.getCallback(data.address(), TesterTrait.class);
+            TesterTrait impl_ = DiplomatLib.getCallback(data, TesterTrait.class);
             impl_.testVoidTraitFn();
         }
         private static int traitRunner_testStructTraitFn(MemorySegment data, MemorySegment s) {
-            TesterTrait impl_ = DiplomatLib.getCallback(data.address(), TesterTrait.class);
+            TesterTrait impl_ = DiplomatLib.getCallback(data, TesterTrait.class);
             return impl_.testStructTraitFn(TraitTestingStruct.fromNative(s));
         }
         static final MethodHandle MH_TEST_TRAIT_FN;
@@ -214,9 +214,9 @@ public interface TesterTrait {
     }
 
     static MemorySegment createNative(Object impl_, Arena arena) {
-        long id = DiplomatLib.registerCallback(impl_);
+        var id = DiplomatLib.registerCallback(impl_);
         var seg = arena.allocate(TRAIT_STRUCT_LAYOUT);
-        VH_DATA.set(seg, 0L, MemorySegment.ofAddress(id));
+        VH_DATA.set(seg, 0L, id);
         VH_DESTRUCTOR.set(seg, 0L, DiplomatLib.DESTRUCTOR_STUB);
         VH_SIZE.set(seg, 0L, 0L);
         VH_ALIGNMENT.set(seg, 0L, 0L);

@@ -38,7 +38,7 @@ public class CallbackWrapper {
 
     private static void runCallback_testNoArgs_h(MemorySegment data) {
         @SuppressWarnings("unchecked")
-        TestNoArgsH cb = DiplomatLib.getCallback(data.address(), TestNoArgsH.class);
+        TestNoArgsH cb = DiplomatLib.getCallback(data, TestNoArgsH.class);
         cb.invoke();
     }
 
@@ -81,9 +81,9 @@ public class CallbackWrapper {
 
     public static int testNoArgs(TestNoArgsH h) {
         try (var arena = Arena.ofConfined()) {
-            long hId = DiplomatLib.registerCallback(h);
+            var hId = DiplomatLib.registerCallback(h);
             var hNative = arena.allocate(DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT);
-            DiplomatLib.VH_CB_DATA.set(hNative, 0L, MemorySegment.ofAddress(hId));
+            DiplomatLib.VH_CB_DATA.set(hNative, 0L, hId);
             DiplomatLib.VH_CB_RUN.set(hNative, 0L, UPCALL_testNoArgs_h);
             DiplomatLib.VH_CB_DESTRUCTOR.set(hNative, 0L, DiplomatLib.DESTRUCTOR_STUB);
             return (int) CALLBACKWRAPPER_TEST_NO_ARGS.invokeExact(hNative);

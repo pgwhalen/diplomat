@@ -38,25 +38,24 @@ public final class DiplomatLib {
     static final ConcurrentHashMap<Long, Object> PREVENT_GC = new ConcurrentHashMap<>();
     private static final AtomicLong NEXT_CALLBACK_ID = new AtomicLong(1);
 
-    static long registerCallback(Object callback) {
+    static MemorySegment registerCallback(Object callback) {
         long id = NEXT_CALLBACK_ID.getAndIncrement();
         PREVENT_GC.put(id, callback);
-        return id;
+        return MemorySegment.ofAddress(id);
     }
 
-    static void unregisterCallback(long id) {
-        PREVENT_GC.remove(id);
+    static void unregisterCallback(MemorySegment data) {
+        PREVENT_GC.remove(data.address());
     }
 
     @SuppressWarnings("unchecked")
-    static <T> T getCallback(long id, Class<T> clazz) {
-        return clazz.cast(PREVENT_GC.get(id));
+    static <T> T getCallback(MemorySegment data, Class<T> clazz) {
+        return clazz.cast(PREVENT_GC.get(data.address()));
     }
 
     // Called by Rust destructor to release the Java callback reference
     static void callbackDestructor(MemorySegment data) {
-        long id = data.address();
-        unregisterCallback(id);
+        unregisterCallback(data);
     }
 
     static final Linker LINKER_SHARED = Linker.nativeLinker();

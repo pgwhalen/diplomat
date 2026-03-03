@@ -39,7 +39,7 @@ public class MutableCallbackHolder implements AutoCloseable {
 
     private static int runCallback_new__func(MemorySegment data, int arg0) {
         @SuppressWarnings("unchecked")
-        NewFunc cb = DiplomatLib.getCallback(data.address(), NewFunc.class);
+        NewFunc cb = DiplomatLib.getCallback(data, NewFunc.class);
         return cb.invoke(arg0);
     }
 
@@ -67,9 +67,9 @@ public class MutableCallbackHolder implements AutoCloseable {
 
     public MutableCallbackHolder(NewFunc func) {
         try (var arena = Arena.ofConfined()) {
-            long funcId = DiplomatLib.registerCallback(func);
+            var funcId = DiplomatLib.registerCallback(func);
             var funcNative = arena.allocate(DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT);
-            DiplomatLib.VH_CB_DATA.set(funcNative, 0L, MemorySegment.ofAddress(funcId));
+            DiplomatLib.VH_CB_DATA.set(funcNative, 0L, funcId);
             DiplomatLib.VH_CB_RUN.set(funcNative, 0L, UPCALL_new__func);
             DiplomatLib.VH_CB_DESTRUCTOR.set(funcNative, 0L, DiplomatLib.DESTRUCTOR_STUB);
             this.handle = (MemorySegment) MUTABLECALLBACKHOLDER_NEW.invokeExact(funcNative);

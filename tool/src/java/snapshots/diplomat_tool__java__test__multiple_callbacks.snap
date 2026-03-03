@@ -43,13 +43,13 @@ public class CallbackWrapper {
 
     private static int runCallback_testMultipleCbArgs_f(MemorySegment data) {
         @SuppressWarnings("unchecked")
-        TestMultipleCbArgsF cb = DiplomatLib.getCallback(data.address(), TestMultipleCbArgsF.class);
+        TestMultipleCbArgsF cb = DiplomatLib.getCallback(data, TestMultipleCbArgsF.class);
         return cb.invoke();
     }
 
     private static int runCallback_testMultipleCbArgs_g(MemorySegment data, int arg0) {
         @SuppressWarnings("unchecked")
-        TestMultipleCbArgsG cb = DiplomatLib.getCallback(data.address(), TestMultipleCbArgsG.class);
+        TestMultipleCbArgsG cb = DiplomatLib.getCallback(data, TestMultipleCbArgsG.class);
         return cb.invoke(arg0);
     }
 
@@ -108,14 +108,14 @@ public class CallbackWrapper {
 
     public static int testMultipleCbArgs(TestMultipleCbArgsF f, TestMultipleCbArgsG g) {
         try (var arena = Arena.ofConfined()) {
-            long fId = DiplomatLib.registerCallback(f);
+            var fId = DiplomatLib.registerCallback(f);
             var fNative = arena.allocate(DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT);
-            DiplomatLib.VH_CB_DATA.set(fNative, 0L, MemorySegment.ofAddress(fId));
+            DiplomatLib.VH_CB_DATA.set(fNative, 0L, fId);
             DiplomatLib.VH_CB_RUN.set(fNative, 0L, UPCALL_testMultipleCbArgs_f);
             DiplomatLib.VH_CB_DESTRUCTOR.set(fNative, 0L, DiplomatLib.DESTRUCTOR_STUB);
-            long gId = DiplomatLib.registerCallback(g);
+            var gId = DiplomatLib.registerCallback(g);
             var gNative = arena.allocate(DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT);
-            DiplomatLib.VH_CB_DATA.set(gNative, 0L, MemorySegment.ofAddress(gId));
+            DiplomatLib.VH_CB_DATA.set(gNative, 0L, gId);
             DiplomatLib.VH_CB_RUN.set(gNative, 0L, UPCALL_testMultipleCbArgs_g);
             DiplomatLib.VH_CB_DESTRUCTOR.set(gNative, 0L, DiplomatLib.DESTRUCTOR_STUB);
             return (int) CALLBACKWRAPPER_TEST_MULTIPLE_CB_ARGS.invokeExact(fNative, gNative);
