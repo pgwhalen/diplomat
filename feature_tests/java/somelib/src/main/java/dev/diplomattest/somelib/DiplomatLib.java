@@ -119,6 +119,12 @@ public final class DiplomatLib {
         }
     }
 
+    static boolean[] bytesToBooleans(byte[] bytes) {
+        boolean[] result = new boolean[bytes.length];
+        for (int i = 0; i < bytes.length; i++) result[i] = bytes[i] != 0;
+        return result;
+    }
+
     static String writeToString(MemorySegment write) {
         try {
             var bytes = (MemorySegment) DIPLOMAT_BUFFER_WRITE_GET_BYTES.invokeExact(write);

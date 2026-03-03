@@ -1,0 +1,77 @@
+---
+source: tool/src/java/mod.rs
+expression: gen_opaque_for_test(tk_stream)
+---
+package dev.diplomattest.somelib;
+
+import java.lang.foreign.*;
+import java.lang.invoke.MethodHandle;
+import java.nio.charset.StandardCharsets;
+
+public class Float64Vec implements AutoCloseable {
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+
+    private static final MethodHandle DESTROY;
+    private static final MethodHandle FLOAT64VEC_AS_SLICE;
+    private static final MethodHandle FLOAT64VEC_AS_BOOLS;
+
+    static {
+        System.loadLibrary("diplomat_example");
+        LIB = SymbolLookup.loaderLookup();
+        DESTROY = LINKER.downcallHandle(
+            LIB.find("Float64Vec_destroy").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        FLOAT64VEC_AS_SLICE = LINKER.downcallHandle(
+            LIB.find("Float64Vec_as_slice").orElseThrow(),
+            FunctionDescriptor.of(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
+        );
+        FLOAT64VEC_AS_BOOLS = LINKER.downcallHandle(
+            LIB.find("Float64Vec_as_bools").orElseThrow(),
+            FunctionDescriptor.of(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
+        );
+    }
+
+    final MemorySegment handle;
+
+    Float64Vec(MemorySegment handle) {
+        this.handle = handle;
+    }
+
+    @Override
+    public void close() {
+        try {
+            DESTROY.invokeExact(handle);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public double[] asSlice() {
+        try (var arena = Arena.ofConfined()) {
+            var resultSeg = (MemorySegment) FLOAT64VEC_AS_SLICE.invokeExact((SegmentAllocator) arena, handle);
+            return ((MemorySegment) DiplomatLib.VH_SV_DATA.get(resultSeg, 0L))
+                .reinterpret((long) DiplomatLib.VH_SV_LEN.get(resultSeg, 0L) * 8L)
+                .toArray(ValueLayout.JAVA_DOUBLE);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public boolean[] asBools() {
+        try (var arena = Arena.ofConfined()) {
+            var resultSeg = (MemorySegment) FLOAT64VEC_AS_BOOLS.invokeExact((SegmentAllocator) arena, handle);
+            return DiplomatLib.bytesToBooleans(((MemorySegment) DiplomatLib.VH_SV_DATA.get(resultSeg, 0L))
+                .reinterpret((long) DiplomatLib.VH_SV_LEN.get(resultSeg, 0L))
+                .toArray(ValueLayout.JAVA_BYTE));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+}

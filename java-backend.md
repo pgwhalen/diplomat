@@ -26,7 +26,7 @@ cargo make gen-java-feature    # Regenerate Java bindings for feature_tests/
 cargo make test-java-example   # Build native lib + run Gradle tests
 cargo make test-java-feature   # Build native lib + run Gradle feature tests
 cargo make test-java           # Run both example and feature tests
-cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tests (28 tests)
+cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tests (29 tests)
 ```
 
 ## Current Status
@@ -82,11 +82,12 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 - **Disabling APIs** — `#[diplomat::attr(java, disable)]` works to suppress types and methods from Java output. `#[diplomat::cfg(supports = ...)]` also works, gating on features the Java backend declares support for. Feature gates (`#[diplomat::attr(not(feature=...), disable)]`) are supported through the config system.
 - **Renaming** — `#[diplomat::attr(*, rename = "...")]` works on types, methods, fields, and enum variants. Java-side name formatting (lowerCamelCase for methods/params, SHOUTY_SNAKE_CASE for enum variants) is applied on top of renames.
 - **`#[diplomat::out]` structs** — output-only structs containing `Box<OpaqueType>` fields work. The struct is generated as a regular Java class with opaque-handle fields populated via `fromNative`.
+- **Primitive slice returns** (`&[f64]`, `&[i16]`, `&[bool]`, etc.) — methods returning `&[T]` for primitive `T` generate Java methods returning `T[]` arrays. The returned `MemorySegment` data pointer is copied to a Java heap array via `toArray()`, so the result is safe to use after the Rust object is freed. Boolean slices use a `bytesToBooleans` helper since FFM doesn't support `toArray(JAVA_BOOLEAN)`. Works for infallible, fallible, and nullable return types.
 - **Feature tests** — `feature_tests/java/somelib/` Gradle project with JUnit 5 tests
 
 ### What doesn't work yet
 
-- **Primitive slice parameters/returns** (`&[u8]`, `&[i32]`, etc.) — not supported as method parameters or return types. Primitive slices do work as struct fields.
+- ~~**Primitive slices**~~ — fully supported as method parameters, return types, and struct fields.
 - **Owned slices** — Rust-allocated slices transferred to Java are not supported.
 - **Slices of strings** (`&[&DiplomatStr]`, `DiplomatStrSlice`) — supported. Java `String[]` arrays are converted to an array of `DiplomatStringView` structs via arena allocation.
 - **Borrows / lifetime tracking** — no mechanism to prevent GC cleanup of objects while something depends on them. Lifetimes are parsed but not enforced on the Java side (no reference stashing like JS, no documentation like C++).
@@ -127,7 +128,7 @@ Based on `book/src/developer.md` and the full Diplomat book. Check off features 
 - [x] **enums** (as proper Java enum classes with `toNative()`/`fromNative()`)
 - [x] **writeable** (`DiplomatWrite` returns converted to `String`)
 - [ ] **slices**:
-  - [ ] primitive slices (`&[u8]`, `&[i32]`, etc.) as method params/returns
+  - [x] primitive slices (`&[u8]`, `&[i32]`, etc.) as method params/returns
   - [x] str slices (`&DiplomatStr` mapped to Java `String` via UTF-8)
   - [x] str16 slices (`&DiplomatStr16` mapped to Java `String` via UTF-16)
   - [ ] owned slices

@@ -16,9 +16,11 @@ public class Float64Vec implements AutoCloseable {
     private static final MethodHandle FLOAT64VEC_NEW_ISIZE;
     private static final MethodHandle FLOAT64VEC_NEW_USIZE;
     private static final MethodHandle FLOAT64VEC_NEW_F64_BE_BYTES;
+    private static final MethodHandle FLOAT64VEC_AS_SLICE;
     private static final MethodHandle FLOAT64VEC_FILL_SLICE;
     private static final MethodHandle FLOAT64VEC_SET_VALUE;
     private static final MethodHandle FLOAT64VEC_TO_STRING;
+    private static final MethodHandle FLOAT64VEC_BORROW;
     private static final MethodHandle FLOAT64VEC_GET;
     static final StructLayout FLOAT64VEC_GET_RESULT = MemoryLayout.structLayout(
             ValueLayout.JAVA_DOUBLE.withName("union_val"),
@@ -57,6 +59,10 @@ public class Float64Vec implements AutoCloseable {
             LIB.find("Float64Vec_new_f64_be_bytes").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
+        FLOAT64VEC_AS_SLICE = LINKER.downcallHandle(
+            LIB.find("Float64Vec_as_slice").orElseThrow(),
+            FunctionDescriptor.of(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
+        );
         FLOAT64VEC_FILL_SLICE = LINKER.downcallHandle(
             LIB.find("Float64Vec_fill_slice").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
@@ -68,6 +74,10 @@ public class Float64Vec implements AutoCloseable {
         FLOAT64VEC_TO_STRING = LINKER.downcallHandle(
             LIB.find("Float64Vec_to_string").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+        );
+        FLOAT64VEC_BORROW = LINKER.downcallHandle(
+            LIB.find("Float64Vec_borrow").orElseThrow(),
+            FunctionDescriptor.of(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
         );
         FLOAT64VEC_GET = LINKER.downcallHandle(
             LIB.find("Float64Vec_get").orElseThrow(),
@@ -158,6 +168,19 @@ public class Float64Vec implements AutoCloseable {
         }
     }
 
+    public double[] asSlice() {
+        try (var arena = Arena.ofConfined()) {
+            var resultSeg = (MemorySegment) FLOAT64VEC_AS_SLICE.invokeExact((SegmentAllocator) arena, handle);
+            return ((MemorySegment) DiplomatLib.VH_SV_DATA.get(resultSeg, 0L))
+                .reinterpret((long) DiplomatLib.VH_SV_LEN.get(resultSeg, 0L) * 8L)
+                .toArray(ValueLayout.JAVA_DOUBLE);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
     public void fillSlice(double[] v) {
         try (var arena = Arena.ofConfined()) {
             var vSeg = arena.allocateFrom(ValueLayout.JAVA_DOUBLE, v);
@@ -186,6 +209,19 @@ public class Float64Vec implements AutoCloseable {
         try {
             FLOAT64VEC_TO_STRING.invokeExact(handle, write);
             return DiplomatLib.writeToString(write);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public double[] borrow() {
+        try (var arena = Arena.ofConfined()) {
+            var resultSeg = (MemorySegment) FLOAT64VEC_BORROW.invokeExact((SegmentAllocator) arena, handle);
+            return ((MemorySegment) DiplomatLib.VH_SV_DATA.get(resultSeg, 0L))
+                .reinterpret((long) DiplomatLib.VH_SV_LEN.get(resultSeg, 0L) * 8L)
+                .toArray(ValueLayout.JAVA_DOUBLE);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

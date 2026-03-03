@@ -491,7 +491,11 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     fn is_out_type_supported(&self, ty: &OutType) -> bool {
         matches!(
             ty,
-            Type::Primitive(_) | Type::Opaque(_) | Type::Enum(_) | Type::Struct(_)
+            Type::Primitive(_)
+                | Type::Opaque(_)
+                | Type::Enum(_)
+                | Type::Struct(_)
+                | Type::Slice(Slice::Primitive(_, _))
         )
     }
 
@@ -810,6 +814,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     }
 
     fn get_type_layout(&self, ty: &OutType) -> Option<String> {
+        if matches!(ty, Type::Slice(Slice::Primitive(_, _))) {
+            return Some("DiplomatLib.DIPLOMAT_STRING_VIEW".to_string());
+        }
         match self.type_to_ffi_layout(ty) {
             some @ Some(_) => some,
             None => {
@@ -1087,6 +1094,16 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             method.output,
             ReturnType::Nullable(SuccessType::OutType(Type::Struct(_)))
         );
+        let returns_slice = matches!(
+            method.output,
+            ReturnType::Infallible(SuccessType::OutType(Type::Slice(Slice::Primitive(_, _))))
+        ) || matches!(
+            method.output,
+            ReturnType::Fallible(SuccessType::OutType(Type::Slice(Slice::Primitive(_, _))), _)
+        ) || matches!(
+            method.output,
+            ReturnType::Nullable(SuccessType::OutType(Type::Slice(Slice::Primitive(_, _))))
+        );
 
         if is_write_return {
             invoke_args.push("write".to_string());
@@ -1101,13 +1118,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             || !str_slice_params.is_empty()
             || has_struct_param
             || returns_struct
+            || returns_slice
             || is_fallible
             || is_nullable
             || has_callbacks
             || has_traits;
 
         // When returning a struct or result layout, FFM prepends SegmentAllocator
-        let returns_struct_layout = returns_struct || is_fallible || is_nullable;
+        let returns_struct_layout = returns_struct || returns_slice || is_fallible || is_nullable;
         if returns_struct_layout {
             invoke_args.insert(0, "(SegmentAllocator) arena".to_string());
         }
@@ -1135,7 +1153,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             match &method.output {
                 ReturnType::Infallible(SuccessType::Unit) => format!("{invoke_call};"),
                 ReturnType::Infallible(SuccessType::OutType(ty)) => {
-                    if let Type::Opaque(op) = ty {
+                    if let Type::Slice(Slice::Primitive(_, prim)) = ty {
+                        self.gen_slice_return_stmt(*prim, &invoke_call)
+                    } else if let Type::Opaque(op) = ty {
                         if op.is_optional() {
                             let type_name = self.fmt_type_name_str(ty);
                             if raw_nullable {
@@ -1505,6 +1525,23 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     "{type_name}.fromNative({seg_name}.asSlice(0L, {type_name}.LAYOUT.byteSize()))"
                 )
             }
+            Type::Slice(Slice::Primitive(_, prim)) => {
+                if matches!(prim, hir::PrimitiveType::Bool) {
+                    format!(
+                        "DiplomatLib.bytesToBooleans(((MemorySegment) {seg_name}.get(ValueLayout.ADDRESS, 0L))\
+                         .reinterpret({seg_name}.get(ValueLayout.JAVA_LONG, 8L))\
+                         .toArray(ValueLayout.JAVA_BYTE))"
+                    )
+                } else {
+                    let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                    let (elem_size, _) = self.formatter.primitive_size_align(*prim);
+                    format!(
+                        "((MemorySegment) {seg_name}.get(ValueLayout.ADDRESS, 0L))\
+                         .reinterpret({seg_name}.get(ValueLayout.JAVA_LONG, 8L) * {elem_size}L)\
+                         .toArray({layout})"
+                    )
+                }
+            }
             _ => "null".to_string(),
         }
     }
@@ -1709,6 +1746,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 }
             }
             Type::Enum(_) | Type::Struct(_) => self.fmt_type_name_str(ty),
+            Type::Slice(Slice::Primitive(_, prim)) => {
+                format!("{}[]", self.formatter.fmt_primitive_as_java(*prim))
+            }
             _ => {
                 self.errors.push_error(format!(
                     "Unsupported return type in Java backend for {owner_type_name}: {ty:?}"
@@ -1750,6 +1790,31 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 )
             }
             _ => invoke_call.to_string(),
+        }
+    }
+
+    /// Generate return statement for an infallible method returning a primitive slice.
+    fn gen_slice_return_stmt(
+        &self,
+        prim: hir::PrimitiveType,
+        invoke_call: &str,
+    ) -> String {
+        if matches!(prim, hir::PrimitiveType::Bool) {
+            format!(
+                "var resultSeg = (MemorySegment) {invoke_call};\n            \
+                 return DiplomatLib.bytesToBooleans(((MemorySegment) DiplomatLib.VH_SV_DATA.get(resultSeg, 0L))\n                \
+                 .reinterpret((long) DiplomatLib.VH_SV_LEN.get(resultSeg, 0L))\n                \
+                 .toArray(ValueLayout.JAVA_BYTE));"
+            )
+        } else {
+            let layout = self.formatter.fmt_primitive_as_ffi(prim);
+            let (elem_size, _) = self.formatter.primitive_size_align(prim);
+            format!(
+                "var resultSeg = (MemorySegment) {invoke_call};\n            \
+                 return ((MemorySegment) DiplomatLib.VH_SV_DATA.get(resultSeg, 0L))\n                \
+                 .reinterpret((long) DiplomatLib.VH_SV_LEN.get(resultSeg, 0L) * {elem_size}L)\n                \
+                 .toArray({layout});"
+            )
         }
     }
 
@@ -3942,5 +4007,28 @@ mod test {
         };
 
         insta::assert_snapshot!(gen_all_with_traits_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_opaque_with_slice_return() {
+        let tk_stream = quote! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::opaque]
+                struct Float64Vec(Vec<f64>);
+
+                impl Float64Vec {
+                    pub fn as_slice<'a>(&'a self) -> &'a [f64] {
+                        unimplemented!()
+                    }
+
+                    pub fn as_bools<'a>(&'a self) -> &'a [bool] {
+                        unimplemented!()
+                    }
+                }
+            }
+        };
+
+        insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
     }
 }
