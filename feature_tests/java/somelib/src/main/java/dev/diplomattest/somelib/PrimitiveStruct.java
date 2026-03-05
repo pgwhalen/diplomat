@@ -25,6 +25,24 @@ public class PrimitiveStruct {
     private static final VarHandle VH_D = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("d"));
     private static final VarHandle VH_E = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("e"));
 
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB;
+    private static final MethodHandle PRIMITIVESTRUCT_MUTABLE_SLICE;
+    private static final MethodHandle PRIMITIVESTRUCT_MUTABLE_REF;
+
+    static {
+        System.loadLibrary("diplomat_feature_tests");
+        LIB = SymbolLookup.loaderLookup();
+        PRIMITIVESTRUCT_MUTABLE_SLICE = LINKER.downcallHandle(
+            LIB.find("PrimitiveStruct_mutable_slice").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+        );
+        PRIMITIVESTRUCT_MUTABLE_REF = LINKER.downcallHandle(
+            LIB.find("PrimitiveStruct_mutable_ref").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+        );
+    }
+
     public float x;
 
     public boolean a;
@@ -69,5 +87,47 @@ public class PrimitiveStruct {
         VH_D.set(seg, 0L, this.d);
         VH_E.set(seg, 0L, this.e);
         return seg;
+    }
+
+    void updateFromNative(MemorySegment seg) {
+        this.x = (float) VH_X.get(seg, 0L);
+        this.a = (boolean) VH_A.get(seg, 0L);
+        this.b = (int) VH_B.get(seg, 0L);
+        this.c = (long) VH_C.get(seg, 0L);
+        this.d = (long) VH_D.get(seg, 0L);
+        this.e = (byte) VH_E.get(seg, 0L);
+    }
+
+    public static void mutableSlice(PrimitiveStruct[] a) {
+        try (var arena = Arena.ofConfined()) {
+            MemorySegment aSeg = arena.allocate(PrimitiveStruct.LAYOUT, a.length);
+            for (int i = 0; i < a.length; i++) {
+                aSeg.asSlice(i * PrimitiveStruct.LAYOUT.byteSize(), PrimitiveStruct.LAYOUT.byteSize())
+                    .copyFrom(a[i].toNative(arena));
+            }
+            PRIMITIVESTRUCT_MUTABLE_SLICE.invokeExact(aSeg, (long) a.length);
+            for (int i = 0; i < a.length; i++) {
+                a[i].updateFromNative(
+                    aSeg.asSlice(i * PrimitiveStruct.LAYOUT.byteSize(), PrimitiveStruct.LAYOUT.byteSize()));
+            }
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public void mutableRef(PrimitiveStruct a) {
+        try (var arena = Arena.ofConfined()) {
+            var selfSeg = this.toNative(arena);
+            var aSeg = a.toNative(arena);
+            PRIMITIVESTRUCT_MUTABLE_REF.invokeExact(selfSeg, aSeg);
+            this.updateFromNative(selfSeg);
+            a.updateFromNative(aSeg);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 }

@@ -40,4 +40,9 @@ public class ImportedStruct {
         VH_COUNT.set(seg, 0L, this.count);
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        this.foo = UnimportedEnum.fromNative((int) VH_FOO.get(seg, 0L));
+        this.count = (byte) VH_COUNT.get(seg, 0L);
+    }
 }

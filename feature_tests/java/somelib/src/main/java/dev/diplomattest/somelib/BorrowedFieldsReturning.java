@@ -33,4 +33,8 @@ public class BorrowedFieldsReturning {
         { byte[] bytesBytes = this.bytes.getBytes(StandardCharsets.UTF_8); var bytesSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, bytesBytes); VH_BYTES_DATA.set(seg, 0L, bytesSeg); VH_BYTES_LEN.set(seg, 0L, (long) bytesBytes.length); }
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        this.bytes = new String(((MemorySegment) VH_BYTES_DATA.get(seg, 0L)).reinterpret((long) VH_BYTES_LEN.get(seg, 0L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
+    }
 }

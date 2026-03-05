@@ -45,6 +45,11 @@ public class ErrorStruct extends RuntimeException {
         VH_J.set(seg, 0L, this.j);
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        this.i = (int) VH_I.get(seg, 0L);
+        this.j = (int) VH_J.get(seg, 0L);
+    }
 }
 package dev.diplomattest.somelib;
 

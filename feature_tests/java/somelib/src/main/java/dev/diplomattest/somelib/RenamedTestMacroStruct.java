@@ -58,6 +58,10 @@ public class RenamedTestMacroStruct {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.a = (long) VH_A.get(seg, 0L);
+    }
+
     public static long testFunc() {
         try {
             return (long) NAMESPACE_TESTMACROSTRUCT_TEST_FUNC.invokeExact();

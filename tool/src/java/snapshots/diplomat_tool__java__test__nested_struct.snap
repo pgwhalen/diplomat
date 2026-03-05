@@ -43,6 +43,11 @@ public class Inner {
         VH_Y.set(seg, 0L, this.y);
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        this.x = (int) VH_X.get(seg, 0L);
+        this.y = (int) VH_Y.get(seg, 0L);
+    }
 }package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
@@ -83,5 +88,10 @@ public class Outer {
         seg.asSlice(OFFSET_INNER, Inner.LAYOUT.byteSize()).copyFrom(this.inner.toNative(arena));
         VH_Z.set(seg, 0L, this.z);
         return seg;
+    }
+
+    void updateFromNative(MemorySegment seg) {
+        this.inner = Inner.fromNative(seg.asSlice(OFFSET_INNER, Inner.LAYOUT.byteSize()));
+        this.z = (double) VH_Z.get(seg, 0L);
     }
 }

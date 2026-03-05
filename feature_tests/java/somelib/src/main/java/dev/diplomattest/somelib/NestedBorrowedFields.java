@@ -60,6 +60,12 @@ public class NestedBorrowedFields {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.fields = BorrowedFields.fromNative(seg.asSlice(OFFSET_FIELDS, BorrowedFields.LAYOUT.byteSize()));
+        this.bounds = BorrowedFieldsWithBounds.fromNative(seg.asSlice(OFFSET_BOUNDS, BorrowedFieldsWithBounds.LAYOUT.byteSize()));
+        this.bounds2 = BorrowedFieldsWithBounds.fromNative(seg.asSlice(OFFSET_BOUNDS2, BorrowedFieldsWithBounds.LAYOUT.byteSize()));
+    }
+
     public static NestedBorrowedFields fromBarAndFooAndStrings(Bar bar, Foo foo, String dstr16X, String dstr16Z, String utf8StrY, String utf8StrZ) {
         try (var arena = Arena.ofConfined()) {
             char[] dstr16XChars = dstr16X.toCharArray();

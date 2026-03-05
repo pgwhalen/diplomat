@@ -43,6 +43,11 @@ public class Config {
         VH_HEIGHT.set(seg, 0L, this.height);
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        this.width = (int) VH_WIDTH.get(seg, 0L);
+        this.height = (int) VH_HEIGHT.get(seg, 0L);
+    }
 }
 package dev.diplomattest.somelib;
 

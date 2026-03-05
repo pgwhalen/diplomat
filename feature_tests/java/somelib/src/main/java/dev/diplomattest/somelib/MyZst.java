@@ -23,4 +23,7 @@ public class MyZst extends RuntimeException {
         var seg = arena.allocate(LAYOUT);
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+    }
 }

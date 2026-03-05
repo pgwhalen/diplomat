@@ -79,6 +79,10 @@ public class CallbackWrapper {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.cantBeEmpty = (boolean) VH_CANT_BE_EMPTY.get(seg, 0L);
+    }
+
     public static int testNoArgs(TestNoArgsH h) {
         try (var arena = Arena.ofConfined()) {
             var hId = DiplomatLib.registerCallback(h);

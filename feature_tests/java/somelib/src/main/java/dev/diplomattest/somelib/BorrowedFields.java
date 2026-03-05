@@ -63,6 +63,12 @@ public class BorrowedFields {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.a = new String(((MemorySegment) VH_A_DATA.get(seg, 0L)).reinterpret((long) VH_A_LEN.get(seg, 0L) * 2).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_16LE);
+        this.b = new String(((MemorySegment) VH_B_DATA.get(seg, 0L)).reinterpret((long) VH_B_LEN.get(seg, 0L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
+        this.c = new String(((MemorySegment) VH_C_DATA.get(seg, 0L)).reinterpret((long) VH_C_LEN.get(seg, 0L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
+    }
+
     public static BorrowedFields fromBarAndStrings(Bar bar, String dstr16, String utf8Str) {
         try (var arena = Arena.ofConfined()) {
             char[] dstr16Chars = dstr16.toCharArray();

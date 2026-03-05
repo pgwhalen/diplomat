@@ -127,6 +127,12 @@ import java.lang.invoke.MethodType;
         {%- endfor %}
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        {%- for f in fields %}
+        this.{{f.field_name}} = {{f.from_native_expr}};
+        {%- endfor %}
+    }
     {%- endif %}
     {%- for m in companion_methods %}
 

@@ -82,6 +82,11 @@ public class RenamedStructWithAttrs {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.a = (boolean) VH_A.get(seg, 0L);
+        this.b = (int) VH_B.get(seg, 0L);
+    }
+
     public int c() {
         try (var arena = Arena.ofConfined()) {
             return (int) NAMESPACE_STRUCTWITHATTRS_C.invokeExact(this.toNative(arena));

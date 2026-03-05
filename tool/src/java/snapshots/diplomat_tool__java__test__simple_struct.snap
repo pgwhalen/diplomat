@@ -78,6 +78,13 @@ public class MyStruct {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.a = (byte) VH_A.get(seg, 0L);
+        this.b = (boolean) VH_B.get(seg, 0L);
+        this.c = (long) VH_C.get(seg, 0L);
+        this.d = (int) VH_D.get(seg, 0L);
+    }
+
     public static MyStruct new_(byte a, boolean b, long c, int d) {
         try (var arena = Arena.ofConfined()) {
             return MyStruct.fromNative((MemorySegment) MYSTRUCT_NEW.invokeExact((SegmentAllocator) arena, a, b, c, d));

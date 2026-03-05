@@ -55,6 +55,11 @@ public class StructWithSlices {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.first = new String(((MemorySegment) VH_FIRST_DATA.get(seg, 0L)).reinterpret((long) VH_FIRST_LEN.get(seg, 0L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
+        this.second = ((MemorySegment) VH_SECOND_DATA.get(seg, 0L)).reinterpret((long) VH_SECOND_LEN.get(seg, 0L) * 2L).toArray(ValueLayout.JAVA_SHORT);
+    }
+
     public String returnLast() {
         var write = DiplomatLib.createWrite();
         try (var arena = Arena.ofConfined()) {

@@ -2,7 +2,7 @@ use askama::Template;
 use diplomat_core::hir::{
     self, BackendAttrSupport, Callback, CallbackInstantiationFunctionality, DocsUrlGenerator,
     InputOnly, Method, OutType, ReturnType, SelfType, Slice, SpecialMethod, StringEncoding,
-    StructField, SuccessType, TraitIdGetter, Type, TypeContext, TypeDef, TypeId,
+    StructField, StructPathLike, SuccessType, TraitIdGetter, Type, TypeContext, TypeDef, TypeId,
 };
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
 use std::borrow::Cow;
@@ -42,6 +42,8 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.traits_are_sync = false;
     a.generate_mocking_interface = false;
     a.owned_slices = false;
+    a.struct_refs = true;
+    a.abi_compatibles = true;
 
     a
 }
@@ -332,6 +334,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     format!("{}[]", self.formatter.fmt_primitive_as_java(*prim))
                 }
                 Slice::Strs(_) => "String[]".to_string(),
+                Slice::Struct(_, st) => {
+                    format!("{}[]", self.formatter.fmt_type_name(st.id()))
+                }
                 _ => "Object".to_string(),
             },
             _ => "Object".to_string(),
@@ -481,6 +486,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 | Type::Slice(Slice::Str(_, _))
                 | Type::Slice(Slice::Primitive(_, _))
                 | Type::Slice(Slice::Strs(_))
+                | Type::Slice(Slice::Struct(_, _))
                 | Type::Enum(_)
                 | Type::Struct(_)
                 | Type::Callback(_)
@@ -496,6 +502,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 | Type::Enum(_)
                 | Type::Struct(_)
                 | Type::Slice(Slice::Primitive(_, _))
+                | Type::Slice(Slice::Struct(_, _))
         )
     }
 
@@ -696,9 +703,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         if let Some(ref ps) = method.param_self {
             match &ps.ty {
                 SelfType::Struct(s) => {
-                    let type_id: TypeId = s.tcx_id.into();
-                    let type_name = self.formatter.fmt_type_name(type_id);
-                    param_layouts.push(format!("{type_name}.LAYOUT"));
+                    if s.owner.is_owned() {
+                        let type_id: TypeId = s.tcx_id.into();
+                        let type_name = self.formatter.fmt_type_name(type_id);
+                        param_layouts.push(format!("{type_name}.LAYOUT"));
+                    } else {
+                        // Borrowed struct ref (&self / &mut self) passed as pointer
+                        param_layouts.push("ValueLayout.ADDRESS".to_string());
+                    }
                 }
                 SelfType::Enum(_) => {
                     param_layouts.push("ValueLayout.JAVA_INT".to_string());
@@ -759,6 +771,13 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     }
 
     fn push_param_layouts<P: hir::TyPosition>(&self, ty: &Type<P>, layouts: &mut Vec<String>) {
+        // Borrowed struct refs are passed as pointers
+        if let Type::Struct(st) = ty {
+            if !st.owner().is_owned() {
+                layouts.push("ValueLayout.ADDRESS".to_string());
+                return;
+            }
+        }
         if let Some(layout) = self.type_to_ffi_layout(ty) {
             layouts.push(layout);
             return;
@@ -766,7 +785,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         match ty {
             Type::Slice(Slice::Str(_, _))
             | Type::Slice(Slice::Primitive(_, _))
-            | Type::Slice(Slice::Strs(_)) => {
+            | Type::Slice(Slice::Strs(_))
+            | Type::Slice(Slice::Struct(_, _)) => {
                 // Slices are passed as { ADDRESS data, JAVA_LONG len }
                 layouts.push("ValueLayout.ADDRESS".to_string());
                 layouts.push("ValueLayout.JAVA_LONG".to_string());
@@ -814,7 +834,10 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     }
 
     fn get_type_layout(&self, ty: &OutType) -> Option<String> {
-        if matches!(ty, Type::Slice(Slice::Primitive(_, _))) {
+        if matches!(
+            ty,
+            Type::Slice(Slice::Primitive(_, _)) | Type::Slice(Slice::Struct(_, _))
+        ) {
             return Some("DiplomatLib.DIPLOMAT_STRING_VIEW".to_string());
         }
         match self.type_to_ffi_layout(ty) {
@@ -1037,15 +1060,30 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let mut trait_setup_params: Vec<(String, String)> = Vec::new();
         // Track if any struct params need arena for toNative
         let mut has_struct_param = false;
+        // Track struct ref params needing pre-call allocation and post-call writeback
+        let mut struct_ref_pre_lines: Vec<String> = Vec::new();
+        let mut struct_ref_post_lines: Vec<String> = Vec::new();
 
         let method_name_for_cb = self.formatter.fmt_method_name(method).to_string();
 
         let _has_struct_self = matches!(self_type, Some(SelfType::Struct(_)));
         if let Some(st) = self_type {
             match st {
-                SelfType::Struct(_) => {
+                SelfType::Struct(s) => {
                     has_struct_param = true;
-                    invoke_args.push("this.toNative(arena)".to_string());
+                    if s.owner.is_owned() {
+                        invoke_args.push("this.toNative(arena)".to_string());
+                    } else {
+                        // Borrowed struct ref: allocate segment, pass as pointer
+                        struct_ref_pre_lines.push(
+                            "var selfSeg = this.toNative(arena);".to_string(),
+                        );
+                        invoke_args.push("selfSeg".to_string());
+                        if s.owner.mutability().is_mutable() {
+                            struct_ref_post_lines
+                                .push("this.updateFromNative(selfSeg);".to_string());
+                        }
+                    }
                 }
                 SelfType::Enum(_) => {
                     invoke_args.push("this.toNative()".to_string());
@@ -1073,6 +1111,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 &mut callback_infos,
                 &mut trait_setup_params,
                 &method_name_for_cb,
+                &mut struct_ref_pre_lines,
+                &mut struct_ref_post_lines,
+                &mut has_struct_param,
             );
         }
 
@@ -1096,13 +1137,22 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         );
         let returns_slice = matches!(
             method.output,
-            ReturnType::Infallible(SuccessType::OutType(Type::Slice(Slice::Primitive(_, _))))
+            ReturnType::Infallible(SuccessType::OutType(
+                Type::Slice(Slice::Primitive(_, _)) | Type::Slice(Slice::Struct(_, _))
+            ))
         ) || matches!(
             method.output,
-            ReturnType::Fallible(SuccessType::OutType(Type::Slice(Slice::Primitive(_, _))), _)
+            ReturnType::Fallible(
+                SuccessType::OutType(
+                    Type::Slice(Slice::Primitive(_, _)) | Type::Slice(Slice::Struct(_, _))
+                ),
+                _
+            )
         ) || matches!(
             method.output,
-            ReturnType::Nullable(SuccessType::OutType(Type::Slice(Slice::Primitive(_, _))))
+            ReturnType::Nullable(SuccessType::OutType(
+                Type::Slice(Slice::Primitive(_, _)) | Type::Slice(Slice::Struct(_, _))
+            ))
         );
 
         if is_write_return {
@@ -1155,6 +1205,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 ReturnType::Infallible(SuccessType::OutType(ty)) => {
                     if let Type::Slice(Slice::Primitive(_, prim)) = ty {
                         self.gen_slice_return_stmt(*prim, &invoke_call)
+                    } else if let Type::Slice(Slice::Struct(_, st)) = ty {
+                        let type_name = self.formatter.fmt_type_name(st.id()).to_string();
+                        self.gen_struct_slice_return_stmt(&type_name, &invoke_call)
                     } else if let Type::Opaque(op) = ty {
                         if op.is_optional() {
                             let type_name = self.fmt_type_name_str(ty);
@@ -1266,7 +1319,19 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     "            var {tp_name}Native = {tp_trait_name}.createNative({tp_name}, arena);\n"
                 ));
             }
-            format!("{super_call}{write_setup}        try (var arena = Arena.ofConfined()) {{\n{setup_lines}{nullable_setup}            {return_stmt}\n        }} catch (RuntimeException ex) {{\n            throw ex;\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
+            for line in &struct_ref_pre_lines {
+                setup_lines.push_str(&format!("            {line}\n"));
+            }
+            let post_writeback = if struct_ref_post_lines.is_empty() {
+                String::new()
+            } else {
+                let mut wb = String::new();
+                for line in &struct_ref_post_lines {
+                    wb.push_str(&format!("\n            {line}"));
+                }
+                wb
+            };
+            format!("{super_call}{write_setup}        try (var arena = Arena.ofConfined()) {{\n{setup_lines}{nullable_setup}            {return_stmt}{post_writeback}\n        }} catch (RuntimeException ex) {{\n            throw ex;\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
         } else {
             format!("{super_call}{write_setup}        try {{\n{nullable_setup}            {return_stmt}\n        }} catch (RuntimeException ex) {{\n            throw ex;\n        }} catch (Throwable ex) {{\n            throw new RuntimeException(ex);\n        }}")
         };
@@ -1542,6 +1607,22 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     )
                 }
             }
+            Type::Slice(Slice::Struct(_, st)) => {
+                let type_name = self.formatter.fmt_type_name(st.id()).to_string();
+                // Extract pointer + length from the result struct, build array
+                format!(
+                    "(() -> {{\n\
+                     \x20               MemorySegment dp = (MemorySegment) {seg_name}.get(ValueLayout.ADDRESS, 0L);\n\
+                     \x20               long cnt = {seg_name}.get(ValueLayout.JAVA_LONG, 8L);\n\
+                     \x20               var dd = dp.reinterpret(cnt * {type_name}.LAYOUT.byteSize());\n\
+                     \x20               {type_name}[] a = new {type_name}[(int) cnt];\n\
+                     \x20               for (int i = 0; i < a.length; i++) {{\n\
+                     \x20                   a[i] = {type_name}.fromNative(dd.asSlice(i * {type_name}.LAYOUT.byteSize(), {type_name}.LAYOUT.byteSize()));\n\
+                     \x20               }}\n\
+                     \x20               return a;\n\
+                     \x20           }})()"
+                )
+            }
             _ => "null".to_string(),
         }
     }
@@ -1602,6 +1683,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         callback_infos: &mut Vec<JavaCallbackInfo>,
         trait_setup_params: &mut Vec<(String, String)>, // (param_name, trait_name)
         method_name_for_cb: &str,
+        struct_ref_pre_lines: &mut Vec<String>,
+        struct_ref_post_lines: &mut Vec<String>,
+        has_struct_param: &mut bool,
     ) {
         match ty {
             Type::Primitive(prim) => {
@@ -1652,6 +1736,29 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 invoke_args.push(format!("{param_name}Seg"));
                 invoke_args.push(format!("(long) {param_name}.length"));
             }
+            Type::Slice(Slice::Struct(borrow, st)) => {
+                let type_name = self.formatter.fmt_type_name(st.id()).to_string();
+                java_params.push(format!("{type_name}[] {param_name}"));
+                *has_struct_param = true;
+                let seg_name = format!("{param_name}Seg");
+                struct_ref_pre_lines.push(format!(
+                    "MemorySegment {seg_name} = arena.allocate({type_name}.LAYOUT, {param_name}.length);\n\
+                     \x20           for (int i = 0; i < {param_name}.length; i++) {{\n\
+                     \x20               {seg_name}.asSlice(i * {type_name}.LAYOUT.byteSize(), {type_name}.LAYOUT.byteSize())\n\
+                     \x20                   .copyFrom({param_name}[i].toNative(arena));\n\
+                     \x20           }}"
+                ));
+                invoke_args.push(seg_name.clone());
+                invoke_args.push(format!("(long) {param_name}.length"));
+                if borrow.mutability().is_mutable() {
+                    struct_ref_post_lines.push(format!(
+                        "for (int i = 0; i < {param_name}.length; i++) {{\n\
+                         \x20               {param_name}[i].updateFromNative(\n\
+                         \x20                   {seg_name}.asSlice(i * {type_name}.LAYOUT.byteSize(), {type_name}.LAYOUT.byteSize()));\n\
+                         \x20           }}"
+                    ));
+                }
+            }
             Type::Enum(_) => {
                 let type_name: Cow<str> = ty
                     .id()
@@ -1660,13 +1767,29 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 java_params.push(format!("{type_name} {param_name}"));
                 invoke_args.push(format!("{param_name}.toNative()"));
             }
-            Type::Struct(_) => {
+            Type::Struct(st) => {
                 let type_name: Cow<str> = ty
                     .id()
                     .map(|id| self.formatter.fmt_type_name(id))
                     .unwrap_or("MemorySegment".into());
-                java_params.push(format!("{type_name} {param_name}"));
-                invoke_args.push(format!("{param_name}.toNative(arena)"));
+                *has_struct_param = true;
+                if st.owner().is_owned() {
+                    java_params.push(format!("{type_name} {param_name}"));
+                    invoke_args.push(format!("{param_name}.toNative(arena)"));
+                } else {
+                    // Borrowed struct ref: allocate segment, pass as pointer
+                    java_params.push(format!("{type_name} {param_name}"));
+                    let seg_name = format!("{param_name}Seg");
+                    struct_ref_pre_lines.push(format!(
+                        "var {seg_name} = {param_name}.toNative(arena);"
+                    ));
+                    invoke_args.push(seg_name.clone());
+                    if st.owner().mutability().is_mutable() {
+                        struct_ref_post_lines.push(format!(
+                            "{param_name}.updateFromNative({seg_name});"
+                        ));
+                    }
+                }
             }
             Type::Callback(ref cb) => {
                 let params = cb.get_inputs().expect("callback must have inputs");
@@ -1749,6 +1872,10 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             Type::Slice(Slice::Primitive(_, prim)) => {
                 format!("{}[]", self.formatter.fmt_primitive_as_java(*prim))
             }
+            Type::Slice(Slice::Struct(_, st)) => {
+                let type_name = self.formatter.fmt_type_name(st.id()).to_string();
+                format!("{type_name}[]")
+            }
             _ => {
                 self.errors.push_error(format!(
                     "Unsupported return type in Java backend for {owner_type_name}: {ty:?}"
@@ -1816,6 +1943,25 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                  .toArray({layout});"
             )
         }
+    }
+
+    /// Generate return statement for an infallible method returning a struct slice.
+    fn gen_struct_slice_return_stmt(
+        &self,
+        type_name: &str,
+        invoke_call: &str,
+    ) -> String {
+        format!(
+            "var resultSeg = (MemorySegment) {invoke_call};\n            \
+             MemorySegment dataPtr = (MemorySegment) DiplomatLib.VH_SV_DATA.get(resultSeg, 0L);\n            \
+             long count = (long) DiplomatLib.VH_SV_LEN.get(resultSeg, 0L);\n            \
+             var data = dataPtr.reinterpret(count * {type_name}.LAYOUT.byteSize());\n            \
+             {type_name}[] arr = new {type_name}[(int) count];\n            \
+             for (int i = 0; i < arr.length; i++) {{\n                \
+             arr[i] = {type_name}.fromNative(data.asSlice(i * {type_name}.LAYOUT.byteSize(), {type_name}.LAYOUT.byteSize()));\n            \
+             }}\n            \
+             return arr;"
+        )
     }
 
     /// Build a JavaCallbackInfo from callback parts (params + output).
@@ -2928,6 +3074,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 Slice::Str(_, _) => "String".to_string(),
                 Slice::Primitive(_, prim) => {
                     format!("{}[]", self.formatter.fmt_primitive_as_java(*prim))
+                }
+                Slice::Struct(_, st) => {
+                    format!("{}[]", self.formatter.fmt_type_name(st.id()))
                 }
                 _ => "Object".to_string(),
             },

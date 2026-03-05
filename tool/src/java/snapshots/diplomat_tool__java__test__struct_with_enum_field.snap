@@ -44,6 +44,11 @@ public class Movement {
         VH_DISTANCE.set(seg, 0L, this.distance);
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        this.direction = Direction.fromNative((int) VH_DIRECTION.get(seg, 0L));
+        this.distance = (double) VH_DISTANCE.get(seg, 0L);
+    }
 }
 package dev.diplomattest.somelib;
 

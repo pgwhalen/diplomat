@@ -51,6 +51,10 @@ public class TraitWrapper {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.cantBeEmpty = (boolean) VH_CANT_BE_EMPTY.get(seg, 0L);
+    }
+
     public static int testWithTrait(TesterTrait t, int x) {
         try (var arena = Arena.ofConfined()) {
             var tNative = TesterTrait.createNative(t, arena);

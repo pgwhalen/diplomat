@@ -39,4 +39,9 @@ public class CallbackTestingStruct {
         VH_Y.set(seg, 0L, this.y);
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        this.x = (int) VH_X.get(seg, 0L);
+        this.y = (int) VH_Y.get(seg, 0L);
+    }
 }

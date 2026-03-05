@@ -67,6 +67,11 @@ public class MyStructContainingAnOption {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.a = (boolean) VH_A_IS_OK.get(seg, 0L) ? MyStruct.fromNative(seg.asSlice(OFFSET_A, MyStruct.LAYOUT.byteSize())) : null;
+        this.b = (boolean) VH_B_IS_OK.get(seg, 0L) ? DefaultEnum.fromNative((int) VH_B_VALUE.get(seg, 0L)) : null;
+    }
+
     public static MyStructContainingAnOption filled() {
         try (var arena = Arena.ofConfined()) {
             return MyStructContainingAnOption.fromNative((MemorySegment) MYSTRUCTCONTAININGANOPTION_FILLED.invokeExact((SegmentAllocator) arena));

@@ -43,6 +43,11 @@ public class TraitTestingStruct {
         VH_Y.set(seg, 0L, this.y);
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        this.x = (int) VH_X.get(seg, 0L);
+        this.y = (int) VH_Y.get(seg, 0L);
+    }
 }
 package dev.diplomattest.somelib;
 
@@ -95,6 +100,10 @@ public class TraitWrapper {
         var seg = arena.allocate(LAYOUT);
         VH_CANT_BE_EMPTY.set(seg, 0L, this.cantBeEmpty);
         return seg;
+    }
+
+    void updateFromNative(MemorySegment seg) {
+        this.cantBeEmpty = (boolean) VH_CANT_BE_EMPTY.get(seg, 0L);
     }
 
     public static int testWithTrait(TesterTrait t, int x) {

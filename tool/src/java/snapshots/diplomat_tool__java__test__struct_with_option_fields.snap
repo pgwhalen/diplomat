@@ -46,6 +46,11 @@ public class OptionFields {
         if (this.b != null) { VH_B_VALUE.set(seg, 0L, this.b.toNative()); VH_B_IS_OK.set(seg, 0L, true); } else { VH_B_IS_OK.set(seg, 0L, false); }
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        this.a = (boolean) VH_A_IS_OK.get(seg, 0L) ? (byte) VH_A_VALUE.get(seg, 0L) : null;
+        this.b = (boolean) VH_B_IS_OK.get(seg, 0L) ? MyEnum.fromNative((int) VH_B_VALUE.get(seg, 0L)) : null;
+    }
 }
 package dev.diplomattest.somelib;
 

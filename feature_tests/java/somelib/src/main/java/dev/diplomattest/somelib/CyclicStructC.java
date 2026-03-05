@@ -51,6 +51,10 @@ public class CyclicStructC {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.a = CyclicStructA.fromNative(seg.asSlice(OFFSET_A, CyclicStructA.LAYOUT.byteSize()));
+    }
+
     public static CyclicStructC takesNestedParameters(CyclicStructC c) {
         try (var arena = Arena.ofConfined()) {
             return CyclicStructC.fromNative((MemorySegment) CYCLICSTRUCTC_TAKES_NESTED_PARAMETERS.invokeExact((SegmentAllocator) arena, c.toNative(arena)));

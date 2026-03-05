@@ -16,6 +16,7 @@ public class CyclicStructA {
     private static final SymbolLookup LIB;
     private static final MethodHandle CYCLICSTRUCTA_GET_B;
     private static final MethodHandle CYCLICSTRUCTA_CYCLIC_OUT;
+    private static final MethodHandle CYCLICSTRUCTA_NESTED_SLICE;
     private static final MethodHandle CYCLICSTRUCTA_DOUBLE_CYCLIC_OUT;
     private static final MethodHandle CYCLICSTRUCTA_GETTER_OUT;
 
@@ -29,6 +30,10 @@ public class CyclicStructA {
         CYCLICSTRUCTA_CYCLIC_OUT = LINKER.downcallHandle(
             LIB.find("CyclicStructA_cyclic_out").orElseThrow(),
             FunctionDescriptor.ofVoid(CyclicStructA.LAYOUT, ValueLayout.ADDRESS)
+        );
+        CYCLICSTRUCTA_NESTED_SLICE = LINKER.downcallHandle(
+            LIB.find("CyclicStructA_nested_slice").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.JAVA_BYTE, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
         CYCLICSTRUCTA_DOUBLE_CYCLIC_OUT = LINKER.downcallHandle(
             LIB.find("CyclicStructA_double_cyclic_out").orElseThrow(),
@@ -61,9 +66,28 @@ public class CyclicStructA {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.a = CyclicStructB.fromNative(seg.asSlice(OFFSET_A, CyclicStructB.LAYOUT.byteSize()));
+    }
+
     public static CyclicStructB getB() {
         try (var arena = Arena.ofConfined()) {
             return CyclicStructB.fromNative((MemorySegment) CYCLICSTRUCTA_GET_B.invokeExact((SegmentAllocator) arena));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static byte nestedSlice(CyclicStructA[] sl) {
+        try (var arena = Arena.ofConfined()) {
+            MemorySegment slSeg = arena.allocate(CyclicStructA.LAYOUT, sl.length);
+            for (int i = 0; i < sl.length; i++) {
+                slSeg.asSlice(i * CyclicStructA.LAYOUT.byteSize(), CyclicStructA.LAYOUT.byteSize())
+                    .copyFrom(sl[i].toNative(arena));
+            }
+            return (byte) CYCLICSTRUCTA_NESTED_SLICE.invokeExact(slSeg, (long) sl.length);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

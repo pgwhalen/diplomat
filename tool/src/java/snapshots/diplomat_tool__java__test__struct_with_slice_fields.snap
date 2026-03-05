@@ -45,4 +45,9 @@ public class SliceFields {
         { var dataSeg = arena.allocateFrom(ValueLayout.JAVA_SHORT, this.data); VH_DATA_DATA.set(seg, 0L, dataSeg); VH_DATA_LEN.set(seg, 0L, (long) this.data.length); }
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        this.name = new String(((MemorySegment) VH_NAME_DATA.get(seg, 0L)).reinterpret((long) VH_NAME_LEN.get(seg, 0L)).toArray(ValueLayout.JAVA_BYTE), StandardCharsets.UTF_8);
+        this.data = ((MemorySegment) VH_DATA_DATA.get(seg, 0L)).reinterpret((long) VH_DATA_LEN.get(seg, 0L) * 2L).toArray(ValueLayout.JAVA_SHORT);
+    }
 }

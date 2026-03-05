@@ -56,6 +56,10 @@ public class CyclicStructB {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.field = (byte) VH_FIELD.get(seg, 0L);
+    }
+
     public static CyclicStructA getA() {
         try (var arena = Arena.ofConfined()) {
             return CyclicStructA.fromNative((MemorySegment) CYCLICSTRUCTB_GET_A.invokeExact((SegmentAllocator) arena));

@@ -50,4 +50,10 @@ public class OptionInputStruct {
         if (this.c != null) { VH_C_VALUE.set(seg, 0L, this.c.toNative()); VH_C_IS_OK.set(seg, 0L, true); } else { VH_C_IS_OK.set(seg, 0L, false); }
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        this.a = (boolean) VH_A_IS_OK.get(seg, 0L) ? (byte) VH_A_VALUE.get(seg, 0L) : null;
+        this.b = (boolean) VH_B_IS_OK.get(seg, 0L) ? (int) VH_B_VALUE.get(seg, 0L) : null;
+        this.c = (boolean) VH_C_IS_OK.get(seg, 0L) ? OptionEnum.fromNative((int) VH_C_VALUE.get(seg, 0L)) : null;
+    }
 }

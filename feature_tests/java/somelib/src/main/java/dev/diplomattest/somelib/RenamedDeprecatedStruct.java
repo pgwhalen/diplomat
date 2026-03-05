@@ -22,4 +22,7 @@ public class RenamedDeprecatedStruct {
         var seg = arena.allocate(LAYOUT);
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+    }
 }

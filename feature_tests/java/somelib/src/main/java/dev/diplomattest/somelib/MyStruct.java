@@ -29,6 +29,8 @@ public class MyStruct {
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;
     private static final MethodHandle MYSTRUCT_NEW;
+    private static final MethodHandle MYSTRUCT_TAKES_MUT;
+    private static final MethodHandle MYSTRUCT_TAKES_CONST;
     private static final MethodHandle MYSTRUCT_INTO_A;
     private static final MethodHandle MYSTRUCT_RETURNS_ZST_RESULT;
     private static final MethodHandle MYSTRUCT_FAILS_ZST_RESULT;
@@ -45,6 +47,14 @@ public class MyStruct {
         MYSTRUCT_NEW = LINKER.downcallHandle(
             LIB.find("MyStruct_new").orElseThrow(),
             FunctionDescriptor.of(MyStruct.LAYOUT)
+        );
+        MYSTRUCT_TAKES_MUT = LINKER.downcallHandle(
+            LIB.find("MyStruct_takes_mut").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+        );
+        MYSTRUCT_TAKES_CONST = LINKER.downcallHandle(
+            LIB.find("MyStruct_takes_const").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
         MYSTRUCT_INTO_A = LINKER.downcallHandle(
             LIB.find("MyStruct_into_a").orElseThrow(),
@@ -118,6 +128,16 @@ public class MyStruct {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.a = (byte) VH_A.get(seg, 0L);
+        this.b = (boolean) VH_B.get(seg, 0L);
+        this.c = (byte) VH_C.get(seg, 0L);
+        this.d = (long) VH_D.get(seg, 0L);
+        this.e = (int) VH_E.get(seg, 0L);
+        this.f = (int) VH_F.get(seg, 0L);
+        this.g = MyEnum.fromNative((int) VH_G.get(seg, 0L));
+    }
+
     public static void returnsZstResult() {
         try (var arena = Arena.ofConfined()) {
             var result = (MemorySegment) MYSTRUCT_RETURNS_ZST_RESULT.invokeExact((SegmentAllocator) arena);
@@ -143,6 +163,33 @@ public class MyStruct {
             } else {
                 throw MyZst.fromNative(result.asSlice(0L, MyZst.LAYOUT.byteSize()));
             }
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public void takesMut(MyStruct o) {
+        try (var arena = Arena.ofConfined()) {
+            var selfSeg = this.toNative(arena);
+            var oSeg = o.toNative(arena);
+            MYSTRUCT_TAKES_MUT.invokeExact(selfSeg, oSeg);
+            this.updateFromNative(selfSeg);
+            o.updateFromNative(oSeg);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public void takesConst(MyStruct o) {
+        try (var arena = Arena.ofConfined()) {
+            var selfSeg = this.toNative(arena);
+            var oSeg = o.toNative(arena);
+            MYSTRUCT_TAKES_CONST.invokeExact(selfSeg, oSeg);
+            o.updateFromNative(oSeg);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

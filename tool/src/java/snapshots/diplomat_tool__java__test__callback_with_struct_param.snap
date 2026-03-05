@@ -79,6 +79,10 @@ public class CallbackWrapper {
         return seg;
     }
 
+    void updateFromNative(MemorySegment seg) {
+        this.cantBeEmpty = (boolean) VH_CANT_BE_EMPTY.get(seg, 0L);
+    }
+
     public static int testCbWithStruct(TestCbWithStructF f) {
         try (var arena = Arena.ofConfined()) {
             var fId = DiplomatLib.registerCallback(f);
@@ -134,5 +138,10 @@ public class SomeStruct {
         VH_X.set(seg, 0L, this.x);
         VH_Y.set(seg, 0L, this.y);
         return seg;
+    }
+
+    void updateFromNative(MemorySegment seg) {
+        this.x = (int) VH_X.get(seg, 0L);
+        this.y = (int) VH_Y.get(seg, 0L);
     }
 }
