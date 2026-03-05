@@ -31,7 +31,7 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.accessors = false;
     a.static_accessors = false;
     a.stringifiers = true;
-    a.comparators = false;
+    a.comparators = true;
     a.iterators = true;
     a.iterables = true;
     a.indexing = true;
@@ -278,6 +278,8 @@ struct JavaSpecialMethods {
     iterable_type: Option<String>,
     /// Boxed item type for Iterable<T> (resolved from the iterator's yield type)
     iterable_item_type: Option<String>,
+    /// Whether it is a comparator (implements Comparable<T>)
+    comparator: bool,
 }
 
 struct JavaIndexerType {
@@ -549,6 +551,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                                 Some(self.gen_out_type_java_boxed(item_ty, type_name));
                         }
                     }
+                }
+                Some(SpecialMethod::Comparison) => {
+                    special_methods.comparator = true;
                 }
                 Some(SpecialMethod::Indexer) => {
                     if let ReturnType::Nullable(SuccessType::OutType(ty)) = &method.output {
@@ -996,6 +1001,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let is_iterable = matches!(method.attrs.special_method, Some(SpecialMethod::Iterable));
         let is_indexer = matches!(method.attrs.special_method, Some(SpecialMethod::Indexer));
         let is_stringifier = matches!(method.attrs.special_method, Some(SpecialMethod::Stringifier));
+        let is_comparator = matches!(method.attrs.special_method, Some(SpecialMethod::Comparison));
 
         let method_name: Cow<'_, str> = if is_constructor {
             // Constructors use the class name, no method name needed
@@ -1014,15 +1020,20 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             "iterator".into()
         } else if is_stringifier {
             "toString".into()
+        } else if is_comparator {
+            "compareTo".into()
         } else {
             self.formatter.fmt_method_name(method)
         };
 
         let abi_handle = method.abi_name.as_str().to_uppercase();
 
+        // For comparators, Java's compareTo() returns int (Rust Ordering maps to byte via FFI)
         // For iterator/indexer, use boxed nullable type instead of Optional<T>.
         // For optional opaque returns (Infallible(Opaque{optional})), strip the Optional wrapper.
-        let return_type_java = if is_iterator || is_indexer {
+        let return_type_java = if is_comparator {
+            "int".to_string()
+        } else if is_iterator || is_indexer {
             match &method.output {
                 ReturnType::Nullable(SuccessType::OutType(ty)) => {
                     self.gen_out_type_java_boxed(ty, owner_type_name)
@@ -1196,6 +1207,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             self.gen_result_return_stmt(method, &invoke_call, &abi_handle, is_write_return, is_constructor, struct_fields, raw_nullable)
         } else if is_write_return {
             format!("{invoke_call};\n            return DiplomatLib.writeToString(write);")
+        } else if is_comparator {
+            // Ordering maps to byte via FFI; cast to int for Java's compareTo contract
+            format!("return (int)(byte) {invoke_call};")
         } else if is_constructor {
             // Constructor: assign fields instead of returning
             self.gen_constructor_assign_stmt(&method.output, &invoke_call, struct_fields)
@@ -1349,7 +1363,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             format!(
                 "private {return_type_java} {method_name}({java_params_str}) {{\n{body}\n    }}"
             )
-        } else if is_iterable || is_stringifier {
+        } else if is_iterable || is_stringifier || is_comparator {
             format!(
                 "@Override\n    public {return_type_java} {method_name}({java_params_str}) {{\n{body}\n    }}"
             )
@@ -2818,6 +2832,13 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
         let has_callbacks = !all_cb_interfaces.is_empty();
 
+        let mut special_methods = JavaSpecialMethods::default();
+        for method in &supported_methods {
+            if matches!(method.attrs.special_method, Some(SpecialMethod::Comparison)) {
+                special_methods.comparator = true;
+            }
+        }
+
         #[derive(Template)]
         #[template(path = "java/Struct.java.jinja", escape = "none")]
         struct StructTemplate<'a> {
@@ -2832,6 +2853,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             has_zero_arg_constructor: bool,
             has_constructors: bool,
             has_callbacks: bool,
+            special_methods: &'a JavaSpecialMethods,
             layout_members: &'a str,
             var_handles: &'a [JavaVarHandleInfo],
             offset_consts: &'a [JavaOffsetConstInfo],
@@ -2861,6 +2883,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 has_zero_arg_constructor,
                 has_constructors,
                 has_callbacks,
+                special_methods: &special_methods,
                 layout_members: &layout_members,
                 var_handles: &var_handles,
                 offset_consts: &offset_consts,

@@ -20,7 +20,8 @@ import java.lang.invoke.MethodType;
 {{docs}}public class {{type_name}}
     {%- if is_error %} extends RuntimeException{% endif %} implements AutoCloseable
     {%- if let Some(t) = special_methods.iterator_type.as_deref() %}, Iterator<{{t}}>{% endif %}
-    {%- if let Some(t) = special_methods.iterable_item_type.as_deref() %}, Iterable<{{t}}>{% endif %} {
+    {%- if let Some(t) = special_methods.iterable_item_type.as_deref() %}, Iterable<{{t}}>{% endif %}
+    {%- if special_methods.comparator %}, Comparable<{{type_name}}>{% endif %} {
 
     private static final Linker LINKER = Linker.nativeLinker();
     private static final SymbolLookup LIB;

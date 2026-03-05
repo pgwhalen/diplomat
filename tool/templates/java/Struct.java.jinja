@@ -12,7 +12,8 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 {%- endif %}
 
-{{docs}}public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %} {
+{{docs}}public class {{type_name}}{% if is_error %} extends RuntimeException{% endif %}
+    {%- if special_methods.comparator %} implements Comparable<{{type_name}}>{% endif %} {
 
     static final StructLayout LAYOUT = MemoryLayout.structLayout(
         {{layout_members}}
