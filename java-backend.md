@@ -89,9 +89,7 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 
 ### What doesn't work yet
 
-- ~~**Primitive slices**~~ — fully supported as method parameters, return types, and struct fields.
 - **Owned slices** — Rust-allocated slices transferred to Java are not supported.
-- **Slices of strings** (`&[&DiplomatStr]`, `DiplomatStrSlice`) — supported. Java `String[]` arrays are converted to an array of `DiplomatStringView` structs via arena allocation.
 - **Borrows / lifetime tracking** — no mechanism to prevent GC cleanup of objects while something depends on them. Lifetimes are parsed but not enforced on the Java side (no reference stashing like JS, no documentation like C++).
 - **Comparators** — `#[diplomat::attr(auto, comparison)]` not yet mapped to `Comparable<T>`.
 - **Accessors** — `#[diplomat::attr(auto, getter/setter)]` not yet mapped to JavaBeans-style `getXxx()`/`setXxx()` methods.
@@ -99,7 +97,7 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 - Struct fields of certain unsupported types (e.g., string view slices) — emit `Object` placeholder.
 - Cyclic struct references in result layouts — circular static class initialization in Java (e.g., `CyclicStructA` ↔ `CyclicStructB` when result layouts create cross-type references).
 - **Macros** — `#[diplomat::macro_rules]` is a Diplomat language feature that should work with Java (it expands before backend codegen), but has not been tested with the Java backend.
-- Java is not yet included in CI meta-tasks (`test-example`, `test-feature`, `test-all`).
+- Java feature tests (`test-java-feature`) are included in `test-feature` and `test-all`, but `test-java-example` is not yet included in `test-example`.
 
 ### `attr_support()` flags
 
