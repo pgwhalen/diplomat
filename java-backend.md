@@ -26,7 +26,7 @@ cargo make gen-java-feature    # Regenerate Java bindings for feature_tests/
 cargo make test-java-example   # Build native lib + run Gradle tests
 cargo make test-java-feature   # Build native lib + run Gradle feature tests
 cargo make test-java           # Run both example and feature tests
-cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tests (29 tests)
+cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tests (44 tests)
 ```
 
 ## Current Status
@@ -82,6 +82,8 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 - **Disabling APIs** — `#[diplomat::attr(java, disable)]` works to suppress types and methods from Java output. `#[diplomat::cfg(supports = ...)]` also works, gating on features the Java backend declares support for. Feature gates (`#[diplomat::attr(not(feature=...), disable)]`) are supported through the config system.
 - **Renaming** — `#[diplomat::attr(*, rename = "...")]` works on types, methods, fields, and enum variants. Java-side name formatting (lowerCamelCase for methods/params, SHOUTY_SNAKE_CASE for enum variants) is applied on top of renames.
 - **`#[diplomat::out]` structs** — output-only structs containing `Box<OpaqueType>` fields work. The struct is generated as a regular Java class with opaque-handle fields populated via `fromNative`.
+- **Struct refs** (`&Struct` / `&mut Struct` params) — borrowed struct parameters are passed as `MemorySegment` pointers (`ValueLayout.ADDRESS`) instead of by value. For `&mut` params (and `&mut self`), post-call writeback via `updateFromNative()` propagates native-side mutations back to the Java object.
+- **Struct slices** (`&[Struct]` / `&mut [Struct]`) — struct array parameters are marshalled to contiguous native memory via `arena.allocate(LAYOUT, length)` with per-element `copyFrom`. For `&mut [Struct]`, post-call writeback updates each Java array element. Struct slice return types decode pointer+length into a Java array via `fromNative`. `PrimitiveStructVec` (opaque type wrapping `Vec<Struct>`) with `push`, `len`, `get`, `asSlice`, `asSliceMut` is supported.
 - **Primitive slice returns** (`&[f64]`, `&[i16]`, `&[bool]`, etc.) — methods returning `&[T]` for primitive `T` generate Java methods returning `T[]` arrays. The returned `MemorySegment` data pointer is copied to a Java heap array via `toArray()`, so the result is safe to use after the Rust object is freed. Boolean slices use a `bytesToBooleans` helper since FFM doesn't support `toArray(JAVA_BOOLEAN)`. Works for infallible, fallible, and nullable return types.
 - **Feature tests** — `feature_tests/java/somelib/` Gradle project with JUnit 5 tests
 
@@ -94,14 +96,14 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 - **Comparators** — `#[diplomat::attr(auto, comparison)]` not yet mapped to `Comparable<T>`.
 - **Accessors** — `#[diplomat::attr(auto, getter/setter)]` not yet mapped to JavaBeans-style `getXxx()`/`setXxx()` methods.
 - **`&str` / `&DiplomatStr` returns** — string returns are only supported via `DiplomatWrite` (write buffer), not via direct borrowed string returns.
-- Struct fields of certain unsupported types (e.g., struct slices, string view slices) — emit `Object` placeholder.
+- Struct fields of certain unsupported types (e.g., string view slices) — emit `Object` placeholder.
 - Cyclic struct references in result layouts — circular static class initialization in Java (e.g., `CyclicStructA` ↔ `CyclicStructB` when result layouts create cross-type references).
 - **Macros** — `#[diplomat::macro_rules]` is a Diplomat language feature that should work with Java (it expands before backend codegen), but has not been tested with the Java backend.
 - Java is not yet included in CI meta-tasks (`test-example`, `test-feature`, `test-all`).
 
 ### `attr_support()` flags
 
-In `tool/src/java/mod.rs`, the following are set to `true`: `non_exhaustive_structs`, `method_overloading`, `utf8_strings`, `utf16_strings`, `option`, `custom_errors`, `constructors`, `named_constructors`, `fallible_constructors`, `iterators`, `iterables`, `indexing`, `callbacks`, `traits`. The following are explicitly set to `false`: `namespacing`, `memory_sharing`, `static_slices`, `accessors`, `static_accessors`, `comparators`, `traits_are_send`, `traits_are_sync`, `generate_mocking_interface`, `owned_slices`. The remaining flags (`defaults`, `arithmetic`, `abi_compatibles`, `struct_refs`, `free_functions`, `custom_bindings`, `default_args`) are not set and default to `false`. Flags should be flipped to `true` as features are implemented.
+In `tool/src/java/mod.rs`, the following are set to `true`: `non_exhaustive_structs`, `method_overloading`, `utf8_strings`, `utf16_strings`, `option`, `custom_errors`, `constructors`, `named_constructors`, `fallible_constructors`, `iterators`, `iterables`, `indexing`, `callbacks`, `traits`, `abi_compatibles`, `struct_refs`. The following are explicitly set to `false`: `namespacing`, `memory_sharing`, `static_slices`, `accessors`, `static_accessors`, `comparators`, `traits_are_send`, `traits_are_sync`, `generate_mocking_interface`, `owned_slices`. The remaining flags (`defaults`, `arithmetic`, `free_functions`, `custom_bindings`, `default_args`) are not set and default to `false`. Flags should be flipped to `true` as features are implemented.
 
 ## Feature Checklist
 
@@ -125,6 +127,7 @@ Based on `book/src/developer.md` and the full Diplomat book. Check off features 
   - [x] slice fields (str + primitive)
   - [x] `DiplomatOption<T>` fields
   - [x] `#[diplomat::out]` structs (output-only structs containing `Box<T>` fields)
+  - [x] borrowed struct params (`&Struct` / `&mut Struct`) with `updateFromNative` writeback
 - [x] **enums** (as proper Java enum classes with `toNative()`/`fromNative()`)
 - [x] **writeable** (`DiplomatWrite` returns converted to `String`)
 - [ ] **slices**:
@@ -133,6 +136,7 @@ Based on `book/src/developer.md` and the full Diplomat book. Check off features 
   - [x] str16 slices (`&DiplomatStr16` mapped to Java `String` via UTF-16)
   - [ ] owned slices
   - [x] slices of strings
+  - [x] struct slices (`&[Struct]`, `&mut [Struct]`) as params and returns
   - [ ] slices of opaque (`&[Box<T>]`)
 - [ ] **borrows / lifetime tracking** — ensure managed objects aren't cleaned up while something depends on them
   - [ ] borrows of parameters
@@ -208,6 +212,10 @@ Cross-backend comparison is provided where relevant. The Kotlin backend (JNA-bas
 
 - [x] **`stringifiers`** — Map the `#[diplomat::attr(*, stringifier)]` method to a `toString()` override. Every Java class inherits `Object.toString()`, and overriding it is deeply idiomatic — it's automatically called by string concatenation (`"Value: " + obj`), `System.out.println()`, `String.format()`, and logging frameworks. The Kotlin backend already implements this as `override fun toString(): String`. The Dart backend maps it to `toString()` as well. The method is renamed to `toString` regardless of the Rust function name, and annotated with `@Override`.
 
+- [x] **`abi_compatibles`** — Structs marked `#[diplomat::attr(auto, abi_compatible)]` can be passed as slices (`&[Struct]`, `&mut [Struct]`) and borrowed by pointer. The Java backend generates `StructLayout` definitions from the same HIR data as the C backend, with correct field order, sizes, alignment, and padding (computed by `compute_layout_members()`, `field_size_align()`, `align_up()`). Struct slice parameters are marshalled to contiguous native memory via `arena.allocate(LAYOUT, length)` with per-element `copyFrom(toNative(...))`. Mutable struct slices (`&mut [Struct]`) include post-call writeback via `updateFromNative()`. Struct slice returns decode the pointer+length into a Java array. C, C++, and nanobind also support this.
+
+- [x] **`struct_refs`** — Support `&Struct` and `&mut Struct` as function parameters and `&self`/`&mut self` on structs. Borrowed struct params are passed as `MemorySegment` pointers (`ValueLayout.ADDRESS` in the `FunctionDescriptor`). For mutable borrows, post-call writeback via `updateFromNative()` propagates native-side mutations back to the Java object fields. The `updateFromNative()` method is generated on all non-out structs via the Struct template. C, C++, and nanobind also support this.
+
 ---
 
 ### TODO
@@ -247,9 +255,5 @@ Cross-backend comparison is provided where relevant. The Kotlin backend (JNA-bas
 ---
 
 ### MIGHT DO
-
-- [ ] **`abi_compatibles`** — Allow structs marked `#[diplomat::attr(auto, abi_compatible)]` to be passed as slices and borrowed by pointer. This requires the Java-side struct representation to have an **identical memory layout** to the C ABI struct (matching field order, sizes, alignment, and padding). With the FFM API, this is technically possible using `StructLayout` + `MemorySegment` — the Java side would define a `StructLayout` matching the C layout and allocate/populate `MemorySegment` values accordingly. However, maintaining layout compatibility is fragile and error-prone: any mismatch between the generated Java `StructLayout` and the C struct layout causes silent memory corruption. C, C++, and nanobind support this (they share memory layout by definition). The decision depends on whether the Java backend generates struct layouts that provably match the C ABI — this may be achievable by deriving the layout from the same HIR data that the C backend uses, but it adds significant complexity and testing burden. **What would help:** Confirming that Diplomat's HIR provides enough information to deterministically compute C ABI struct layouts (including padding/alignment), and whether the FFM `StructLayout` API can faithfully reproduce them.
-
-- [ ] **`struct_refs`** — Support `&Struct` and `&mut Struct` as function parameters (borrowing a struct by reference rather than by value). This requires passing a pointer to the struct's memory to the native function. With FFM, this means passing a `MemorySegment` pointing to the struct's data. Only C, C++, and nanobind support this — all languages where structs have predictable memory layout. The feasibility in Java depends on the same `StructLayout`/ABI-compatibility question as `abi_compatibles`. If the backend generates correct `StructLayout` definitions, struct references become a `MemorySegment` pointer pass. **What would help:** Same as `abi_compatibles` — confirming ABI layout correctness.
 
 - [ ] **`custom_bindings`** — Allow users to inject custom code into generated classes via `#[diplomat::attr(java, custom_extra_code(...))]`. Only C++ and nanobind support this. The mechanism is straightforward (insert verbatim Java code at designated points in the template), but it raises maintenance concerns: custom code can break when the generated class structure changes, and it couples user code to internal codegen details. **What would help:** User demand. If Java users need escape hatches for functionality that Diplomat can't generate, this is a reasonable safety valve. Low priority until the backend is mature enough to have users hitting its limitations.
