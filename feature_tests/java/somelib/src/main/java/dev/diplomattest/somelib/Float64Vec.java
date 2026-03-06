@@ -16,6 +16,7 @@ public class Float64Vec implements AutoCloseable {
     private static final MethodHandle FLOAT64VEC_NEW_ISIZE;
     private static final MethodHandle FLOAT64VEC_NEW_USIZE;
     private static final MethodHandle FLOAT64VEC_NEW_F64_BE_BYTES;
+    private static final MethodHandle FLOAT64VEC_NEW_FROM_OWNED;
     private static final MethodHandle FLOAT64VEC_AS_SLICE;
     private static final MethodHandle FLOAT64VEC_FILL_SLICE;
     private static final MethodHandle FLOAT64VEC_SET_VALUE;
@@ -59,6 +60,10 @@ public class Float64Vec implements AutoCloseable {
             LIB.find("Float64Vec_new_f64_be_bytes").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
+        FLOAT64VEC_NEW_FROM_OWNED = LINKER.downcallHandle(
+            LIB.find("Float64Vec_new_from_owned").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+        );
         FLOAT64VEC_AS_SLICE = LINKER.downcallHandle(
             LIB.find("Float64Vec_as_slice").orElseThrow(),
             FunctionDescriptor.of(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
@@ -89,6 +94,19 @@ public class Float64Vec implements AutoCloseable {
 
     Float64Vec(MemorySegment handle) {
         this.handle = handle;
+    }
+
+    public Float64Vec(double[] v) {
+        try {
+            var vSrc = MemorySegment.ofArray(v);
+            var vSeg = DiplomatLib.diplomatAlloc((long) v.length * 8L, 8L).reinterpret((long) v.length * 8L);
+            MemorySegment.copy(vSrc, 0, vSeg, 0, (long) v.length * 8L);
+            this.handle = (MemorySegment) FLOAT64VEC_NEW_FROM_OWNED.invokeExact(vSeg, (long) v.length);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     @Override

@@ -62,6 +62,8 @@ public final class DiplomatLib {
     private static final Linker LINKER = LINKER_SHARED;
     private static final SymbolLookup LIB;
 
+    private static final MethodHandle DIPLOMAT_ALLOC;
+    private static final MethodHandle DIPLOMAT_FREE;
     private static final MethodHandle DIPLOMAT_BUFFER_WRITE_CREATE;
     private static final MethodHandle DIPLOMAT_BUFFER_WRITE_GET_BYTES;
     private static final MethodHandle DIPLOMAT_BUFFER_WRITE_LEN;
@@ -73,6 +75,14 @@ public final class DiplomatLib {
     static {
         System.loadLibrary("diplomat_feature_tests");
         LIB = SymbolLookup.loaderLookup();
+        DIPLOMAT_ALLOC = LINKER.downcallHandle(
+            LIB.find("diplomat_alloc").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+        );
+        DIPLOMAT_FREE = LINKER.downcallHandle(
+            LIB.find("diplomat_free").orElseThrow(),
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+        );
         DIPLOMAT_BUFFER_WRITE_CREATE = LINKER.downcallHandle(
             LIB.find("diplomat_buffer_write_create").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
@@ -99,6 +109,22 @@ public final class DiplomatLib {
                 Arena.global());
         } catch (ReflectiveOperationException ex) {
             throw new ExceptionInInitializerError(ex);
+        }
+    }
+
+    static MemorySegment diplomatAlloc(long size, long align) {
+        try {
+            return (MemorySegment) DIPLOMAT_ALLOC.invokeExact(size, align);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    static void diplomatFree(MemorySegment ptr, long size, long align) {
+        try {
+            DIPLOMAT_FREE.invokeExact(ptr, size, align);
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
         }
     }
 

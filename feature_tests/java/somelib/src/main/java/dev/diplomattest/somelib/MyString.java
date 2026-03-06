@@ -12,6 +12,7 @@ public class MyString implements AutoCloseable {
     private static final MethodHandle DESTROY;
     private static final MethodHandle MYSTRING_NEW;
     private static final MethodHandle MYSTRING_NEW_UNSAFE;
+    private static final MethodHandle MYSTRING_NEW_OWNED;
     private static final MethodHandle MYSTRING_NEW_FROM_FIRST;
     private static final MethodHandle MYSTRING_SET_STR;
     private static final MethodHandle MYSTRING_GET_STR;
@@ -30,6 +31,10 @@ public class MyString implements AutoCloseable {
         );
         MYSTRING_NEW_UNSAFE = LINKER.downcallHandle(
             LIB.find("MyString_new_unsafe").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+        );
+        MYSTRING_NEW_OWNED = LINKER.downcallHandle(
+            LIB.find("MyString_new_owned").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
         MYSTRING_NEW_FROM_FIRST = LINKER.downcallHandle(
@@ -84,6 +89,20 @@ public class MyString implements AutoCloseable {
 
             var vSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, vBytes);
             return new MyString((MemorySegment) MYSTRING_NEW_UNSAFE.invokeExact(vSeg, (long) vBytes.length));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static MyString newOwned(String v) {
+        try {
+            byte[] vBytes = v.getBytes(StandardCharsets.UTF_8);
+            var vSrc = MemorySegment.ofArray(vBytes);
+            var vSeg = DiplomatLib.diplomatAlloc((long) vBytes.length, 1L).reinterpret((long) vBytes.length);
+            MemorySegment.copy(vSrc, 0, vSeg, 0, (long) vBytes.length);
+            return new MyString((MemorySegment) MYSTRING_NEW_OWNED.invokeExact(vSeg, (long) vBytes.length));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

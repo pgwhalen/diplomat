@@ -1,0 +1,46 @@
+package {{domain}}.{{lib_name}};
+
+import java.lang.foreign.*;
+
+/** A Rust-allocated slice that Java has taken ownership of. Must be closed to free native memory. */
+public class OwnedSlice implements AutoCloseable {
+    private MemorySegment data;
+    private final long length;
+    private final long elemSize;
+    private final long elemAlign;
+
+    OwnedSlice(MemorySegment data, long length, long elemSize, long elemAlign) {
+        this.data = data;
+        this.length = length;
+        this.elemSize = elemSize;
+        this.elemAlign = elemAlign;
+    }
+
+    /** Returns the underlying memory segment, reinterpreted to the correct byte size. */
+    public MemorySegment segment() {
+        if (data == null) {
+            throw new IllegalStateException("OwnedSlice has been freed");
+        }
+        return data.reinterpret(length * elemSize);
+    }
+
+    /** Returns the number of elements in the slice. */
+    public long length() {
+        return length;
+    }
+
+    /** Copies the data to a Java array and frees the native memory. */
+    public byte[] asByteArray() {
+        byte[] result = segment().toArray(ValueLayout.JAVA_BYTE);
+        close();
+        return result;
+    }
+
+    @Override
+    public void close() {
+        if (data != null && !data.equals(MemorySegment.NULL)) {
+            DiplomatLib.diplomatFree(data, length * elemSize, elemAlign);
+        }
+        data = null;
+    }
+}

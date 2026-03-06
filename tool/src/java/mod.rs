@@ -1,8 +1,9 @@
 use askama::Template;
 use diplomat_core::hir::{
     self, BackendAttrSupport, Callback, CallbackInstantiationFunctionality, DocsUrlGenerator,
-    InputOnly, Method, OutType, ReturnType, SelfType, Slice, SpecialMethod, StringEncoding,
-    StructField, StructPathLike, SuccessType, TraitIdGetter, Type, TypeContext, TypeDef, TypeId,
+    InputOnly, MaybeOwn, Method, OutType, ReturnType, SelfType, Slice, SpecialMethod,
+    StringEncoding, StructField, StructPathLike, SuccessType, TraitIdGetter, Type, TypeContext,
+    TypeDef, TypeId,
 };
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
 use std::borrow::Cow;
@@ -41,7 +42,7 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.traits_are_send = false;
     a.traits_are_sync = false;
     a.generate_mocking_interface = false;
-    a.owned_slices = false;
+    a.owned_slices = true;
     a.struct_refs = true;
     a.abi_compatibles = true;
 
@@ -170,6 +171,29 @@ pub(crate) fn run<'tcx>(
             domain.replace('.', "/")
         ),
         lib_body,
+    );
+
+    // Generate OwnedSlice.java
+    #[derive(Template)]
+    #[template(path = "java/OwnedSlice.java.jinja", escape = "none")]
+    struct OwnedSliceTemplate<'a> {
+        domain: &'a str,
+        lib_name: &'a str,
+    }
+
+    let owned_slice_body = OwnedSliceTemplate {
+        domain: &domain,
+        lib_name: &lib_name,
+    }
+    .render()
+    .expect("Failed to render OwnedSlice.java");
+
+    files.add_file(
+        format!(
+            "src/main/java/{}/{lib_name}/OwnedSlice.java",
+            domain.replace('.', "/")
+        ),
+        owned_slice_body,
     );
 
     (files, errors)
@@ -1149,20 +1173,26 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let returns_slice = matches!(
             method.output,
             ReturnType::Infallible(SuccessType::OutType(
-                Type::Slice(Slice::Primitive(_, _)) | Type::Slice(Slice::Struct(_, _))
+                Type::Slice(Slice::Primitive(_, _))
+                    | Type::Slice(Slice::Struct(_, _))
+                    | Type::Slice(Slice::Str(None, _))
             ))
         ) || matches!(
             method.output,
             ReturnType::Fallible(
                 SuccessType::OutType(
-                    Type::Slice(Slice::Primitive(_, _)) | Type::Slice(Slice::Struct(_, _))
+                    Type::Slice(Slice::Primitive(_, _))
+                        | Type::Slice(Slice::Struct(_, _))
+                        | Type::Slice(Slice::Str(None, _))
                 ),
                 _
             )
         ) || matches!(
             method.output,
             ReturnType::Nullable(SuccessType::OutType(
-                Type::Slice(Slice::Primitive(_, _)) | Type::Slice(Slice::Struct(_, _))
+                Type::Slice(Slice::Primitive(_, _))
+                    | Type::Slice(Slice::Struct(_, _))
+                    | Type::Slice(Slice::Str(None, _))
             ))
         );
 
@@ -1217,7 +1247,11 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             match &method.output {
                 ReturnType::Infallible(SuccessType::Unit) => format!("{invoke_call};"),
                 ReturnType::Infallible(SuccessType::OutType(ty)) => {
-                    if let Type::Slice(Slice::Primitive(_, prim)) = ty {
+                    if let Type::Slice(Slice::Primitive(MaybeOwn::Own, prim)) = ty {
+                        self.gen_owned_slice_return_stmt(*prim, &invoke_call)
+                    } else if let Type::Slice(Slice::Str(None, encoding)) = ty {
+                        self.gen_owned_string_return_stmt(*encoding, &invoke_call)
+                    } else if let Type::Slice(Slice::Primitive(_, prim)) = ty {
                         self.gen_slice_return_stmt(*prim, &invoke_call)
                     } else if let Type::Slice(Slice::Struct(_, st)) = ty {
                         let type_name = self.formatter.fmt_type_name(st.id()).to_string();
@@ -1604,6 +1638,23 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     "{type_name}.fromNative({seg_name}.asSlice(0L, {type_name}.LAYOUT.byteSize()))"
                 )
             }
+            Type::Slice(Slice::Primitive(MaybeOwn::Own, prim)) => {
+                let (elem_size, elem_align) = self.formatter.primitive_size_align(*prim);
+                format!(
+                    "new OwnedSlice((MemorySegment) {seg_name}.get(ValueLayout.ADDRESS, 0L), \
+                     {seg_name}.get(ValueLayout.JAVA_LONG, 8L), {elem_size}L, {elem_align}L)"
+                )
+            }
+            Type::Slice(Slice::Str(None, encoding)) => {
+                let (elem_size, elem_align) = match encoding {
+                    StringEncoding::UnvalidatedUtf16 => (2usize, 2usize),
+                    _ => (1, 1),
+                };
+                format!(
+                    "new OwnedSlice((MemorySegment) {seg_name}.get(ValueLayout.ADDRESS, 0L), \
+                     {seg_name}.get(ValueLayout.JAVA_LONG, 8L), {elem_size}L, {elem_align}L)"
+                )
+            }
             Type::Slice(Slice::Primitive(_, prim)) => {
                 if matches!(prim, hir::PrimitiveType::Bool) {
                     format!(
@@ -1723,7 +1774,34 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     invoke_args.push(format!("{param_name}.handle"));
                 }
             }
-            Type::Slice(Slice::Str(_, encoding)) => {
+            Type::Slice(Slice::Str(None, encoding)) => {
+                // Owned string param: allocate via diplomat_alloc (Rust takes ownership)
+                java_params.push(format!("String {param_name}"));
+                match encoding {
+                    StringEncoding::UnvalidatedUtf16 => {
+                        nullable_setup_lines.push(format!(
+                            "char[] {param_name}Chars = {param_name}.toCharArray();\n\
+                             \x20           var {param_name}Src = MemorySegment.ofArray({param_name}Chars);\n\
+                             \x20           var {param_name}Seg = DiplomatLib.diplomatAlloc((long) {param_name}Chars.length * 2L, 2L).reinterpret((long) {param_name}Chars.length * 2L);\n\
+                             \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}Chars.length * 2L);"
+                        ));
+                        invoke_args.push(format!("{param_name}Seg"));
+                        invoke_args.push(format!("(long) {param_name}Chars.length"));
+                    }
+                    _ => {
+                        nullable_setup_lines.push(format!(
+                            "byte[] {param_name}Bytes = {param_name}.getBytes(StandardCharsets.UTF_8);\n\
+                             \x20           var {param_name}Src = MemorySegment.ofArray({param_name}Bytes);\n\
+                             \x20           var {param_name}Seg = DiplomatLib.diplomatAlloc((long) {param_name}Bytes.length, 1L).reinterpret((long) {param_name}Bytes.length);\n\
+                             \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}Bytes.length);"
+                        ));
+                        invoke_args.push(format!("{param_name}Seg"));
+                        invoke_args.push(format!("(long) {param_name}Bytes.length"));
+                    }
+                }
+            }
+            Type::Slice(Slice::Str(Some(_), encoding)) => {
+                // Borrowed string param: allocate in Arena (freed when arena closes)
                 java_params.push(format!("String {param_name}"));
                 string_params.push((param_name.to_string(), *encoding));
                 match encoding {
@@ -1737,7 +1815,33 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     }
                 }
             }
+            Type::Slice(Slice::Primitive(MaybeOwn::Own, prim)) => {
+                // Owned slice param: allocate via diplomat_alloc (Rust takes ownership)
+                let java_type = self.formatter.fmt_primitive_as_java(*prim);
+                java_params.push(format!("{java_type}[] {param_name}"));
+                if matches!(prim, hir::PrimitiveType::Bool) {
+                    nullable_setup_lines.push(format!(
+                        "byte[] {param_name}Bytes = new byte[{param_name}.length];\n\
+                         \x20           for (int i = 0; i < {param_name}.length; i++) {param_name}Bytes[i] = {param_name}[i] ? (byte) 1 : (byte) 0;\n\
+                         \x20           var {param_name}Src = MemorySegment.ofArray({param_name}Bytes);\n\
+                         \x20           var {param_name}Seg = DiplomatLib.diplomatAlloc((long) {param_name}.length, 1L).reinterpret((long) {param_name}.length);\n\
+                         \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}.length);"
+                    ));
+                } else {
+                    let layout = self.formatter.fmt_primitive_as_ffi(*prim);
+                    let (elem_size, elem_align) = self.formatter.primitive_size_align(*prim);
+                    nullable_setup_lines.push(format!(
+                        "var {param_name}Src = MemorySegment.ofArray({param_name});\n\
+                         \x20           var {param_name}Seg = DiplomatLib.diplomatAlloc((long) {param_name}.length * {elem_size}L, {elem_align}L).reinterpret((long) {param_name}.length * {elem_size}L);\n\
+                         \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}.length * {elem_size}L);"
+                    ));
+                    let _ = layout; // layout used for borrowed path; owned uses raw byte copy
+                }
+                invoke_args.push(format!("{param_name}Seg"));
+                invoke_args.push(format!("(long) {param_name}.length"));
+            }
             Type::Slice(Slice::Primitive(_, prim)) => {
+                // Borrowed slice param: allocate in Arena (freed when arena closes)
                 let java_type = self.formatter.fmt_primitive_as_java(*prim);
                 java_params.push(format!("{java_type}[] {param_name}"));
                 slice_params.push((param_name.to_string(), *prim));
@@ -1883,6 +1987,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 }
             }
             Type::Enum(_) | Type::Struct(_) => self.fmt_type_name_str(ty),
+            Type::Slice(Slice::Primitive(MaybeOwn::Own, _)) => "OwnedSlice".to_string(),
+            Type::Slice(Slice::Str(None, _)) => "OwnedSlice".to_string(),
             Type::Slice(Slice::Primitive(_, prim)) => {
                 format!("{}[]", self.formatter.fmt_primitive_as_java(*prim))
             }
@@ -1975,6 +2081,39 @@ impl<'cx> ItemGenContext<'_, 'cx> {
              arr[i] = {type_name}.fromNative(data.asSlice(i * {type_name}.LAYOUT.byteSize(), {type_name}.LAYOUT.byteSize()));\n            \
              }}\n            \
              return arr;"
+        )
+    }
+
+    /// Generate return statement for an infallible method returning an owned primitive slice.
+    fn gen_owned_slice_return_stmt(
+        &self,
+        prim: hir::PrimitiveType,
+        invoke_call: &str,
+    ) -> String {
+        let (elem_size, elem_align) = self.formatter.primitive_size_align(prim);
+        format!(
+            "var resultSeg = (MemorySegment) {invoke_call};\n            \
+             MemorySegment dataPtr = (MemorySegment) DiplomatLib.VH_SV_DATA.get(resultSeg, 0L);\n            \
+             long dataLen = (long) DiplomatLib.VH_SV_LEN.get(resultSeg, 0L);\n            \
+             return new OwnedSlice(dataPtr, dataLen, {elem_size}L, {elem_align}L);"
+        )
+    }
+
+    /// Generate return statement for an infallible method returning an owned string slice.
+    fn gen_owned_string_return_stmt(
+        &self,
+        encoding: StringEncoding,
+        invoke_call: &str,
+    ) -> String {
+        let (elem_size, elem_align) = match encoding {
+            StringEncoding::UnvalidatedUtf16 => (2usize, 2usize),
+            _ => (1, 1),
+        };
+        format!(
+            "var resultSeg = (MemorySegment) {invoke_call};\n            \
+             MemorySegment dataPtr = (MemorySegment) DiplomatLib.VH_SV_DATA.get(resultSeg, 0L);\n            \
+             long dataLen = (long) DiplomatLib.VH_SV_LEN.get(resultSeg, 0L);\n            \
+             return new OwnedSlice(dataPtr, dataLen, {elem_size}L, {elem_align}L);"
         )
     }
 

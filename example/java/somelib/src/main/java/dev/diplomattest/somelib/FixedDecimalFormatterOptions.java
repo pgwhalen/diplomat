@@ -60,4 +60,9 @@ public class FixedDecimalFormatterOptions {
         VH_SOME_OTHER_CONFIG.set(seg, 0L, this.someOtherConfig);
         return seg;
     }
+
+    void updateFromNative(MemorySegment seg) {
+        this.groupingStrategy = FixedDecimalGroupingStrategy.fromNative((int) VH_GROUPING_STRATEGY.get(seg, 0L));
+        this.someOtherConfig = (boolean) VH_SOME_OTHER_CONFIG.get(seg, 0L);
+    }
 }
