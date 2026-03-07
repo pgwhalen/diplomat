@@ -800,18 +800,24 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     }
 
     fn push_param_layouts<P: hir::TyPosition>(&self, ty: &Type<P>, layouts: &mut Vec<String>) {
-        // Borrowed struct refs are passed as pointers
-        if let Type::Struct(st) = ty {
-            if !st.owner().is_owned() {
-                layouts.push("ValueLayout.ADDRESS".to_string());
-                return;
-            }
-        }
-        if let Some(layout) = self.type_to_ffi_layout(ty) {
-            layouts.push(layout);
-            return;
-        }
         match ty {
+            // Borrowed struct refs are passed as pointers
+            Type::Struct(st) if !st.owner().is_owned() => {
+                layouts.push("ValueLayout.ADDRESS".to_string());
+            }
+            Type::Struct(_) => {
+                let type_name = self.fmt_type_name_str(ty);
+                layouts.push(format!("{type_name}.LAYOUT"));
+            }
+            Type::Primitive(prim) => {
+                layouts.push(self.formatter.fmt_primitive_as_ffi(*prim).to_string());
+            }
+            Type::Opaque(_) => {
+                layouts.push("ValueLayout.ADDRESS".to_string());
+            }
+            Type::Enum(_) => {
+                layouts.push("ValueLayout.JAVA_INT".to_string());
+            }
             Type::Slice(Slice::Str(_, _))
             | Type::Slice(Slice::Primitive(_, _))
             | Type::Slice(Slice::Strs(_))
