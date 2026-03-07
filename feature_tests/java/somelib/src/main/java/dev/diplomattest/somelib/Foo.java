@@ -25,7 +25,7 @@ public class Foo implements AutoCloseable {
         );
         FOO_NEW = LINKER.downcallHandle(
             LIB.find("Foo_new").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         FOO_GET_BAR = LINKER.downcallHandle(
             LIB.find("Foo_get_bar").orElseThrow(),
@@ -41,7 +41,7 @@ public class Foo implements AutoCloseable {
         );
         FOO_EXTRACT_FROM_BOUNDS = LINKER.downcallHandle(
             LIB.find("Foo_extract_from_bounds").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, BorrowedFieldsWithBounds.LAYOUT, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, BorrowedFieldsWithBounds.LAYOUT, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
     }
 
@@ -56,7 +56,10 @@ public class Foo implements AutoCloseable {
             byte[] xBytes = x.getBytes(StandardCharsets.UTF_8);
 
             var xSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, xBytes);
-            this.handle = (MemorySegment) FOO_NEW.invokeExact(xSeg, (long) xBytes.length);
+            var xSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(xSlice, 0L, xSeg);
+            DiplomatLib.VH_SV_LEN.set(xSlice, 0L, (long) xBytes.length);
+            this.handle = (MemorySegment) FOO_NEW.invokeExact(xSlice);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {
@@ -91,7 +94,10 @@ public class Foo implements AutoCloseable {
             byte[] anotherStringBytes = anotherString.getBytes(StandardCharsets.UTF_8);
 
             var anotherStringSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, anotherStringBytes);
-            return new Foo((MemorySegment) FOO_EXTRACT_FROM_BOUNDS.invokeExact(bounds.toNative(arena), anotherStringSeg, (long) anotherStringBytes.length));
+            var anotherStringSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(anotherStringSlice, 0L, anotherStringSeg);
+            DiplomatLib.VH_SV_LEN.set(anotherStringSlice, 0L, (long) anotherStringBytes.length);
+            return new Foo((MemorySegment) FOO_EXTRACT_FROM_BOUNDS.invokeExact(bounds.toNative(arena), anotherStringSlice));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

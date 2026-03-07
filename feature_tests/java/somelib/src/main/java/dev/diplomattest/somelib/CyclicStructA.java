@@ -33,7 +33,7 @@ public class CyclicStructA {
         );
         CYCLICSTRUCTA_NESTED_SLICE = LINKER.downcallHandle(
             LIB.find("CyclicStructA_nested_slice").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.JAVA_BYTE, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.JAVA_BYTE, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         CYCLICSTRUCTA_DOUBLE_CYCLIC_OUT = LINKER.downcallHandle(
             LIB.find("CyclicStructA_double_cyclic_out").orElseThrow(),
@@ -87,7 +87,10 @@ public class CyclicStructA {
                 slSeg.asSlice(i * CyclicStructA.LAYOUT.byteSize(), CyclicStructA.LAYOUT.byteSize())
                     .copyFrom(sl[i].toNative(arena));
             }
-            return (byte) CYCLICSTRUCTA_NESTED_SLICE.invokeExact(slSeg, (long) sl.length);
+            var slSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(slSlice, 0L, slSeg);
+            DiplomatLib.VH_SV_LEN.set(slSlice, 0L, (long) sl.length);
+            return (byte) CYCLICSTRUCTA_NESTED_SLICE.invokeExact(slSlice);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

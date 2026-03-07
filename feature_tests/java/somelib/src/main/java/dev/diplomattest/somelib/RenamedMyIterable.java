@@ -23,7 +23,7 @@ public class RenamedMyIterable implements AutoCloseable, Iterable<Byte> {
         );
         NAMESPACE_MYITERABLE_NEW = LINKER.downcallHandle(
             LIB.find("namespace_MyIterable_new").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         NAMESPACE_MYITERABLE_ITER = LINKER.downcallHandle(
             LIB.find("namespace_MyIterable_iter").orElseThrow(),
@@ -40,7 +40,10 @@ public class RenamedMyIterable implements AutoCloseable, Iterable<Byte> {
     public RenamedMyIterable(byte[] x) {
         try (var arena = Arena.ofConfined()) {
             var xSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, x);
-            this.handle = (MemorySegment) NAMESPACE_MYITERABLE_NEW.invokeExact(xSeg, (long) x.length);
+            var xSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(xSlice, 0L, xSeg);
+            DiplomatLib.VH_SV_LEN.set(xSlice, 0L, (long) x.length);
+            this.handle = (MemorySegment) NAMESPACE_MYITERABLE_NEW.invokeExact(xSlice);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

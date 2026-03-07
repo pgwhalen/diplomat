@@ -35,7 +35,7 @@ public class PrimitiveStruct {
         LIB = SymbolLookup.loaderLookup();
         PRIMITIVESTRUCT_MUTABLE_SLICE = LINKER.downcallHandle(
             LIB.find("PrimitiveStruct_mutable_slice").orElseThrow(),
-            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         PRIMITIVESTRUCT_MUTABLE_REF = LINKER.downcallHandle(
             LIB.find("PrimitiveStruct_mutable_ref").orElseThrow(),
@@ -105,7 +105,10 @@ public class PrimitiveStruct {
                 aSeg.asSlice(i * PrimitiveStruct.LAYOUT.byteSize(), PrimitiveStruct.LAYOUT.byteSize())
                     .copyFrom(a[i].toNative(arena));
             }
-            PRIMITIVESTRUCT_MUTABLE_SLICE.invokeExact(aSeg, (long) a.length);
+            var aSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(aSlice, 0L, aSeg);
+            DiplomatLib.VH_SV_LEN.set(aSlice, 0L, (long) a.length);
+            PRIMITIVESTRUCT_MUTABLE_SLICE.invokeExact(aSlice);
             for (int i = 0; i < a.length; i++) {
                 a[i].updateFromNative(
                     aSeg.asSlice(i * PrimitiveStruct.LAYOUT.byteSize(), PrimitiveStruct.LAYOUT.byteSize()));

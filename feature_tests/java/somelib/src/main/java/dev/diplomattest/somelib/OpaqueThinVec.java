@@ -27,7 +27,7 @@ public class OpaqueThinVec implements AutoCloseable, Iterable<OpaqueThin> {
         );
         OPAQUETHINVEC_CREATE = LINKER.downcallHandle(
             LIB.find("OpaqueThinVec_create").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         OPAQUETHINVEC_ITER = LINKER.downcallHandle(
             LIB.find("OpaqueThinVec_iter").orElseThrow(),
@@ -60,7 +60,16 @@ public class OpaqueThinVec implements AutoCloseable, Iterable<OpaqueThin> {
             var cSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, cBytes);
             var aSeg = arena.allocateFrom(ValueLayout.JAVA_INT, a);
             var bSeg = arena.allocateFrom(ValueLayout.JAVA_FLOAT, b);
-            this.handle = (MemorySegment) OPAQUETHINVEC_CREATE.invokeExact(aSeg, (long) a.length, bSeg, (long) b.length, cSeg, (long) cBytes.length);
+            var aSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(aSlice, 0L, aSeg);
+            DiplomatLib.VH_SV_LEN.set(aSlice, 0L, (long) a.length);
+            var bSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(bSlice, 0L, bSeg);
+            DiplomatLib.VH_SV_LEN.set(bSlice, 0L, (long) b.length);
+            var cSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(cSlice, 0L, cSeg);
+            DiplomatLib.VH_SV_LEN.set(cSlice, 0L, (long) cBytes.length);
+            this.handle = (MemorySegment) OPAQUETHINVEC_CREATE.invokeExact(aSlice, bSlice, cSlice);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

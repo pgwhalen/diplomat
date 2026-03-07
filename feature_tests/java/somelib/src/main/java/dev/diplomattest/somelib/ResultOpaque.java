@@ -128,7 +128,7 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
         );
         RESULTOPAQUE_TAKES_STR = LINKER.downcallHandle(
             LIB.find("ResultOpaque_takes_str").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         RESULTOPAQUE_STRINGIFY_ERROR = LINKER.downcallHandle(
             LIB.find("ResultOpaque_stringify_error").orElseThrow(),
@@ -326,7 +326,10 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
             byte[] vBytes = v.getBytes(StandardCharsets.UTF_8);
 
             var vSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, vBytes);
-            return new ResultOpaque((MemorySegment) RESULTOPAQUE_TAKES_STR.invokeExact(handle, vSeg, (long) vBytes.length));
+            var vSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(vSlice, 0L, vSeg);
+            DiplomatLib.VH_SV_LEN.set(vSlice, 0L, (long) vBytes.length);
+            return new ResultOpaque((MemorySegment) RESULTOPAQUE_TAKES_STR.invokeExact(handle, vSlice));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

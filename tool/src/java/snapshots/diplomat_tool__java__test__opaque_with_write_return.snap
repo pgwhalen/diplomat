@@ -30,7 +30,7 @@ public class MyString implements AutoCloseable {
         );
         MYSTRING_STRING_TRANSFORM = LINKER.downcallHandle(
             LIB.find("MyString_string_transform").orElseThrow(),
-            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS)
+            FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
         );
     }
 
@@ -55,7 +55,10 @@ public class MyString implements AutoCloseable {
             byte[] fooBytes = foo.getBytes(StandardCharsets.UTF_8);
 
             var fooSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, fooBytes);
-            MYSTRING_STRING_TRANSFORM.invokeExact(fooSeg, (long) fooBytes.length, write);
+            var fooSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(fooSlice, 0L, fooSeg);
+            DiplomatLib.VH_SV_LEN.set(fooSlice, 0L, (long) fooBytes.length);
+            MYSTRING_STRING_TRANSFORM.invokeExact(fooSlice, write);
             return DiplomatLib.writeToString(write);
         } catch (RuntimeException ex) {
             throw ex;

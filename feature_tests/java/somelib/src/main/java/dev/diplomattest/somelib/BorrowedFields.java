@@ -28,7 +28,7 @@ public class BorrowedFields {
         LIB = SymbolLookup.loaderLookup();
         BORROWEDFIELDS_FROM_BAR_AND_STRINGS = LINKER.downcallHandle(
             LIB.find("BorrowedFields_from_bar_and_strings").orElseThrow(),
-            FunctionDescriptor.of(BorrowedFields.LAYOUT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(BorrowedFields.LAYOUT, ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
     }
 
@@ -77,7 +77,13 @@ public class BorrowedFields {
             byte[] utf8StrBytes = utf8Str.getBytes(StandardCharsets.UTF_8);
 
             var utf8StrSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, utf8StrBytes);
-            return BorrowedFields.fromNative((MemorySegment) BORROWEDFIELDS_FROM_BAR_AND_STRINGS.invokeExact((SegmentAllocator) arena, bar.handle, dstr16Seg, (long) dstr16Chars.length, utf8StrSeg, (long) utf8StrBytes.length));
+            var dstr16Slice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(dstr16Slice, 0L, dstr16Seg);
+            DiplomatLib.VH_SV_LEN.set(dstr16Slice, 0L, (long) dstr16Chars.length);
+            var utf8StrSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(utf8StrSlice, 0L, utf8StrSeg);
+            DiplomatLib.VH_SV_LEN.set(utf8StrSlice, 0L, (long) utf8StrBytes.length);
+            return BorrowedFields.fromNative((MemorySegment) BORROWEDFIELDS_FROM_BAR_AND_STRINGS.invokeExact((SegmentAllocator) arena, bar.handle, dstr16Slice, utf8StrSlice));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

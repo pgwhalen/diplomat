@@ -27,23 +27,23 @@ public class MyString implements AutoCloseable {
         );
         MYSTRING_NEW = LINKER.downcallHandle(
             LIB.find("MyString_new").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         MYSTRING_NEW_UNSAFE = LINKER.downcallHandle(
             LIB.find("MyString_new_unsafe").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         MYSTRING_NEW_OWNED = LINKER.downcallHandle(
             LIB.find("MyString_new_owned").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         MYSTRING_NEW_FROM_FIRST = LINKER.downcallHandle(
             LIB.find("MyString_new_from_first").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         MYSTRING_SET_STR = LINKER.downcallHandle(
             LIB.find("MyString_set_str").orElseThrow(),
-            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         MYSTRING_GET_STR = LINKER.downcallHandle(
             LIB.find("MyString_get_str").orElseThrow(),
@@ -51,7 +51,7 @@ public class MyString implements AutoCloseable {
         );
         MYSTRING_STRING_TRANSFORM = LINKER.downcallHandle(
             LIB.find("MyString_string_transform").orElseThrow(),
-            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS)
+            FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
         );
     }
 
@@ -66,7 +66,10 @@ public class MyString implements AutoCloseable {
             byte[] vBytes = v.getBytes(StandardCharsets.UTF_8);
 
             var vSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, vBytes);
-            this.handle = (MemorySegment) MYSTRING_NEW.invokeExact(vSeg, (long) vBytes.length);
+            var vSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(vSlice, 0L, vSeg);
+            DiplomatLib.VH_SV_LEN.set(vSlice, 0L, (long) vBytes.length);
+            this.handle = (MemorySegment) MYSTRING_NEW.invokeExact(vSlice);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {
@@ -88,7 +91,10 @@ public class MyString implements AutoCloseable {
             byte[] vBytes = v.getBytes(StandardCharsets.UTF_8);
 
             var vSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, vBytes);
-            return new MyString((MemorySegment) MYSTRING_NEW_UNSAFE.invokeExact(vSeg, (long) vBytes.length));
+            var vSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(vSlice, 0L, vSeg);
+            DiplomatLib.VH_SV_LEN.set(vSlice, 0L, (long) vBytes.length);
+            return new MyString((MemorySegment) MYSTRING_NEW_UNSAFE.invokeExact(vSlice));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {
@@ -97,12 +103,15 @@ public class MyString implements AutoCloseable {
     }
 
     public static MyString newOwned(String v) {
-        try {
+        try (var arena = Arena.ofConfined()) {
             byte[] vBytes = v.getBytes(StandardCharsets.UTF_8);
             var vSrc = MemorySegment.ofArray(vBytes);
             var vSeg = DiplomatLib.diplomatAlloc((long) vBytes.length, 1L).reinterpret((long) vBytes.length);
             MemorySegment.copy(vSrc, 0, vSeg, 0, (long) vBytes.length);
-            return new MyString((MemorySegment) MYSTRING_NEW_OWNED.invokeExact(vSeg, (long) vBytes.length));
+            var vSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(vSlice, 0L, vSeg);
+            DiplomatLib.VH_SV_LEN.set(vSlice, 0L, (long) vBytes.length);
+            return new MyString((MemorySegment) MYSTRING_NEW_OWNED.invokeExact(vSlice));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {
@@ -120,7 +129,10 @@ public class MyString implements AutoCloseable {
                 vSeg.set(ValueLayout.ADDRESS, vOff, vData_i);
                 vSeg.set(ValueLayout.JAVA_LONG, vOff + 8L, (long) vBytes_i.length);
             }
-            return new MyString((MemorySegment) MYSTRING_NEW_FROM_FIRST.invokeExact(vSeg, (long) v.length));
+            var vSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(vSlice, 0L, vSeg);
+            DiplomatLib.VH_SV_LEN.set(vSlice, 0L, (long) v.length);
+            return new MyString((MemorySegment) MYSTRING_NEW_FROM_FIRST.invokeExact(vSlice));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {
@@ -134,7 +146,10 @@ public class MyString implements AutoCloseable {
             byte[] fooBytes = foo.getBytes(StandardCharsets.UTF_8);
 
             var fooSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, fooBytes);
-            MYSTRING_STRING_TRANSFORM.invokeExact(fooSeg, (long) fooBytes.length, write);
+            var fooSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(fooSlice, 0L, fooSeg);
+            DiplomatLib.VH_SV_LEN.set(fooSlice, 0L, (long) fooBytes.length);
+            MYSTRING_STRING_TRANSFORM.invokeExact(fooSlice, write);
             return DiplomatLib.writeToString(write);
         } catch (RuntimeException ex) {
             throw ex;
@@ -148,7 +163,10 @@ public class MyString implements AutoCloseable {
             byte[] newStrBytes = newStr.getBytes(StandardCharsets.UTF_8);
 
             var newStrSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, newStrBytes);
-            MYSTRING_SET_STR.invokeExact(handle, newStrSeg, (long) newStrBytes.length);
+            var newStrSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(newStrSlice, 0L, newStrSeg);
+            DiplomatLib.VH_SV_LEN.set(newStrSlice, 0L, (long) newStrBytes.length);
+            MYSTRING_SET_STR.invokeExact(handle, newStrSlice);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

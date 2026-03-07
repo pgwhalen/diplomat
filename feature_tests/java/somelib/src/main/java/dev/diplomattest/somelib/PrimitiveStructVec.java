@@ -51,7 +51,7 @@ public class PrimitiveStructVec implements AutoCloseable {
         );
         PRIMITIVESTRUCTVEC_TAKE_SLICE_FROM_OTHER_NAMESPACE = LINKER.downcallHandle(
             LIB.find("PrimitiveStructVec_take_slice_from_other_namespace").orElseThrow(),
-            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
     }
 
@@ -87,7 +87,10 @@ public class PrimitiveStructVec implements AutoCloseable {
                 slSeg.asSlice(i * RenamedStructWithAttrs.LAYOUT.byteSize(), RenamedStructWithAttrs.LAYOUT.byteSize())
                     .copyFrom(sl[i].toNative(arena));
             }
-            PRIMITIVESTRUCTVEC_TAKE_SLICE_FROM_OTHER_NAMESPACE.invokeExact(slSeg, (long) sl.length);
+            var slSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(slSlice, 0L, slSeg);
+            DiplomatLib.VH_SV_LEN.set(slSlice, 0L, (long) sl.length);
+            PRIMITIVESTRUCTVEC_TAKE_SLICE_FROM_OTHER_NAMESPACE.invokeExact(slSlice);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

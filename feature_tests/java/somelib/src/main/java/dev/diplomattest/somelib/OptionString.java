@@ -26,7 +26,7 @@ public class OptionString implements AutoCloseable {
         );
         OPTIONSTRING_NEW = LINKER.downcallHandle(
             LIB.find("OptionString_new").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         OPTIONSTRING_WRITE = LINKER.downcallHandle(
             LIB.find("OptionString_write").orElseThrow(),
@@ -54,7 +54,10 @@ public class OptionString implements AutoCloseable {
             byte[] diplomatStrBytes = diplomatStr.getBytes(StandardCharsets.UTF_8);
 
             var diplomatStrSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, diplomatStrBytes);
-            var resultAddr = (MemorySegment) OPTIONSTRING_NEW.invokeExact(diplomatStrSeg, (long) diplomatStrBytes.length);
+            var diplomatStrSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(diplomatStrSlice, 0L, diplomatStrSeg);
+            DiplomatLib.VH_SV_LEN.set(diplomatStrSlice, 0L, (long) diplomatStrBytes.length);
+            var resultAddr = (MemorySegment) OPTIONSTRING_NEW.invokeExact(diplomatStrSlice);
             return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new OptionString(resultAddr));
         } catch (RuntimeException ex) {
             throw ex;

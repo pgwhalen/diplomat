@@ -22,7 +22,7 @@ public class Utf16Wrap implements AutoCloseable {
         );
         UTF16WRAP_FROM_UTF16 = LINKER.downcallHandle(
             LIB.find("Utf16Wrap_from_utf16").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         UTF16WRAP_GET_DEBUG_STR = LINKER.downcallHandle(
             LIB.find("Utf16Wrap_get_debug_str").orElseThrow(),
@@ -41,7 +41,10 @@ public class Utf16Wrap implements AutoCloseable {
             char[] inputChars = input.toCharArray();
 
             var inputSeg = arena.allocateFrom(ValueLayout.JAVA_CHAR, inputChars);
-            this.handle = (MemorySegment) UTF16WRAP_FROM_UTF16.invokeExact(inputSeg, (long) inputChars.length);
+            var inputSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(inputSlice, 0L, inputSeg);
+            DiplomatLib.VH_SV_LEN.set(inputSlice, 0L, (long) inputChars.length);
+            this.handle = (MemorySegment) UTF16WRAP_FROM_UTF16.invokeExact(inputSlice);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

@@ -25,7 +25,7 @@ public class NestedBorrowedFields {
         LIB = SymbolLookup.loaderLookup();
         NESTEDBORROWEDFIELDS_FROM_BAR_AND_FOO_AND_STRINGS = LINKER.downcallHandle(
             LIB.find("NestedBorrowedFields_from_bar_and_foo_and_strings").orElseThrow(),
-            FunctionDescriptor.of(NestedBorrowedFields.LAYOUT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(NestedBorrowedFields.LAYOUT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
     }
 
@@ -80,7 +80,19 @@ public class NestedBorrowedFields {
             byte[] utf8StrZBytes = utf8StrZ.getBytes(StandardCharsets.UTF_8);
 
             var utf8StrZSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, utf8StrZBytes);
-            return NestedBorrowedFields.fromNative((MemorySegment) NESTEDBORROWEDFIELDS_FROM_BAR_AND_FOO_AND_STRINGS.invokeExact((SegmentAllocator) arena, bar.handle, foo.handle, dstr16XSeg, (long) dstr16XChars.length, dstr16ZSeg, (long) dstr16ZChars.length, utf8StrYSeg, (long) utf8StrYBytes.length, utf8StrZSeg, (long) utf8StrZBytes.length));
+            var dstr16XSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(dstr16XSlice, 0L, dstr16XSeg);
+            DiplomatLib.VH_SV_LEN.set(dstr16XSlice, 0L, (long) dstr16XChars.length);
+            var dstr16ZSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(dstr16ZSlice, 0L, dstr16ZSeg);
+            DiplomatLib.VH_SV_LEN.set(dstr16ZSlice, 0L, (long) dstr16ZChars.length);
+            var utf8StrYSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(utf8StrYSlice, 0L, utf8StrYSeg);
+            DiplomatLib.VH_SV_LEN.set(utf8StrYSlice, 0L, (long) utf8StrYBytes.length);
+            var utf8StrZSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(utf8StrZSlice, 0L, utf8StrZSeg);
+            DiplomatLib.VH_SV_LEN.set(utf8StrZSlice, 0L, (long) utf8StrZBytes.length);
+            return NestedBorrowedFields.fromNative((MemorySegment) NESTEDBORROWEDFIELDS_FROM_BAR_AND_FOO_AND_STRINGS.invokeExact((SegmentAllocator) arena, bar.handle, foo.handle, dstr16XSlice, dstr16ZSlice, utf8StrYSlice, utf8StrZSlice));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

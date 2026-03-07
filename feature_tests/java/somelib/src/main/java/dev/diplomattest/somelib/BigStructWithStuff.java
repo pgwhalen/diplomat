@@ -41,7 +41,7 @@ public class BigStructWithStuff {
         );
         BIGSTRUCTWITHSTUFF_ASSERT_SLICE = LINKER.downcallHandle(
             LIB.find("BigStructWithStuff_assert_slice").orElseThrow(),
-            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.JAVA_SHORT)
+            FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.JAVA_SHORT)
         );
     }
 
@@ -101,7 +101,10 @@ public class BigStructWithStuff {
                 sliceSeg.asSlice(i * BigStructWithStuff.LAYOUT.byteSize(), BigStructWithStuff.LAYOUT.byteSize())
                     .copyFrom(slice[i].toNative(arena));
             }
-            BIGSTRUCTWITHSTUFF_ASSERT_SLICE.invokeExact(sliceSeg, (long) slice.length, secondValue);
+            var sliceSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(sliceSlice, 0L, sliceSeg);
+            DiplomatLib.VH_SV_LEN.set(sliceSlice, 0L, (long) slice.length);
+            BIGSTRUCTWITHSTUFF_ASSERT_SLICE.invokeExact(sliceSlice, secondValue);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

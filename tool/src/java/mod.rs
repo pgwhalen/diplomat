@@ -833,9 +833,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             | Type::Slice(Slice::Primitive(_, _))
             | Type::Slice(Slice::Strs(_))
             | Type::Slice(Slice::Struct(_, _)) => {
-                // Slices are passed as { ADDRESS data, JAVA_LONG len }
-                layouts.push("ValueLayout.ADDRESS".to_string());
-                layouts.push("ValueLayout.JAVA_LONG".to_string());
+                // Slices are passed as DiplomatSlice struct { ADDRESS data, JAVA_LONG len }
+                layouts.push("DiplomatLib.DIPLOMAT_STRING_VIEW".to_string());
             }
             Type::Callback(_) => {
                 layouts.push("DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT".to_string());
@@ -1106,6 +1105,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let mut trait_setup_params: Vec<(String, String)> = Vec::new();
         // Track if any struct params need arena for toNative
         let mut has_struct_param = false;
+        // Track if any slice params need arena for DiplomatSlice struct packing
+        let mut has_slice_param = false;
         // Track struct ref params needing pre-call allocation and post-call writeback
         let mut struct_ref_pre_lines: Vec<String> = Vec::new();
         let mut struct_ref_post_lines: Vec<String> = Vec::new();
@@ -1144,6 +1145,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             let param_name = self.formatter.fmt_param_name(param.name.as_str());
             if matches!(&param.ty, Type::Struct(_)) {
                 has_struct_param = true;
+            }
+            if matches!(&param.ty, Type::Slice(_)) {
+                has_slice_param = true;
             }
             self.gen_java_param(
                 &param.ty,
@@ -1218,6 +1222,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let needs_arena = !string_params.is_empty()
             || !slice_params.is_empty()
             || !str_slice_params.is_empty()
+            || has_slice_param
             || has_struct_param
             || returns_struct
             || returns_slice
@@ -1788,97 +1793,126 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             Type::Slice(Slice::Str(None, encoding)) => {
                 // Owned string param: allocate via diplomat_alloc (Rust takes ownership)
                 java_params.push(format!("String {param_name}"));
+                let slice_var = format!("{param_name}Slice");
                 match encoding {
                     StringEncoding::UnvalidatedUtf16 => {
                         nullable_setup_lines.push(format!(
                             "char[] {param_name}Chars = {param_name}.toCharArray();\n\
                              \x20           var {param_name}Src = MemorySegment.ofArray({param_name}Chars);\n\
                              \x20           var {param_name}Seg = DiplomatLib.diplomatAlloc((long) {param_name}Chars.length * 2L, 2L).reinterpret((long) {param_name}Chars.length * 2L);\n\
-                             \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}Chars.length * 2L);"
+                             \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}Chars.length * 2L);\n\
+                             \x20           var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
+                             \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
+                             \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}Chars.length);"
                         ));
-                        invoke_args.push(format!("{param_name}Seg"));
-                        invoke_args.push(format!("(long) {param_name}Chars.length"));
                     }
                     _ => {
                         nullable_setup_lines.push(format!(
                             "byte[] {param_name}Bytes = {param_name}.getBytes(StandardCharsets.UTF_8);\n\
                              \x20           var {param_name}Src = MemorySegment.ofArray({param_name}Bytes);\n\
                              \x20           var {param_name}Seg = DiplomatLib.diplomatAlloc((long) {param_name}Bytes.length, 1L).reinterpret((long) {param_name}Bytes.length);\n\
-                             \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}Bytes.length);"
+                             \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}Bytes.length);\n\
+                             \x20           var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
+                             \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
+                             \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}Bytes.length);"
                         ));
-                        invoke_args.push(format!("{param_name}Seg"));
-                        invoke_args.push(format!("(long) {param_name}Bytes.length"));
                     }
                 }
+                invoke_args.push(slice_var);
             }
             Type::Slice(Slice::Str(Some(_), encoding)) => {
                 // Borrowed string param: allocate in Arena (freed when arena closes)
                 java_params.push(format!("String {param_name}"));
                 string_params.push((param_name.to_string(), *encoding));
+                let slice_var = format!("{param_name}Slice");
                 match encoding {
                     StringEncoding::UnvalidatedUtf16 => {
-                        invoke_args.push(format!("{param_name}Seg"));
-                        invoke_args.push(format!("(long) {param_name}Chars.length"));
+                        nullable_setup_lines.push(format!(
+                            "var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
+                             \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
+                             \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}Chars.length);"
+                        ));
                     }
                     _ => {
-                        invoke_args.push(format!("{param_name}Seg"));
-                        invoke_args.push(format!("(long) {param_name}Bytes.length"));
+                        nullable_setup_lines.push(format!(
+                            "var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
+                             \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
+                             \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}Bytes.length);"
+                        ));
                     }
                 }
+                invoke_args.push(slice_var);
             }
             Type::Slice(Slice::Primitive(MaybeOwn::Own, prim)) => {
                 // Owned slice param: allocate via diplomat_alloc (Rust takes ownership)
                 let java_type = self.formatter.fmt_primitive_as_java(*prim);
                 java_params.push(format!("{java_type}[] {param_name}"));
+                let slice_var = format!("{param_name}Slice");
                 if matches!(prim, hir::PrimitiveType::Bool) {
                     nullable_setup_lines.push(format!(
                         "byte[] {param_name}Bytes = new byte[{param_name}.length];\n\
                          \x20           for (int i = 0; i < {param_name}.length; i++) {param_name}Bytes[i] = {param_name}[i] ? (byte) 1 : (byte) 0;\n\
                          \x20           var {param_name}Src = MemorySegment.ofArray({param_name}Bytes);\n\
                          \x20           var {param_name}Seg = DiplomatLib.diplomatAlloc((long) {param_name}.length, 1L).reinterpret((long) {param_name}.length);\n\
-                         \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}.length);"
+                         \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}.length);\n\
+                         \x20           var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
+                         \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
+                         \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}.length);"
                     ));
                 } else {
-                    let layout = self.formatter.fmt_primitive_as_ffi(*prim);
                     let (elem_size, elem_align) = self.formatter.primitive_size_align(*prim);
                     nullable_setup_lines.push(format!(
                         "var {param_name}Src = MemorySegment.ofArray({param_name});\n\
                          \x20           var {param_name}Seg = DiplomatLib.diplomatAlloc((long) {param_name}.length * {elem_size}L, {elem_align}L).reinterpret((long) {param_name}.length * {elem_size}L);\n\
-                         \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}.length * {elem_size}L);"
+                         \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}.length * {elem_size}L);\n\
+                         \x20           var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
+                         \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
+                         \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}.length);"
                     ));
-                    let _ = layout; // layout used for borrowed path; owned uses raw byte copy
                 }
-                invoke_args.push(format!("{param_name}Seg"));
-                invoke_args.push(format!("(long) {param_name}.length"));
+                invoke_args.push(slice_var);
             }
             Type::Slice(Slice::Primitive(_, prim)) => {
                 // Borrowed slice param: allocate in Arena (freed when arena closes)
                 let java_type = self.formatter.fmt_primitive_as_java(*prim);
                 java_params.push(format!("{java_type}[] {param_name}"));
                 slice_params.push((param_name.to_string(), *prim));
-                invoke_args.push(format!("{param_name}Seg"));
-                invoke_args.push(format!("(long) {param_name}.length"));
+                let slice_var = format!("{param_name}Slice");
+                nullable_setup_lines.push(format!(
+                    "var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
+                     \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
+                     \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}.length);"
+                ));
+                invoke_args.push(slice_var);
             }
             Type::Slice(Slice::Strs(encoding)) => {
                 java_params.push(format!("String[] {param_name}"));
                 str_slice_params.push((param_name.to_string(), *encoding));
-                invoke_args.push(format!("{param_name}Seg"));
-                invoke_args.push(format!("(long) {param_name}.length"));
+                let slice_var = format!("{param_name}Slice");
+                nullable_setup_lines.push(format!(
+                    "var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
+                     \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
+                     \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}.length);"
+                ));
+                invoke_args.push(slice_var);
             }
             Type::Slice(Slice::Struct(borrow, st)) => {
                 let type_name = self.formatter.fmt_type_name(st.id()).to_string();
                 java_params.push(format!("{type_name}[] {param_name}"));
                 *has_struct_param = true;
                 let seg_name = format!("{param_name}Seg");
+                let slice_var = format!("{param_name}Slice");
                 struct_ref_pre_lines.push(format!(
                     "MemorySegment {seg_name} = arena.allocate({type_name}.LAYOUT, {param_name}.length);\n\
                      \x20           for (int i = 0; i < {param_name}.length; i++) {{\n\
                      \x20               {seg_name}.asSlice(i * {type_name}.LAYOUT.byteSize(), {type_name}.LAYOUT.byteSize())\n\
                      \x20                   .copyFrom({param_name}[i].toNative(arena));\n\
-                     \x20           }}"
+                     \x20           }}\n\
+                     \x20           var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
+                     \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {seg_name});\n\
+                     \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}.length);"
                 ));
-                invoke_args.push(seg_name.clone());
-                invoke_args.push(format!("(long) {param_name}.length"));
+                invoke_args.push(slice_var);
                 if borrow.mutability().is_mutable() {
                     struct_ref_post_lines.push(format!(
                         "for (int i = 0; i < {param_name}.length; i++) {{\n\

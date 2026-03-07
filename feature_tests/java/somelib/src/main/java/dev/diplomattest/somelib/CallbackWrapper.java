@@ -48,7 +48,7 @@ public class CallbackWrapper {
         );
         CALLBACKWRAPPER_TEST_SLICE_CB_ARG = LINKER.downcallHandle(
             LIB.find("CallbackWrapper_test_slice_cb_arg").orElseThrow(),
-            FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
+            FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
         );
     }
 
@@ -354,7 +354,10 @@ public class CallbackWrapper {
             DiplomatLib.VH_CB_DATA.set(fNative, 0L, fId);
             DiplomatLib.VH_CB_RUN.set(fNative, 0L, UPCALL_testSliceCbArg_f);
             DiplomatLib.VH_CB_DESTRUCTOR.set(fNative, 0L, DiplomatLib.DESTRUCTOR_STUB);
-            CALLBACKWRAPPER_TEST_SLICE_CB_ARG.invokeExact(argSeg, (long) arg.length, fNative);
+            var argSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(argSlice, 0L, argSeg);
+            DiplomatLib.VH_SV_LEN.set(argSlice, 0L, (long) arg.length);
+            CALLBACKWRAPPER_TEST_SLICE_CB_ARG.invokeExact(argSlice, fNative);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

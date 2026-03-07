@@ -33,11 +33,11 @@ public class Opaque implements AutoCloseable {
         );
         OPAQUE_TRY_FROM_UTF8 = LINKER.downcallHandle(
             LIB.find("Opaque_try_from_utf8").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         OPAQUE_FROM_STR = LINKER.downcallHandle(
             LIB.find("Opaque_from_str").orElseThrow(),
-            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
+            FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         OPAQUE_GET_DEBUG_STR = LINKER.downcallHandle(
             LIB.find("Opaque_get_debug_str").orElseThrow(),
@@ -91,7 +91,10 @@ public class Opaque implements AutoCloseable {
             byte[] inputBytes = input.getBytes(StandardCharsets.UTF_8);
 
             var inputSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, inputBytes);
-            var resultAddr = (MemorySegment) OPAQUE_TRY_FROM_UTF8.invokeExact(inputSeg, (long) inputBytes.length);
+            var inputSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(inputSlice, 0L, inputSeg);
+            DiplomatLib.VH_SV_LEN.set(inputSlice, 0L, (long) inputBytes.length);
+            var resultAddr = (MemorySegment) OPAQUE_TRY_FROM_UTF8.invokeExact(inputSlice);
             return resultAddr.equals(MemorySegment.NULL) ? Optional.empty() : Optional.of(new Opaque(resultAddr));
         } catch (RuntimeException ex) {
             throw ex;
@@ -105,7 +108,10 @@ public class Opaque implements AutoCloseable {
             byte[] inputBytes = input.getBytes(StandardCharsets.UTF_8);
 
             var inputSeg = arena.allocateFrom(ValueLayout.JAVA_BYTE, inputBytes);
-            return new Opaque((MemorySegment) OPAQUE_FROM_STR.invokeExact(inputSeg, (long) inputBytes.length));
+            var inputSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(inputSlice, 0L, inputSeg);
+            DiplomatLib.VH_SV_LEN.set(inputSlice, 0L, (long) inputBytes.length);
+            return new Opaque((MemorySegment) OPAQUE_FROM_STR.invokeExact(inputSlice));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {
