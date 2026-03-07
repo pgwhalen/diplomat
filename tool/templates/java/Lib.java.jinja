@@ -45,7 +45,10 @@ public final class DiplomatLib {
     }
 
     static void unregisterCallback(MemorySegment data) {
-        PREVENT_GC.remove(data.address());
+        Object cb = PREVENT_GC.remove(data.address());
+        if (cb instanceof AutoCloseable ac) {
+            try { ac.close(); } catch (Exception e) { /* ignore */ }
+        }
     }
 
     @SuppressWarnings("unchecked")
