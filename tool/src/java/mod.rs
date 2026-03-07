@@ -436,6 +436,17 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let type_name = self.fmt_type_name_str(ty);
                 Some(format!("{type_name}.LAYOUT"))
             }
+            Type::Slice(_) => Some("DiplomatLib.DIPLOMAT_STRING_VIEW".to_string()),
+            Type::DiplomatOption(inner) => {
+                let inner_layout = self.field_layout_element(inner);
+                let (_inner_size, inner_align) = self.field_size_align(inner.as_ref());
+                let padding_after_bool = inner_align.saturating_sub(1);
+                if padding_after_bool > 0 {
+                    Some(format!("MemoryLayout.structLayout({inner_layout}.withName(\"value\"), ValueLayout.JAVA_BOOLEAN.withName(\"is_ok\"), MemoryLayout.paddingLayout({padding_after_bool}))"))
+                } else {
+                    Some(format!("MemoryLayout.structLayout({inner_layout}.withName(\"value\"), ValueLayout.JAVA_BOOLEAN.withName(\"is_ok\"))"))
+                }
+            }
             _ => None,
         }
     }
@@ -869,12 +880,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     }
 
     fn get_type_layout(&self, ty: &OutType) -> Option<String> {
-        if matches!(
-            ty,
-            Type::Slice(Slice::Primitive(_, _)) | Type::Slice(Slice::Struct(_, _))
-        ) {
-            return Some("DiplomatLib.DIPLOMAT_STRING_VIEW".to_string());
-        }
         match self.type_to_ffi_layout(ty) {
             some @ Some(_) => some,
             None => {
@@ -3217,23 +3222,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
 
     fn field_layout_element<P: hir::TyPosition>(&self, ty: &Type<P>) -> String {
-        if let Some(layout) = self.type_to_ffi_layout(ty) {
-            return layout;
-        }
-        match ty {
-            Type::Slice(_) => "DiplomatLib.DIPLOMAT_STRING_VIEW".to_string(),
-            Type::DiplomatOption(inner) => {
-                let inner_layout = self.field_layout_element(inner);
-                let (_inner_size, inner_align) = self.field_size_align(inner.as_ref());
-                let padding_after_bool = inner_align.saturating_sub(1);
-                if padding_after_bool > 0 {
-                    format!("MemoryLayout.structLayout({inner_layout}.withName(\"value\"), ValueLayout.JAVA_BOOLEAN.withName(\"is_ok\"), MemoryLayout.paddingLayout({padding_after_bool}))")
-                } else {
-                    format!("MemoryLayout.structLayout({inner_layout}.withName(\"value\"), ValueLayout.JAVA_BOOLEAN.withName(\"is_ok\"))")
-                }
-            }
-            _ => "ValueLayout.JAVA_BYTE".to_string(),
-        }
+        self.type_to_ffi_layout(ty)
+            .unwrap_or_else(|| "ValueLayout.JAVA_BYTE".to_string())
     }
 
     fn field_java_type<P: hir::TyPosition>(&self, ty: &Type<P>) -> String {
