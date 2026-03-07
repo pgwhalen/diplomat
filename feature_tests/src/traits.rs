@@ -10,7 +10,6 @@ mod ffi {
         fn test_void_trait_fn(&self);
         fn test_struct_trait_fn(&self, s: TraitTestingStruct) -> i32;
         #[diplomat::attr(kotlin, disable)]
-        #[diplomat::attr(java, disable)]
         fn test_result_output(&self) -> Result<u32, ()>;
     }
 
@@ -31,7 +30,6 @@ mod ffi {
         }
 
         #[diplomat::attr(kotlin, disable)]
-        #[diplomat::attr(java, disable)]
         pub fn test_result_output(t: impl TesterTrait) {
             assert_eq!(t.test_result_output(), Ok(0));
         }

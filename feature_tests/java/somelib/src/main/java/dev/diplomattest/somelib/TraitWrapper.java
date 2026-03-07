@@ -16,6 +16,7 @@ public class TraitWrapper {
     private static final SymbolLookup LIB;
     private static final MethodHandle TRAITWRAPPER_TEST_WITH_TRAIT;
     private static final MethodHandle TRAITWRAPPER_TEST_TRAIT_WITH_STRUCT;
+    private static final MethodHandle TRAITWRAPPER_TEST_RESULT_OUTPUT;
 
     static {
         System.loadLibrary("diplomat_feature_tests");
@@ -27,6 +28,10 @@ public class TraitWrapper {
         TRAITWRAPPER_TEST_TRAIT_WITH_STRUCT = LINKER.downcallHandle(
             LIB.find("TraitWrapper_test_trait_with_struct").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, TesterTrait.TRAIT_STRUCT_LAYOUT)
+        );
+        TRAITWRAPPER_TEST_RESULT_OUTPUT = LINKER.downcallHandle(
+            LIB.find("TraitWrapper_test_result_output").orElseThrow(),
+            FunctionDescriptor.ofVoid(TesterTrait.TRAIT_STRUCT_LAYOUT)
         );
     }
 
@@ -70,6 +75,17 @@ public class TraitWrapper {
         try (var arena = Arena.ofConfined()) {
             var tNative = TesterTrait.createNative(t, arena);
             return (int) TRAITWRAPPER_TEST_TRAIT_WITH_STRUCT.invokeExact(tNative);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static void testResultOutput(TesterTrait t) {
+        try (var arena = Arena.ofConfined()) {
+            var tNative = TesterTrait.createNative(t, arena);
+            TRAITWRAPPER_TEST_RESULT_OUTPUT.invokeExact(tNative);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

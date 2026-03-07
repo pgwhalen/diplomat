@@ -10,6 +10,7 @@ public interface TesterTrait {
     int testTraitFn(int x);
     void testVoidTraitFn();
     int testStructTraitFn(TraitTestingStruct s);
+    int testResultOutput();
 
     StructLayout VTABLE_LAYOUT = MemoryLayout.structLayout(
         ValueLayout.ADDRESS.withName("destructor"),
@@ -17,7 +18,8 @@ public interface TesterTrait {
         ValueLayout.JAVA_LONG.withName("alignment"),
         ValueLayout.ADDRESS.withName("run_testTraitFn_callback"),
         ValueLayout.ADDRESS.withName("run_testVoidTraitFn_callback"),
-        ValueLayout.ADDRESS.withName("run_testStructTraitFn_callback")
+        ValueLayout.ADDRESS.withName("run_testStructTraitFn_callback"),
+        ValueLayout.ADDRESS.withName("run_testResultOutput_callback")
     );
     StructLayout TRAIT_STRUCT_LAYOUT = MemoryLayout.structLayout(
         ValueLayout.ADDRESS.withName("data"),
@@ -30,6 +32,7 @@ public interface TesterTrait {
     VarHandle VH_RUN_TEST_TRAIT_FN = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("run_testTraitFn_callback"));
     VarHandle VH_RUN_TEST_VOID_TRAIT_FN = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("run_testVoidTraitFn_callback"));
     VarHandle VH_RUN_TEST_STRUCT_TRAIT_FN = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("run_testStructTraitFn_callback"));
+    VarHandle VH_RUN_TEST_RESULT_OUTPUT = TRAIT_STRUCT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("vtable"), MemoryLayout.PathElement.groupElement("run_testResultOutput_callback"));
 
     final class Statics {
         private Statics() {}
@@ -44,6 +47,15 @@ public interface TesterTrait {
         private static int traitRunner_testStructTraitFn(MemorySegment data, MemorySegment s) {
             TesterTrait impl_ = DiplomatLib.getCallback(data, TesterTrait.class);
             return impl_.testStructTraitFn(TraitTestingStruct.fromNative(s));
+        }
+        private static long traitRunner_testResultOutput(MemorySegment data) {
+            TesterTrait impl_ = DiplomatLib.getCallback(data, TesterTrait.class);
+            try {
+                var val = impl_.testResultOutput();
+                return ((long)val << 32);
+            } catch (Exception e) {
+                return 1L;
+            }
         }
         static final MethodHandle MH_TEST_TRAIT_FN;
         static final MemorySegment UPCALL_testTraitFn;
@@ -90,6 +102,21 @@ public interface TesterTrait {
                 throw new ExceptionInInitializerError(ex);
             }
         }
+        static final MethodHandle MH_TEST_RESULT_OUTPUT;
+        static final MemorySegment UPCALL_testResultOutput;
+        static {
+            try {
+                MH_TEST_RESULT_OUTPUT = MethodHandles.lookup().findStatic(
+                    Statics.class, "traitRunner_testResultOutput",
+                    MethodType.methodType(long.class, MemorySegment.class));
+                UPCALL_testResultOutput = DiplomatLib.LINKER_SHARED.upcallStub(
+                    MH_TEST_RESULT_OUTPUT,
+                    FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS),
+                    Arena.global());
+            } catch (ReflectiveOperationException ex) {
+                throw new ExceptionInInitializerError(ex);
+            }
+        }
     }
 
     static MemorySegment createNative(Object impl_, Arena arena) {
@@ -102,6 +129,7 @@ public interface TesterTrait {
         VH_RUN_TEST_TRAIT_FN.set(seg, 0L, Statics.UPCALL_testTraitFn);
         VH_RUN_TEST_VOID_TRAIT_FN.set(seg, 0L, Statics.UPCALL_testVoidTraitFn);
         VH_RUN_TEST_STRUCT_TRAIT_FN.set(seg, 0L, Statics.UPCALL_testStructTraitFn);
+        VH_RUN_TEST_RESULT_OUTPUT.set(seg, 0L, Statics.UPCALL_testResultOutput);
         return seg;
     }
 }

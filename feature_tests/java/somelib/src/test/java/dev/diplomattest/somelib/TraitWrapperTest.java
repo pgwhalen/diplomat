@@ -21,6 +21,11 @@ class TraitWrapperTest {
             public int testStructTraitFn(TraitTestingStruct s) {
                 return s.x + s.y;
             }
+
+            @Override
+            public int testResultOutput() {
+                return 0;
+            }
         };
 
         int result = TraitWrapper.testWithTrait(impl, 5);
@@ -44,9 +49,40 @@ class TraitWrapperTest {
             public int testStructTraitFn(TraitTestingStruct s) {
                 return s.x + s.y;
             }
+
+            @Override
+            public int testResultOutput() {
+                return 0;
+            }
         };
 
         int result = TraitWrapper.testTraitWithStruct(impl);
         assertEquals(6, result);
+    }
+
+    @Test
+    void testResultOutput() {
+        TesterTrait impl = new TesterTrait() {
+            @Override
+            public int testTraitFn(int x) {
+                return x;
+            }
+
+            @Override
+            public void testVoidTraitFn() {
+            }
+
+            @Override
+            public int testStructTraitFn(TraitTestingStruct s) {
+                return s.x + s.y;
+            }
+
+            @Override
+            public int testResultOutput() {
+                return 0;
+            }
+        };
+
+        TraitWrapper.testResultOutput(impl);
     }
 }

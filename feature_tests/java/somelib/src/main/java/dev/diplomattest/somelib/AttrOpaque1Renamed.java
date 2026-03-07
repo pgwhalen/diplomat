@@ -71,10 +71,15 @@ public class AttrOpaque1Renamed implements AutoCloseable {
         void invoke();
     }
 
-    private static void runCallback_testNamespacedCallback_t(MemorySegment data) {
+    private static long runCallback_testNamespacedCallback_t(MemorySegment data) {
         @SuppressWarnings("unchecked")
         TestNamespacedCallbackT cb = DiplomatLib.getCallback(data, TestNamespacedCallbackT.class);
-        cb.invoke();
+        try {
+            cb.invoke();
+            return 0L;
+        } catch (Exception e) {
+            return 1L;
+        }
     }
 
     private static final MethodHandle MH_RUN_testNamespacedCallback_t;
@@ -83,10 +88,10 @@ public class AttrOpaque1Renamed implements AutoCloseable {
         try {
             MH_RUN_testNamespacedCallback_t = MethodHandles.lookup().findStatic(
                 AttrOpaque1Renamed.class, "runCallback_testNamespacedCallback_t",
-                MethodType.methodType(void.class, MemorySegment.class));
+                MethodType.methodType(long.class, MemorySegment.class));
             UPCALL_testNamespacedCallback_t = DiplomatLib.LINKER_SHARED.upcallStub(
                 MH_RUN_testNamespacedCallback_t,
-                FunctionDescriptor.ofVoid(ValueLayout.ADDRESS),
+                FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS),
                 Arena.global());
         } catch (ReflectiveOperationException ex) {
             throw new ExceptionInInitializerError(ex);

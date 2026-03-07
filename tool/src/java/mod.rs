@@ -930,6 +930,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
     }
 
+
     /// Build the StructLayout definition string for a result type.
     /// The C ABI result layout is: union { Ok ok; Err err; } + bool is_ok;
     /// Returns (layout_string, is_ok_offset).
@@ -2195,7 +2196,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
 
         let return_info = self.callback_return_type_input(output);
-        let interface_return_type = return_info.java_type;
+        // Interface return type is the user-facing success type, not the native ABI type
+        let interface_return_type = self.trait_method_return_type(output);
         let return_layout = return_info.layout;
         let returns_void = return_info.is_void;
 
@@ -2331,6 +2333,11 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     is_void: true,
                 },
             },
+            ReturnType::Fallible(_, _) => ReturnTypeInfo {
+                java_type: "long".to_string(),
+                layout: Some("ValueLayout.JAVA_LONG".to_string()),
+                is_void: false,
+            },
             _ => ReturnTypeInfo {
                 java_type: "void".to_string(),
                 layout: None,
@@ -2388,6 +2395,35 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
     }
 
+    /// Compute the bit shift for the payload in a Rust Result returned via register.
+    /// For Result<T, E>, Rust lays out: discriminant at offset 0, payload at offset = max_align.
+    /// The shift is max_align * 8 bits.
+    fn result_payload_shift_bits(
+        &self,
+        ok: &SuccessType<InputOnly>,
+        err: &Option<Type<InputOnly>>,
+    ) -> usize {
+        let ok_align = match ok {
+            SuccessType::OutType(ty) => self.field_size_align(ty).1,
+            _ => 0,
+        };
+        let err_align = match err {
+            Some(ty) => self.field_size_align(ty).1,
+            None => 0,
+        };
+        ok_align.max(err_align).max(1) * 8
+    }
+
+    /// Generate a Java expression to pack an ok value into a long for Result register return.
+    /// disc=0 (Ok) in lower bits, value shifted up by `shift` bits.
+    fn gen_result_ok_pack_expr<P: hir::TyPosition>(&self, ty: &Type<P>, shift: usize) -> String {
+        match ty {
+            Type::Primitive(_) => format!("((long)val << {shift})"),
+            Type::Enum(_) => format!("((long)val.toNative() << {shift})"),
+            _ => format!("0L /* unsupported result ok type */"),
+        }
+    }
+
     /// Generate the @FunctionalInterface declaration for a callback.
     fn gen_callback_interface(&self, info: &JavaCallbackInfo) -> String {
         let params_str = info.interface_params.join(", ");
@@ -2415,7 +2451,30 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let invoke_args = arg_exprs.join(", ");
 
         let invoke_expr = format!("cb.invoke({invoke_args})");
-        let body = if info.returns_void {
+        let body = if let ReturnType::Fallible(ok, _err) = cb_output {
+            let shift = self.result_payload_shift_bits(ok, &None);
+            let mut b = String::new();
+            b.push_str("        try {\n");
+            match ok {
+                SuccessType::Unit => {
+                    b.push_str(&format!("            {invoke_expr};\n"));
+                    b.push_str("            return 0L;\n");
+                }
+                SuccessType::OutType(ty) => {
+                    b.push_str(&format!("            var val = {invoke_expr};\n"));
+                    let pack = self.gen_result_ok_pack_expr(ty, shift);
+                    b.push_str(&format!("            return {pack};\n"));
+                }
+                _ => {
+                    b.push_str(&format!("            {invoke_expr};\n"));
+                    b.push_str("            return 0L;\n");
+                }
+            }
+            b.push_str("        } catch (Exception e) {\n");
+            b.push_str("            return 1L;\n");
+            b.push_str("        }");
+            b
+        } else if info.returns_void {
             format!("        {invoke_expr};")
         } else {
             let converted = self.callback_return_conversion_input(cb_output, &invoke_expr);
@@ -2496,6 +2555,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 Type::Struct(_) => "MemorySegment",
                 _ => "Object",
             },
+            ReturnType::Fallible(_, _) => "long",
             _ => "void",
         }
     }
@@ -2506,6 +2566,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             ReturnType::Infallible(SuccessType::OutType(ty)) => {
                 self.type_to_method_type_class(ty)
             }
+            ReturnType::Fallible(_, _) => "long.class".to_string(),
             _ => "void.class".to_string(),
         }
     }
@@ -2800,7 +2861,30 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let invoke_args = arg_conversions.join(", ");
         let invoke_expr = format!("impl_.{method_name}({invoke_args})");
 
-        let body = if returns_void {
+        let body = if let ReturnType::Fallible(ok, _err) = &*method.output {
+            let shift = self.result_payload_shift_bits(ok, &None);
+            let mut b = String::new();
+            b.push_str("        try {\n");
+            match ok {
+                SuccessType::Unit => {
+                    b.push_str(&format!("            {invoke_expr};\n"));
+                    b.push_str("            return 0L;\n");
+                }
+                SuccessType::OutType(ty) => {
+                    b.push_str(&format!("            var val = {invoke_expr};\n"));
+                    let pack = self.gen_result_ok_pack_expr(ty, shift);
+                    b.push_str(&format!("            return {pack};\n"));
+                }
+                _ => {
+                    b.push_str(&format!("            {invoke_expr};\n"));
+                    b.push_str("            return 0L;\n");
+                }
+            }
+            b.push_str("        } catch (Exception e) {\n");
+            b.push_str("            return 1L;\n");
+            b.push_str("        }");
+            b
+        } else if returns_void {
             format!("        {invoke_expr};")
         } else {
             let converted =
@@ -2830,7 +2914,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     /// Get the Java return type for a trait method.
     fn trait_method_return_type(&self, output: &ReturnType<InputOnly>) -> String {
         match output {
-            ReturnType::Infallible(success) => match success {
+            ReturnType::Infallible(success) | ReturnType::Fallible(success, _) => match success {
                 SuccessType::Unit => "void".to_string(),
                 SuccessType::OutType(ty) => self.type_to_java_name(ty),
                 _ => "void".to_string(),
