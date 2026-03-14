@@ -342,6 +342,77 @@ fn compute_struct_fields_size_align(
     (offset, max_align)
 }
 
+/// Get Java charset constant for a string encoding.
+fn encoding_charset(encoding: StringEncoding) -> &'static str {
+    match encoding {
+        StringEncoding::UnvalidatedUtf16 => "StandardCharsets.UTF_16LE",
+        _ => "StandardCharsets.UTF_8",
+    }
+}
+
+/// Get the byte multiplier suffix for converting character count to byte length.
+/// Returns " * 2" for UTF-16 (2 bytes per char), "" for UTF-8.
+fn encoding_byte_multiplier(encoding: StringEncoding) -> &'static str {
+    match encoding {
+        StringEncoding::UnvalidatedUtf16 => " * 2",
+        _ => "",
+    }
+}
+
+/// Build a Java FunctionDescriptor string from optional return layout and parameter layouts.
+fn build_function_descriptor(return_layout: Option<&str>, param_layouts: &[String]) -> String {
+    let params_str = param_layouts.join(", ");
+    match (return_layout, param_layouts.is_empty()) {
+        (Some(ret), true) => format!("FunctionDescriptor.of({ret})"),
+        (Some(ret), false) => format!("FunctionDescriptor.of({ret}, {params_str})"),
+        (None, true) => "FunctionDescriptor.ofVoid()".to_string(),
+        (None, false) => format!("FunctionDescriptor.ofVoid({params_str})"),
+    }
+}
+
+/// Check if a method returns via DiplomatWrite.
+fn is_write_return(output: &ReturnType) -> bool {
+    matches!(
+        output,
+        ReturnType::Infallible(SuccessType::Write)
+            | ReturnType::Fallible(SuccessType::Write, _)
+            | ReturnType::Nullable(SuccessType::Write)
+    )
+}
+
+/// Extract the SuccessType from any ReturnType variant.
+fn output_success_type<P: hir::TyPosition>(output: &ReturnType<P>) -> &SuccessType<P> {
+    match output {
+        ReturnType::Infallible(s) | ReturnType::Fallible(s, _) | ReturnType::Nullable(s) => s,
+    }
+}
+
+/// Generate Java code to pack a data pointer and length into a DiplomatSlice struct.
+fn diplomat_slice_pack(slice_var: &str, data_expr: &str, len_expr: &str) -> String {
+    format!(
+        "var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
+         \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {data_expr});\n\
+         \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {len_expr});"
+    )
+}
+
+/// Collect callback declarations (interfaces, runners, statics) from method infos.
+fn collect_callback_declarations(
+    method_lists: &[&[JavaMethodInfo]],
+) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let mut interfaces = Vec::new();
+    let mut runners = Vec::new();
+    let mut statics = Vec::new();
+    for methods in method_lists {
+        for m in methods.iter() {
+            interfaces.extend(m.callback_interfaces.iter().cloned());
+            runners.extend(m.callback_runners.iter().cloned());
+            statics.extend(m.callback_statics.iter().cloned());
+        }
+    }
+    (interfaces, runners, statics)
+}
+
 impl<'cx> ItemGenContext<'_, 'cx> {
     /// Resolve a type's id and format its name as a String.
     fn fmt_type_name_str<P: hir::TyPosition>(&self, ty: &Type<P>) -> String {
@@ -669,18 +740,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             .collect();
 
         // Collect all callback declarations from all methods
-        let all_methods_iter = constructor_methods
-            .iter()
-            .chain(companion_methods.iter())
-            .chain(self_methods.iter());
-        let mut all_cb_interfaces = Vec::new();
-        let mut all_cb_runners = Vec::new();
-        let mut all_cb_statics = Vec::new();
-        for m in all_methods_iter {
-            all_cb_interfaces.extend(m.callback_interfaces.iter().cloned());
-            all_cb_runners.extend(m.callback_runners.iter().cloned());
-            all_cb_statics.extend(m.callback_statics.iter().cloned());
-        }
+        let (all_cb_interfaces, all_cb_runners, all_cb_statics) =
+            collect_callback_declarations(&[&constructor_methods, &companion_methods, &self_methods]);
         let has_callbacks = !all_cb_interfaces.is_empty();
 
         #[derive(Template)]
@@ -767,13 +828,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
 
         // Write returns pass a write buffer pointer as the last parameter
-        let is_write_return = matches!(method.output, ReturnType::Infallible(SuccessType::Write))
-            || matches!(
-                method.output,
-                ReturnType::Fallible(SuccessType::Write, _)
-                    | ReturnType::Nullable(SuccessType::Write)
-            );
-        if is_write_return {
+        if is_write_return(&method.output) {
             param_layouts.push("ValueLayout.ADDRESS".to_string());
         }
 
@@ -789,17 +844,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         // Build the descriptor
         let return_layout =
             self.get_return_layout(method, result_layout_name.as_deref());
-        let descriptor = if let Some(ret) = return_layout {
-            if param_layouts.is_empty() {
-                format!("FunctionDescriptor.of({ret})")
-            } else {
-                format!("FunctionDescriptor.of({ret}, {})", param_layouts.join(", "))
-            }
-        } else if param_layouts.is_empty() {
-            "FunctionDescriptor.ofVoid()".to_string()
-        } else {
-            format!("FunctionDescriptor.ofVoid({})", param_layouts.join(", "))
-        };
+        let descriptor = build_function_descriptor(return_layout.as_deref(), &param_layouts);
 
         JavaNativeMethodInfo {
             handle_name,
@@ -955,16 +1000,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let mut members = Vec::new();
         if let Some(layout) = union_layout {
             members.push(format!("{layout}.withName(\"union_val\")"));
-            // If the other type is smaller, the union is already sized by the larger
-            // But we may need padding after the union to reach union_size
-            let used_size = ok_size_align.0.max(err_size_align.0);
-            let larger_size = ok_size_align.0.max(err_size_align.0);
-            if used_size < larger_size {
-                members.push(format!(
-                    "MemoryLayout.paddingLayout({})",
-                    larger_size - used_size
-                ));
-            }
         }
 
         // is_ok field comes after the union, aligned
@@ -1114,7 +1149,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         let method_name_for_cb = self.formatter.fmt_method_name(method).to_string();
 
-        let _has_struct_self = matches!(self_type, Some(SelfType::Struct(_)));
         if let Some(st) = self_type {
             match st {
                 SelfType::Struct(s) => {
@@ -1168,48 +1202,20 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             );
         }
 
-        let is_write_return = matches!(
-            method.output,
-            ReturnType::Infallible(SuccessType::Write)
-                | ReturnType::Fallible(SuccessType::Write, _)
-                | ReturnType::Nullable(SuccessType::Write)
-        );
+        let is_write_return = is_write_return(&method.output);
         let is_fallible = matches!(method.output, ReturnType::Fallible(_, _));
         let is_nullable = matches!(method.output, ReturnType::Nullable(_));
         let returns_struct = matches!(
-            method.output,
-            ReturnType::Infallible(SuccessType::OutType(Type::Struct(_)))
-        ) || matches!(
-            method.output,
-            ReturnType::Fallible(SuccessType::OutType(Type::Struct(_)), _)
-        ) || matches!(
-            method.output,
-            ReturnType::Nullable(SuccessType::OutType(Type::Struct(_)))
+            output_success_type(&method.output),
+            SuccessType::OutType(Type::Struct(_))
         );
         let returns_slice = matches!(
-            method.output,
-            ReturnType::Infallible(SuccessType::OutType(
+            output_success_type(&method.output),
+            SuccessType::OutType(
                 Type::Slice(Slice::Primitive(_, _))
                     | Type::Slice(Slice::Struct(_, _))
                     | Type::Slice(Slice::Str(None, _))
-            ))
-        ) || matches!(
-            method.output,
-            ReturnType::Fallible(
-                SuccessType::OutType(
-                    Type::Slice(Slice::Primitive(_, _))
-                        | Type::Slice(Slice::Struct(_, _))
-                        | Type::Slice(Slice::Str(None, _))
-                ),
-                _
             )
-        ) || matches!(
-            method.output,
-            ReturnType::Nullable(SuccessType::OutType(
-                Type::Slice(Slice::Primitive(_, _))
-                    | Type::Slice(Slice::Struct(_, _))
-                    | Type::Slice(Slice::Str(None, _))
-            ))
         );
 
         if is_write_return {
@@ -1251,7 +1257,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         // Build the return statement based on output type
         let raw_nullable = is_iterator || is_indexer;
         let return_stmt = if is_fallible || is_nullable {
-            self.gen_result_return_stmt(method, &invoke_call, &abi_handle, is_write_return, is_constructor, struct_fields, raw_nullable)
+            self.gen_result_return_stmt(method, &invoke_call, is_write_return, is_constructor, struct_fields, raw_nullable)
         } else if is_write_return {
             format!("{invoke_call};\n            return DiplomatLib.writeToString(write);")
         } else if is_comparator {
@@ -1265,9 +1271,14 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 ReturnType::Infallible(SuccessType::Unit) => format!("{invoke_call};"),
                 ReturnType::Infallible(SuccessType::OutType(ty)) => {
                     if let Type::Slice(Slice::Primitive(MaybeOwn::Own, prim)) = ty {
-                        self.gen_owned_slice_return_stmt(*prim, &invoke_call)
+                        let (elem_size, elem_align) = self.formatter.primitive_size_align(*prim);
+                        self.gen_owned_slice_return_stmt(elem_size, elem_align, &invoke_call)
                     } else if let Type::Slice(Slice::Str(None, encoding)) = ty {
-                        self.gen_owned_string_return_stmt(*encoding, &invoke_call)
+                        let (elem_size, elem_align) = match encoding {
+                            StringEncoding::UnvalidatedUtf16 => (2usize, 2usize),
+                            _ => (1, 1),
+                        };
+                        self.gen_owned_slice_return_stmt(elem_size, elem_align, &invoke_call)
                     } else if let Type::Slice(Slice::Primitive(_, prim)) = ty {
                         self.gen_slice_return_stmt(*prim, &invoke_call)
                     } else if let Type::Slice(Slice::Struct(_, st)) = ty {
@@ -1496,7 +1507,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         &self,
         method: &Method,
         invoke_call: &str,
-        _abi_handle: &str,
         is_write_return: bool,
         is_constructor: bool,
         struct_fields: Option<&[JavaStructFieldInfo]>,
@@ -1528,7 +1538,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 lines.push("}".to_string());
             }
             ReturnType::Nullable(ok) if raw_nullable => {
-                let ok_extract = self.gen_nullable_raw_extract(ok);
+                let ok_extract = self.gen_nullable_extract(ok, false);
                 lines.push("if (isOk) {".to_string());
                 lines.push(format!("    {ok_extract}"));
                 lines.push("} else {".to_string());
@@ -1536,7 +1546,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 lines.push("}".to_string());
             }
             ReturnType::Nullable(ok) => {
-                let ok_extract = self.gen_nullable_ok_extract(ok);
+                let ok_extract = self.gen_nullable_extract(ok, true);
                 lines.push("if (isOk) {".to_string());
                 lines.push(format!("    {ok_extract}"));
                 lines.push("} else {".to_string());
@@ -1605,31 +1615,32 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
     }
 
-    /// Generate the ok-branch extraction for a nullable return (wrapped in Optional).
-    fn gen_nullable_ok_extract(&self, ok: &SuccessType) -> String {
+    /// Generate the ok-branch extraction for a nullable return.
+    /// When `wrap_optional` is true, wraps in Optional; otherwise returns raw value/null.
+    fn gen_nullable_extract(&self, ok: &SuccessType, wrap_optional: bool) -> String {
         match ok {
             SuccessType::OutType(ty) => {
                 let extract = self.gen_result_value_extract(ty, "result");
-                format!("return Optional.of({extract});")
+                if wrap_optional {
+                    format!("return Optional.of({extract});")
+                } else {
+                    format!("return {extract};")
+                }
             }
             SuccessType::Write => {
-                "return Optional.of(DiplomatLib.writeToString(write));".to_string()
+                if wrap_optional {
+                    "return Optional.of(DiplomatLib.writeToString(write));".to_string()
+                } else {
+                    "return DiplomatLib.writeToString(write);".to_string()
+                }
             }
-            _ => "return Optional.empty();".to_string(),
-        }
-    }
-
-    /// Generate the ok-branch extraction for a raw nullable return (returns value or null).
-    fn gen_nullable_raw_extract(&self, ok: &SuccessType) -> String {
-        match ok {
-            SuccessType::OutType(ty) => {
-                let extract = self.gen_result_value_extract(ty, "result");
-                format!("return {extract};")
+            _ => {
+                if wrap_optional {
+                    "return Optional.empty();".to_string()
+                } else {
+                    "return null;".to_string()
+                }
             }
-            SuccessType::Write => {
-                "return DiplomatLib.writeToString(write);".to_string()
-            }
-            _ => "return null;".to_string(),
         }
     }
 
@@ -1802,9 +1813,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                              \x20           var {param_name}Src = MemorySegment.ofArray({param_name}Chars);\n\
                              \x20           var {param_name}Seg = DiplomatLib.diplomatAlloc((long) {param_name}Chars.length * 2L, 2L).reinterpret((long) {param_name}Chars.length * 2L);\n\
                              \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}Chars.length * 2L);\n\
-                             \x20           var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
-                             \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
-                             \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}Chars.length);"
+                             \x20           {pack}",
+                            pack = diplomat_slice_pack(&slice_var, &format!("{param_name}Seg"), &format!("{param_name}Chars.length"))
                         ));
                     }
                     _ => {
@@ -1813,9 +1823,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                              \x20           var {param_name}Src = MemorySegment.ofArray({param_name}Bytes);\n\
                              \x20           var {param_name}Seg = DiplomatLib.diplomatAlloc((long) {param_name}Bytes.length, 1L).reinterpret((long) {param_name}Bytes.length);\n\
                              \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}Bytes.length);\n\
-                             \x20           var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
-                             \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
-                             \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}Bytes.length);"
+                             \x20           {pack}",
+                            pack = diplomat_slice_pack(&slice_var, &format!("{param_name}Seg"), &format!("{param_name}Bytes.length"))
                         ));
                     }
                 }
@@ -1826,22 +1835,15 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 java_params.push(format!("String {param_name}"));
                 string_params.push((param_name.to_string(), *encoding));
                 let slice_var = format!("{param_name}Slice");
-                match encoding {
-                    StringEncoding::UnvalidatedUtf16 => {
-                        nullable_setup_lines.push(format!(
-                            "var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
-                             \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
-                             \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}Chars.length);"
-                        ));
-                    }
-                    _ => {
-                        nullable_setup_lines.push(format!(
-                            "var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
-                             \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
-                             \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}Bytes.length);"
-                        ));
-                    }
-                }
+                let len_expr = match encoding {
+                    StringEncoding::UnvalidatedUtf16 => format!("{param_name}Chars.length"),
+                    _ => format!("{param_name}Bytes.length"),
+                };
+                nullable_setup_lines.push(diplomat_slice_pack(
+                    &slice_var,
+                    &format!("{param_name}Seg"),
+                    &len_expr,
+                ));
                 invoke_args.push(slice_var);
             }
             Type::Slice(Slice::Primitive(MaybeOwn::Own, prim)) => {
@@ -1856,9 +1858,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                          \x20           var {param_name}Src = MemorySegment.ofArray({param_name}Bytes);\n\
                          \x20           var {param_name}Seg = DiplomatLib.diplomatAlloc((long) {param_name}.length, 1L).reinterpret((long) {param_name}.length);\n\
                          \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}.length);\n\
-                         \x20           var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
-                         \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
-                         \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}.length);"
+                         \x20           {pack}",
+                        pack = diplomat_slice_pack(&slice_var, &format!("{param_name}Seg"), &format!("{param_name}.length"))
                     ));
                 } else {
                     let (elem_size, elem_align) = self.formatter.primitive_size_align(*prim);
@@ -1866,9 +1867,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                         "var {param_name}Src = MemorySegment.ofArray({param_name});\n\
                          \x20           var {param_name}Seg = DiplomatLib.diplomatAlloc((long) {param_name}.length * {elem_size}L, {elem_align}L).reinterpret((long) {param_name}.length * {elem_size}L);\n\
                          \x20           MemorySegment.copy({param_name}Src, 0, {param_name}Seg, 0, (long) {param_name}.length * {elem_size}L);\n\
-                         \x20           var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
-                         \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
-                         \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}.length);"
+                         \x20           {pack}",
+                        pack = diplomat_slice_pack(&slice_var, &format!("{param_name}Seg"), &format!("{param_name}.length"))
                     ));
                 }
                 invoke_args.push(slice_var);
@@ -1879,10 +1879,10 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 java_params.push(format!("{java_type}[] {param_name}"));
                 slice_params.push((param_name.to_string(), *prim));
                 let slice_var = format!("{param_name}Slice");
-                nullable_setup_lines.push(format!(
-                    "var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
-                     \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
-                     \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}.length);"
+                nullable_setup_lines.push(diplomat_slice_pack(
+                    &slice_var,
+                    &format!("{param_name}Seg"),
+                    &format!("{param_name}.length"),
                 ));
                 invoke_args.push(slice_var);
             }
@@ -1890,10 +1890,10 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 java_params.push(format!("String[] {param_name}"));
                 str_slice_params.push((param_name.to_string(), *encoding));
                 let slice_var = format!("{param_name}Slice");
-                nullable_setup_lines.push(format!(
-                    "var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
-                     \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {param_name}Seg);\n\
-                     \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}.length);"
+                nullable_setup_lines.push(diplomat_slice_pack(
+                    &slice_var,
+                    &format!("{param_name}Seg"),
+                    &format!("{param_name}.length"),
                 ));
                 invoke_args.push(slice_var);
             }
@@ -1909,9 +1909,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                      \x20               {seg_name}.asSlice(i * {type_name}.LAYOUT.byteSize(), {type_name}.LAYOUT.byteSize())\n\
                      \x20                   .copyFrom({param_name}[i].toNative(arena));\n\
                      \x20           }}\n\
-                     \x20           var {slice_var} = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);\n\
-                     \x20           DiplomatLib.VH_SV_DATA.set({slice_var}, 0L, {seg_name});\n\
-                     \x20           DiplomatLib.VH_SV_LEN.set({slice_var}, 0L, (long) {param_name}.length);"
+                     \x20           {pack}",
+                    pack = diplomat_slice_pack(&slice_var, &seg_name, &format!("{param_name}.length"))
                 ));
                 invoke_args.push(slice_var);
                 if borrow.mutability().is_mutable() {
@@ -2130,31 +2129,13 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         )
     }
 
-    /// Generate return statement for an infallible method returning an owned primitive slice.
+    /// Generate return statement for an infallible method returning an owned slice.
     fn gen_owned_slice_return_stmt(
         &self,
-        prim: hir::PrimitiveType,
+        elem_size: usize,
+        elem_align: usize,
         invoke_call: &str,
     ) -> String {
-        let (elem_size, elem_align) = self.formatter.primitive_size_align(prim);
-        format!(
-            "var resultSeg = (MemorySegment) {invoke_call};\n            \
-             MemorySegment dataPtr = (MemorySegment) DiplomatLib.VH_SV_DATA.get(resultSeg, 0L);\n            \
-             long dataLen = (long) DiplomatLib.VH_SV_LEN.get(resultSeg, 0L);\n            \
-             return new OwnedSlice(dataPtr, dataLen, {elem_size}L, {elem_align}L);"
-        )
-    }
-
-    /// Generate return statement for an infallible method returning an owned string slice.
-    fn gen_owned_string_return_stmt(
-        &self,
-        encoding: StringEncoding,
-        invoke_call: &str,
-    ) -> String {
-        let (elem_size, elem_align) = match encoding {
-            StringEncoding::UnvalidatedUtf16 => (2usize, 2usize),
-            _ => (1, 1),
-        };
         format!(
             "var resultSeg = (MemorySegment) {invoke_call};\n            \
              MemorySegment dataPtr = (MemorySegment) DiplomatLib.VH_SV_DATA.get(resultSeg, 0L);\n            \
@@ -2262,17 +2243,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             Type::Slice(slice) => {
                 let (java_type, conversion) = match slice {
                     Slice::Str(_, encoding) => {
-                        let charset = match encoding {
-                            StringEncoding::UnvalidatedUtf8 | StringEncoding::Utf8 => {
-                                "StandardCharsets.UTF_8"
-                            }
-                            StringEncoding::UnvalidatedUtf16 => "StandardCharsets.UTF_16LE",
-                            _ => "StandardCharsets.UTF_8",
-                        };
-                        let byte_multiplier = match encoding {
-                            StringEncoding::UnvalidatedUtf16 => " * 2",
-                            _ => "",
-                        };
+                        let charset = encoding_charset(*encoding);
+                        let byte_multiplier = encoding_byte_multiplier(*encoding);
                         (
                             "String".to_string(),
                             format!(
@@ -2420,7 +2392,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         match ty {
             Type::Primitive(_) => format!("((long)val << {shift})"),
             Type::Enum(_) => format!("((long)val.toNative() << {shift})"),
-            _ => format!("0L /* unsupported result ok type */"),
+            _ => "0L /* unsupported result ok type */".to_string(),
         }
     }
 
@@ -2447,33 +2419,12 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             self.native_return_type_str(cb_output)
         };
 
-        let arg_exprs: Vec<String> = info.runner_arg_conversions.clone();
-        let invoke_args = arg_exprs.join(", ");
+        let invoke_args = info.runner_arg_conversions.join(", ");
 
         let invoke_expr = format!("cb.invoke({invoke_args})");
         let body = if let ReturnType::Fallible(ok, _err) = cb_output {
             let shift = self.result_payload_shift_bits(ok, &None);
-            let mut b = String::new();
-            b.push_str("        try {\n");
-            match ok {
-                SuccessType::Unit => {
-                    b.push_str(&format!("            {invoke_expr};\n"));
-                    b.push_str("            return 0L;\n");
-                }
-                SuccessType::OutType(ty) => {
-                    b.push_str(&format!("            var val = {invoke_expr};\n"));
-                    let pack = self.gen_result_ok_pack_expr(ty, shift);
-                    b.push_str(&format!("            return {pack};\n"));
-                }
-                _ => {
-                    b.push_str(&format!("            {invoke_expr};\n"));
-                    b.push_str("            return 0L;\n");
-                }
-            }
-            b.push_str("        } catch (Exception e) {\n");
-            b.push_str("            return 1L;\n");
-            b.push_str("        }");
-            b
+            self.gen_fallible_runner_body(ok, &invoke_expr, shift)
         } else if info.returns_void {
             format!("        {invoke_expr};")
         } else {
@@ -2520,12 +2471,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         // Build FunctionDescriptor
         let mut fd_params = vec!["ValueLayout.ADDRESS".to_string()]; // data
         fd_params.extend(info.param_layouts.iter().cloned());
-        let fd_params_str = fd_params.join(", ");
-        let fd = if let Some(ref ret) = info.return_layout {
-            format!("FunctionDescriptor.of({ret}, {fd_params_str})")
-        } else {
-            format!("FunctionDescriptor.ofVoid({fd_params_str})")
-        };
+        let fd = build_function_descriptor(info.return_layout.as_deref(), &fd_params);
 
         format!(
             "    private static final MethodHandle {mh_name};\n\
@@ -2569,6 +2515,36 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             ReturnType::Fallible(_, _) => "long.class".to_string(),
             _ => "void.class".to_string(),
         }
+    }
+
+    /// Generate the body of a callback/trait runner for fallible returns.
+    fn gen_fallible_runner_body(
+        &self,
+        ok: &SuccessType<InputOnly>,
+        invoke_expr: &str,
+        shift: usize,
+    ) -> String {
+        let mut b = String::new();
+        b.push_str("        try {\n");
+        match ok {
+            SuccessType::Unit => {
+                b.push_str(&format!("            {invoke_expr};\n"));
+                b.push_str("            return 0L;\n");
+            }
+            SuccessType::OutType(ty) => {
+                b.push_str(&format!("            var val = {invoke_expr};\n"));
+                let pack = self.gen_result_ok_pack_expr(ty, shift);
+                b.push_str(&format!("            return {pack};\n"));
+            }
+            _ => {
+                b.push_str(&format!("            {invoke_expr};\n"));
+                b.push_str("            return 0L;\n");
+            }
+        }
+        b.push_str("        } catch (Exception e) {\n");
+        b.push_str("            return 1L;\n");
+        b.push_str("        }");
+        b
     }
 
     /// Generate the setup code in a method body for a single callback parameter.
@@ -2736,12 +2712,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 self.native_return_method_type_class(&method.output)
             };
             let mt_params_str = mt_params.join(", ");
-            let fd_params_str = fd_params.join(", ");
-            let fd = if let Some(ref ret) = return_layout {
-                format!("FunctionDescriptor.of({ret}, {fd_params_str})")
-            } else {
-                format!("FunctionDescriptor.ofVoid({fd_params_str})")
-            };
+            let fd = build_function_descriptor(return_layout.as_deref(), &fd_params);
 
             statics_class_body.push(format!("        static final MethodHandle {mh_name};"));
             statics_class_body.push(format!("        static final MemorySegment {upcall_name};"));
@@ -2863,27 +2834,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         let body = if let ReturnType::Fallible(ok, _err) = &*method.output {
             let shift = self.result_payload_shift_bits(ok, &None);
-            let mut b = String::new();
-            b.push_str("        try {\n");
-            match ok {
-                SuccessType::Unit => {
-                    b.push_str(&format!("            {invoke_expr};\n"));
-                    b.push_str("            return 0L;\n");
-                }
-                SuccessType::OutType(ty) => {
-                    b.push_str(&format!("            var val = {invoke_expr};\n"));
-                    let pack = self.gen_result_ok_pack_expr(ty, shift);
-                    b.push_str(&format!("            return {pack};\n"));
-                }
-                _ => {
-                    b.push_str(&format!("            {invoke_expr};\n"));
-                    b.push_str("            return 0L;\n");
-                }
-            }
-            b.push_str("        } catch (Exception e) {\n");
-            b.push_str("            return 1L;\n");
-            b.push_str("        }");
-            b
+            self.gen_fallible_runner_body(ok, &invoke_expr, shift)
         } else if returns_void {
             format!("        {invoke_expr};")
         } else {
@@ -3020,10 +2971,10 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         // Compute field info
         let fields: Vec<JavaStructFieldInfo> =
-            self.compute_struct_fields(&ty.fields, type_name);
+            self.compute_struct_fields(&ty.fields);
 
         // Compute layout members string with padding
-        let layout_members = self.compute_layout_members(&ty.fields, type_name);
+        let layout_members = self.compute_layout_members(&ty.fields);
 
         // Filter supported methods
         let supported_methods: Vec<&Method> = ty
@@ -3086,18 +3037,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         let has_constructors = !constructor_methods.is_empty();
 
         // Collect callback declarations from all methods
-        let all_methods_iter = constructor_methods
-            .iter()
-            .chain(companion_methods.iter())
-            .chain(self_methods.iter());
-        let mut all_cb_interfaces = Vec::new();
-        let mut all_cb_runners = Vec::new();
-        let mut all_cb_statics = Vec::new();
-        for m in all_methods_iter {
-            all_cb_interfaces.extend(m.callback_interfaces.iter().cloned());
-            all_cb_runners.extend(m.callback_runners.iter().cloned());
-            all_cb_statics.extend(m.callback_statics.iter().cloned());
-        }
+        let (all_cb_interfaces, all_cb_runners, all_cb_statics) =
+            collect_callback_declarations(&[&constructor_methods, &companion_methods, &self_methods]);
         let has_callbacks = !all_cb_interfaces.is_empty();
 
         let mut special_methods = JavaSpecialMethods::default();
@@ -3270,7 +3211,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     fn compute_struct_fields<P: hir::TyPosition>(
         &self,
         fields: &[StructField<P>],
-        _type_name: &str,
     ) -> Vec<JavaStructFieldInfo> {
         fields
             .iter()
@@ -3296,7 +3236,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
     fn compute_layout_members<P: hir::TyPosition>(
         &self,
         fields: &[StructField<P>],
-        _type_name: &str,
     ) -> String {
         let mut members = Vec::new();
         let mut offset: usize = 0;
@@ -3382,20 +3321,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         shouty: &str,
     ) -> String {
         match ty {
-            Type::Primitive(prim) => {
-                let java_type = self.formatter.fmt_primitive_as_java(*prim);
+            Type::Primitive(_) | Type::Opaque(_) | Type::Enum(_) => {
                 let vh = format!("VH_{shouty}");
-                format!("({java_type}) {vh}.get(seg, 0L)")
-            }
-            Type::Opaque(_) => {
-                let type_name = self.fmt_type_name_str(ty);
-                let vh = format!("VH_{shouty}");
-                format!("new {type_name}((MemorySegment) {vh}.get(seg, 0L))")
-            }
-            Type::Enum(_) => {
-                let type_name = self.fmt_type_name_str(ty);
-                let vh = format!("VH_{shouty}");
-                format!("{type_name}.fromNative((int) {vh}.get(seg, 0L))")
+                self.field_from_native_via_vh(ty, &vh)
             }
             Type::Struct(_) => {
                 let type_name = self.fmt_type_name_str(ty);
@@ -3409,14 +3337,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let vh_len = format!("VH_{shouty}_LEN");
                 match slc {
                     Slice::Str(_, encoding) => {
-                        let charset = match encoding {
-                            StringEncoding::UnvalidatedUtf16 => "StandardCharsets.UTF_16LE",
-                            _ => "StandardCharsets.UTF_8",
-                        };
-                        let byte_multiplier = match encoding {
-                            StringEncoding::UnvalidatedUtf16 => " * 2",
-                            _ => "",
-                        };
+                        let charset = encoding_charset(*encoding);
+                        let byte_multiplier = encoding_byte_multiplier(*encoding);
                         format!(
                             "new String(((MemorySegment) {vh_data}.get(seg, 0L)).reinterpret((long) {vh_len}.get(seg, 0L){byte_multiplier}).toArray(ValueLayout.JAVA_BYTE), {charset})"
                         )
@@ -3447,14 +3369,8 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                         let vh_len = format!("VH_{shouty}_LEN");
                         match slc {
                             Slice::Str(_, encoding) => {
-                                let charset = match encoding {
-                                    StringEncoding::UnvalidatedUtf16 => "StandardCharsets.UTF_16LE",
-                                    _ => "StandardCharsets.UTF_8",
-                                };
-                                let byte_multiplier = match encoding {
-                                    StringEncoding::UnvalidatedUtf16 => " * 2",
-                                    _ => "",
-                                };
+                                let charset = encoding_charset(*encoding);
+                                let byte_multiplier = encoding_byte_multiplier(*encoding);
                                 format!(
                                     "new String(((MemorySegment) {vh_data}.get(seg, 0L)).reinterpret((long) {vh_len}.get(seg, 0L){byte_multiplier}).toArray(ValueLayout.JAVA_BYTE), {charset})"
                                 )
@@ -3537,16 +3453,13 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let vh_len = format!("VH_{shouty}_LEN");
                 match slc {
                     Slice::Str(_, encoding) => {
-                        let (charset, elem_layout) = match encoding {
-                            StringEncoding::UnvalidatedUtf16 => ("StandardCharsets.UTF_16LE", "ValueLayout.JAVA_BYTE"),
-                            _ => ("StandardCharsets.UTF_8", "ValueLayout.JAVA_BYTE"),
-                        };
+                        let charset = encoding_charset(*encoding);
                         let len_expr = match encoding {
                             StringEncoding::UnvalidatedUtf16 => format!("{field_name}Bytes.length / 2"),
                             _ => format!("{field_name}Bytes.length"),
                         };
                         format!(
-                            "{{ byte[] {field_name}Bytes = this.{field_name}.getBytes({charset}); var {field_name}Seg = arena.allocateFrom({elem_layout}, {field_name}Bytes); {vh_data}.set(seg, 0L, {field_name}Seg); {vh_len}.set(seg, 0L, (long) {len_expr}); }}"
+                            "{{ byte[] {field_name}Bytes = this.{field_name}.getBytes({charset}); var {field_name}Seg = arena.allocateFrom(ValueLayout.JAVA_BYTE, {field_name}Bytes); {vh_data}.set(seg, 0L, {field_name}Seg); {vh_len}.set(seg, 0L, (long) {len_expr}); }}"
                         )
                     }
                     Slice::Primitive(_, prim) => {
@@ -3598,10 +3511,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 let vh_len = format!("VH_{shouty}_LEN");
                 match slc {
                     Slice::Str(_, encoding) => {
-                        let charset = match encoding {
-                            StringEncoding::UnvalidatedUtf16 => "StandardCharsets.UTF_16LE",
-                            _ => "StandardCharsets.UTF_8",
-                        };
+                        let charset = encoding_charset(*encoding);
                         let len_expr = match encoding {
                             StringEncoding::UnvalidatedUtf16 => format!("{field_name}Bytes.length / 2"),
                             _ => format!("{field_name}Bytes.length"),
