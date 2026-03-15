@@ -7,9 +7,6 @@ import java.util.Optional;
 
 public class OptionString implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle OPTIONSTRING_NEW;
     private static final MethodHandle OPTIONSTRING_WRITE;
@@ -18,18 +15,16 @@ public class OptionString implements AutoCloseable {
         );
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("OptionString_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionString_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        OPTIONSTRING_NEW = LINKER.downcallHandle(
-            LIB.find("OptionString_new").orElseThrow(),
+        OPTIONSTRING_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionString_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        OPTIONSTRING_WRITE = LINKER.downcallHandle(
-            LIB.find("OptionString_write").orElseThrow(),
+        OPTIONSTRING_WRITE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionString_write").orElseThrow(),
             FunctionDescriptor.of(OPTIONSTRING_WRITE_RESULT, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

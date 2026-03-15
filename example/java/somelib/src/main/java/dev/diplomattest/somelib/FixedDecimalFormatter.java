@@ -11,9 +11,6 @@ import java.nio.charset.StandardCharsets;
  */
 public class FixedDecimalFormatter implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle ICU4X_FIXEDDECIMALFORMATTER_TRY_NEW_MV1;
     private static final MethodHandle ICU4X_FIXEDDECIMALFORMATTER_FORMAT_WRITE_MV1;
@@ -24,18 +21,16 @@ public class FixedDecimalFormatter implements AutoCloseable {
         );
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimalFormatter_destroy_mv1").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_FixedDecimalFormatter_destroy_mv1").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        ICU4X_FIXEDDECIMALFORMATTER_TRY_NEW_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimalFormatter_try_new_mv1").orElseThrow(),
+        ICU4X_FIXEDDECIMALFORMATTER_TRY_NEW_MV1 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_FixedDecimalFormatter_try_new_mv1").orElseThrow(),
             FunctionDescriptor.of(ICU4X_FIXEDDECIMALFORMATTER_TRY_NEW_MV1_RESULT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, FixedDecimalFormatterOptions.LAYOUT)
         );
-        ICU4X_FIXEDDECIMALFORMATTER_FORMAT_WRITE_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimalFormatter_format_write_mv1").orElseThrow(),
+        ICU4X_FIXEDDECIMALFORMATTER_FORMAT_WRITE_MV1 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_FixedDecimalFormatter_format_write_mv1").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

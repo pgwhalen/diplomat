@@ -18,16 +18,11 @@ public class BorrowedFieldsWithBounds {
     private static final VarHandle VH_FIELD_B_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("fieldB"), MemoryLayout.PathElement.groupElement("len"));
     private static final VarHandle VH_FIELD_C_DATA = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("fieldC"), MemoryLayout.PathElement.groupElement("data"));
     private static final VarHandle VH_FIELD_C_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("fieldC"), MemoryLayout.PathElement.groupElement("len"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle BORROWEDFIELDSWITHBOUNDS_FROM_FOO_AND_STRINGS;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        BORROWEDFIELDSWITHBOUNDS_FROM_FOO_AND_STRINGS = LINKER.downcallHandle(
-            LIB.find("BorrowedFieldsWithBounds_from_foo_and_strings").orElseThrow(),
+        BORROWEDFIELDSWITHBOUNDS_FROM_FOO_AND_STRINGS = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("BorrowedFieldsWithBounds_from_foo_and_strings").orElseThrow(),
             FunctionDescriptor.of(BorrowedFieldsWithBounds.LAYOUT, ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
     }

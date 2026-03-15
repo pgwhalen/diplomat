@@ -6,9 +6,6 @@ import java.nio.charset.StandardCharsets;
 
 public class MyString implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle MYSTRING_NEW;
     private static final MethodHandle MYSTRING_NEW_UNSAFE;
@@ -19,38 +16,36 @@ public class MyString implements AutoCloseable {
     private static final MethodHandle MYSTRING_STRING_TRANSFORM;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("MyString_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyString_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        MYSTRING_NEW = LINKER.downcallHandle(
-            LIB.find("MyString_new").orElseThrow(),
+        MYSTRING_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyString_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        MYSTRING_NEW_UNSAFE = LINKER.downcallHandle(
-            LIB.find("MyString_new_unsafe").orElseThrow(),
+        MYSTRING_NEW_UNSAFE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyString_new_unsafe").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        MYSTRING_NEW_OWNED = LINKER.downcallHandle(
-            LIB.find("MyString_new_owned").orElseThrow(),
+        MYSTRING_NEW_OWNED = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyString_new_owned").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        MYSTRING_NEW_FROM_FIRST = LINKER.downcallHandle(
-            LIB.find("MyString_new_from_first").orElseThrow(),
+        MYSTRING_NEW_FROM_FIRST = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyString_new_from_first").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        MYSTRING_SET_STR = LINKER.downcallHandle(
-            LIB.find("MyString_set_str").orElseThrow(),
+        MYSTRING_SET_STR = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyString_set_str").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        MYSTRING_GET_STR = LINKER.downcallHandle(
-            LIB.find("MyString_get_str").orElseThrow(),
+        MYSTRING_GET_STR = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyString_get_str").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        MYSTRING_STRING_TRANSFORM = LINKER.downcallHandle(
-            LIB.find("MyString_string_transform").orElseThrow(),
+        MYSTRING_STRING_TRANSFORM = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyString_string_transform").orElseThrow(),
             FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
         );
     }

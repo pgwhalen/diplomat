@@ -8,26 +8,21 @@ import java.lang.invoke.MethodType;
 
 public class MutableCallbackHolder implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle MUTABLECALLBACKHOLDER_NEW;
     private static final MethodHandle MUTABLECALLBACKHOLDER_CALL;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("MutableCallbackHolder_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MutableCallbackHolder_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        MUTABLECALLBACKHOLDER_NEW = LINKER.downcallHandle(
-            LIB.find("MutableCallbackHolder_new").orElseThrow(),
+        MUTABLECALLBACKHOLDER_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MutableCallbackHolder_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
         );
-        MUTABLECALLBACKHOLDER_CALL = LINKER.downcallHandle(
-            LIB.find("MutableCallbackHolder_call").orElseThrow(),
+        MUTABLECALLBACKHOLDER_CALL = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MutableCallbackHolder_call").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
     }

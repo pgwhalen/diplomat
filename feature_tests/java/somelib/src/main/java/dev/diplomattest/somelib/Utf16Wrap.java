@@ -6,26 +6,21 @@ import java.nio.charset.StandardCharsets;
 
 public class Utf16Wrap implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle UTF16WRAP_FROM_UTF16;
     private static final MethodHandle UTF16WRAP_GET_DEBUG_STR;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("Utf16Wrap_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Utf16Wrap_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        UTF16WRAP_FROM_UTF16 = LINKER.downcallHandle(
-            LIB.find("Utf16Wrap_from_utf16").orElseThrow(),
+        UTF16WRAP_FROM_UTF16 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Utf16Wrap_from_utf16").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        UTF16WRAP_GET_DEBUG_STR = LINKER.downcallHandle(
-            LIB.find("Utf16Wrap_get_debug_str").orElseThrow(),
+        UTF16WRAP_GET_DEBUG_STR = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Utf16Wrap_get_debug_str").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

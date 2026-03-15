@@ -11,9 +11,6 @@ public class CyclicStructA {
         CyclicStructB.LAYOUT.withName("a")
     );
     private static final long OFFSET_A = LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement("a"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle CYCLICSTRUCTA_GET_B;
     private static final MethodHandle CYCLICSTRUCTA_CYCLIC_OUT;
     private static final MethodHandle CYCLICSTRUCTA_NESTED_SLICE;
@@ -21,26 +18,24 @@ public class CyclicStructA {
     private static final MethodHandle CYCLICSTRUCTA_GETTER_OUT;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        CYCLICSTRUCTA_GET_B = LINKER.downcallHandle(
-            LIB.find("CyclicStructA_get_b").orElseThrow(),
+        CYCLICSTRUCTA_GET_B = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CyclicStructA_get_b").orElseThrow(),
             FunctionDescriptor.of(CyclicStructB.LAYOUT)
         );
-        CYCLICSTRUCTA_CYCLIC_OUT = LINKER.downcallHandle(
-            LIB.find("CyclicStructA_cyclic_out").orElseThrow(),
+        CYCLICSTRUCTA_CYCLIC_OUT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CyclicStructA_cyclic_out").orElseThrow(),
             FunctionDescriptor.ofVoid(CyclicStructA.LAYOUT, ValueLayout.ADDRESS)
         );
-        CYCLICSTRUCTA_NESTED_SLICE = LINKER.downcallHandle(
-            LIB.find("CyclicStructA_nested_slice").orElseThrow(),
+        CYCLICSTRUCTA_NESTED_SLICE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CyclicStructA_nested_slice").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_BYTE, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        CYCLICSTRUCTA_DOUBLE_CYCLIC_OUT = LINKER.downcallHandle(
-            LIB.find("CyclicStructA_double_cyclic_out").orElseThrow(),
+        CYCLICSTRUCTA_DOUBLE_CYCLIC_OUT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CyclicStructA_double_cyclic_out").orElseThrow(),
             FunctionDescriptor.ofVoid(CyclicStructA.LAYOUT, CyclicStructA.LAYOUT, ValueLayout.ADDRESS)
         );
-        CYCLICSTRUCTA_GETTER_OUT = LINKER.downcallHandle(
-            LIB.find("CyclicStructA_getter_out").orElseThrow(),
+        CYCLICSTRUCTA_GETTER_OUT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CyclicStructA_getter_out").orElseThrow(),
             FunctionDescriptor.ofVoid(CyclicStructA.LAYOUT, ValueLayout.ADDRESS)
         );
     }

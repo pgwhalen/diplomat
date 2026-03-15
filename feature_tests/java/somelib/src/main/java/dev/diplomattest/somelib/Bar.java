@@ -6,21 +6,16 @@ import java.nio.charset.StandardCharsets;
 
 public class Bar implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle BAR_FOO;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("Bar_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Bar_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        BAR_FOO = LINKER.downcallHandle(
-            LIB.find("Bar_foo").orElseThrow(),
+        BAR_FOO = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Bar_foo").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

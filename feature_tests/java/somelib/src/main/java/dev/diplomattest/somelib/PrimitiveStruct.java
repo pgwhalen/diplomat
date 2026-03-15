@@ -24,21 +24,16 @@ public class PrimitiveStruct {
     private static final VarHandle VH_C = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("c"));
     private static final VarHandle VH_D = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("d"));
     private static final VarHandle VH_E = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("e"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle PRIMITIVESTRUCT_MUTABLE_SLICE;
     private static final MethodHandle PRIMITIVESTRUCT_MUTABLE_REF;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        PRIMITIVESTRUCT_MUTABLE_SLICE = LINKER.downcallHandle(
-            LIB.find("PrimitiveStruct_mutable_slice").orElseThrow(),
+        PRIMITIVESTRUCT_MUTABLE_SLICE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("PrimitiveStruct_mutable_slice").orElseThrow(),
             FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        PRIMITIVESTRUCT_MUTABLE_REF = LINKER.downcallHandle(
-            LIB.find("PrimitiveStruct_mutable_ref").orElseThrow(),
+        PRIMITIVESTRUCT_MUTABLE_REF = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("PrimitiveStruct_mutable_ref").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

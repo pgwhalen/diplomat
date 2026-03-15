@@ -6,9 +6,6 @@ import java.nio.charset.StandardCharsets;
 
 public class RenamedVectorTest implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle NAMESPACE_VECTORTEST_NEW;
     private static final MethodHandle NAMESPACE_VECTORTEST_LEN;
@@ -21,26 +18,24 @@ public class RenamedVectorTest implements AutoCloseable {
         );
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("namespace_VectorTest_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_VectorTest_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        NAMESPACE_VECTORTEST_NEW = LINKER.downcallHandle(
-            LIB.find("namespace_VectorTest_new").orElseThrow(),
+        NAMESPACE_VECTORTEST_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_VectorTest_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS)
         );
-        NAMESPACE_VECTORTEST_LEN = LINKER.downcallHandle(
-            LIB.find("namespace_VectorTest_len").orElseThrow(),
+        NAMESPACE_VECTORTEST_LEN = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_VectorTest_len").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS)
         );
-        NAMESPACE_VECTORTEST_GET = LINKER.downcallHandle(
-            LIB.find("namespace_VectorTest_get").orElseThrow(),
+        NAMESPACE_VECTORTEST_GET = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_VectorTest_get").orElseThrow(),
             FunctionDescriptor.of(NAMESPACE_VECTORTEST_GET_RESULT, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
-        NAMESPACE_VECTORTEST_PUSH = LINKER.downcallHandle(
-            LIB.find("namespace_VectorTest_push").orElseThrow(),
+        NAMESPACE_VECTORTEST_PUSH = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_VectorTest_push").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_DOUBLE)
         );
     }

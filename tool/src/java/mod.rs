@@ -97,7 +97,6 @@ pub(crate) fn run<'tcx>(
         errors: &errors,
         formatter: &formatter,
         lib_name: &lib_name,
-        dylib_name,
         domain: &domain,
     };
 
@@ -203,7 +202,6 @@ struct ItemGenContext<'a, 'cx> {
     #[allow(dead_code)]
     tcx: &'cx TypeContext,
     lib_name: &'a str,
-    dylib_name: &'a str,
     domain: &'a str,
     formatter: &'a JavaFormatter<'cx>,
     errors: &'a ErrorStore<'cx, String>,
@@ -749,7 +747,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         struct ImplTemplate<'a> {
             domain: &'a str,
             lib_name: &'a str,
-            dylib_name: &'a str,
             type_name: &'a str,
             docs: &'a str,
             dtor_abi_name: &'a str,
@@ -773,7 +770,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             ImplTemplate {
                 domain: self.domain,
                 lib_name: self.lib_name,
-                dylib_name: self.dylib_name,
                 type_name,
                 docs: &docs,
                 dtor_abi_name: ty.dtor_abi_name.as_str(),
@@ -2932,7 +2928,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         struct EnumTemplate<'a> {
             domain: &'a str,
             lib_name: &'a str,
-            dylib_name: &'a str,
             type_name: &'a str,
             docs: &'a str,
             is_error: bool,
@@ -2950,7 +2945,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             EnumTemplate {
                 domain: self.domain,
                 lib_name: self.lib_name,
-                dylib_name: self.dylib_name,
                 type_name,
                 docs: &docs,
                 is_error,
@@ -3060,7 +3054,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         struct StructTemplate<'a> {
             domain: &'a str,
             lib_name: &'a str,
-            dylib_name: &'a str,
             type_name: &'a str,
             docs: &'a str,
             is_error: bool,
@@ -3090,7 +3083,6 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             StructTemplate {
                 domain: self.domain,
                 lib_name: self.lib_name,
-                dylib_name: self.dylib_name,
                 type_name,
                 docs: &docs,
                 is_error,
@@ -3563,7 +3555,6 @@ mod test {
             formatter: &formatter,
             errors: &errors,
             lib_name: "somelib",
-            dylib_name: "diplomat_example",
             domain: "dev.diplomattest",
         };
 
@@ -3707,7 +3698,6 @@ mod test {
             formatter: &formatter,
             errors: &errors,
             lib_name: "somelib",
-            dylib_name: "diplomat_example",
             domain: "dev.diplomattest",
         };
 
@@ -3740,7 +3730,6 @@ mod test {
             formatter: &formatter,
             errors: &errors,
             lib_name: "somelib",
-            dylib_name: "diplomat_example",
             domain: "dev.diplomattest",
         };
 
@@ -4169,7 +4158,6 @@ mod test {
             formatter: &formatter,
             errors: &errors,
             lib_name: "somelib",
-            dylib_name: "diplomat_example",
             domain: "dev.diplomattest",
         };
 

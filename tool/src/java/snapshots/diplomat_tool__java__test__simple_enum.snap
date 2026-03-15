@@ -31,16 +31,11 @@ public enum Color {
         }
         throw new IllegalArgumentException("Invalid native value for Color: " + value);
     }
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle COLOR_FLIP;
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        COLOR_FLIP = LINKER.downcallHandle(
-            LIB.find("Color_flip").orElseThrow(),
+        COLOR_FLIP = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Color_flip").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT)
         );
     }

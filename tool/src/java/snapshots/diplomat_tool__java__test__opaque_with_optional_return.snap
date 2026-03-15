@@ -11,31 +11,26 @@ import java.util.Optional;
 
 public class MyData implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle MYDATA_CREATE;
     private static final MethodHandle MYDATA_GET_VALUE;
     private static final MethodHandle MYDATA_CHECK;
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("MyData_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyData_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        MYDATA_CREATE = LINKER.downcallHandle(
-            LIB.find("MyData_create").orElseThrow(),
+        MYDATA_CREATE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyData_create").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
-        MYDATA_GET_VALUE = LINKER.downcallHandle(
-            LIB.find("MyData_get_value").orElseThrow(),
+        MYDATA_GET_VALUE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyData_get_value").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
         );
-        MYDATA_CHECK = LINKER.downcallHandle(
-            LIB.find("MyData_check").orElseThrow(),
+        MYDATA_CHECK = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyData_check").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_BOOLEAN, ValueLayout.ADDRESS)
         );
     }

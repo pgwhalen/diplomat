@@ -6,9 +6,6 @@ import java.nio.charset.StandardCharsets;
 
 public class ResultOpaque extends RuntimeException implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle RESULTOPAQUE_NEW;
     private static final MethodHandle RESULTOPAQUE_NEW_FAILING_FOO;
@@ -80,62 +77,60 @@ public class ResultOpaque extends RuntimeException implements AutoCloseable {
         );
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        RESULTOPAQUE_NEW = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_new").orElseThrow(),
+        RESULTOPAQUE_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_new").orElseThrow(),
             FunctionDescriptor.of(RESULTOPAQUE_NEW_RESULT, ValueLayout.JAVA_INT)
         );
-        RESULTOPAQUE_NEW_FAILING_FOO = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_new_failing_foo").orElseThrow(),
+        RESULTOPAQUE_NEW_FAILING_FOO = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_new_failing_foo").orElseThrow(),
             FunctionDescriptor.of(RESULTOPAQUE_NEW_FAILING_FOO_RESULT)
         );
-        RESULTOPAQUE_NEW_FAILING_BAR = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_new_failing_bar").orElseThrow(),
+        RESULTOPAQUE_NEW_FAILING_BAR = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_new_failing_bar").orElseThrow(),
             FunctionDescriptor.of(RESULTOPAQUE_NEW_FAILING_BAR_RESULT)
         );
-        RESULTOPAQUE_NEW_FAILING_UNIT = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_new_failing_unit").orElseThrow(),
+        RESULTOPAQUE_NEW_FAILING_UNIT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_new_failing_unit").orElseThrow(),
             FunctionDescriptor.of(RESULTOPAQUE_NEW_FAILING_UNIT_RESULT)
         );
-        RESULTOPAQUE_NEW_FAILING_STRUCT = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_new_failing_struct").orElseThrow(),
+        RESULTOPAQUE_NEW_FAILING_STRUCT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_new_failing_struct").orElseThrow(),
             FunctionDescriptor.of(RESULTOPAQUE_NEW_FAILING_STRUCT_RESULT, ValueLayout.JAVA_INT)
         );
-        RESULTOPAQUE_NEW_IN_ERR = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_new_in_err").orElseThrow(),
+        RESULTOPAQUE_NEW_IN_ERR = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_new_in_err").orElseThrow(),
             FunctionDescriptor.of(RESULTOPAQUE_NEW_IN_ERR_RESULT, ValueLayout.JAVA_INT)
         );
-        RESULTOPAQUE_NEW_INT = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_new_int").orElseThrow(),
+        RESULTOPAQUE_NEW_INT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_new_int").orElseThrow(),
             FunctionDescriptor.of(RESULTOPAQUE_NEW_INT_RESULT, ValueLayout.JAVA_INT)
         );
-        RESULTOPAQUE_NEW_FAILING_INT = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_new_failing_int").orElseThrow(),
+        RESULTOPAQUE_NEW_FAILING_INT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_new_failing_int").orElseThrow(),
             FunctionDescriptor.of(RESULTOPAQUE_NEW_FAILING_INT_RESULT, ValueLayout.JAVA_INT)
         );
-        RESULTOPAQUE_NEW_IN_ENUM_ERR = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_new_in_enum_err").orElseThrow(),
+        RESULTOPAQUE_NEW_IN_ENUM_ERR = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_new_in_enum_err").orElseThrow(),
             FunctionDescriptor.of(RESULTOPAQUE_NEW_IN_ENUM_ERR_RESULT, ValueLayout.JAVA_INT)
         );
-        RESULTOPAQUE_GIVE_SELF = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_give_self").orElseThrow(),
+        RESULTOPAQUE_GIVE_SELF = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_give_self").orElseThrow(),
             FunctionDescriptor.of(RESULTOPAQUE_GIVE_SELF_RESULT, ValueLayout.ADDRESS)
         );
-        RESULTOPAQUE_TAKES_STR = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_takes_str").orElseThrow(),
+        RESULTOPAQUE_TAKES_STR = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_takes_str").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        RESULTOPAQUE_STRINGIFY_ERROR = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_stringify_error").orElseThrow(),
+        RESULTOPAQUE_STRINGIFY_ERROR = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_stringify_error").orElseThrow(),
             FunctionDescriptor.of(RESULTOPAQUE_STRINGIFY_ERROR_RESULT, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        RESULTOPAQUE_ASSERT_INTEGER = LINKER.downcallHandle(
-            LIB.find("ResultOpaque_assert_integer").orElseThrow(),
+        RESULTOPAQUE_ASSERT_INTEGER = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ResultOpaque_assert_integer").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
     }

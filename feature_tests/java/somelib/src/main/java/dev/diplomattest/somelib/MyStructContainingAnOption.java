@@ -15,21 +15,16 @@ public class MyStructContainingAnOption {
     private static final VarHandle VH_B_VALUE = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("b"), MemoryLayout.PathElement.groupElement("value"));
     private static final VarHandle VH_B_IS_OK = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("b"), MemoryLayout.PathElement.groupElement("is_ok"));
     private static final long OFFSET_A = LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement("a"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle MYSTRUCTCONTAININGANOPTION_NEW;
     private static final MethodHandle MYSTRUCTCONTAININGANOPTION_FILLED;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        MYSTRUCTCONTAININGANOPTION_NEW = LINKER.downcallHandle(
-            LIB.find("MyStructContainingAnOption_new").orElseThrow(),
+        MYSTRUCTCONTAININGANOPTION_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyStructContainingAnOption_new").orElseThrow(),
             FunctionDescriptor.of(MyStructContainingAnOption.LAYOUT)
         );
-        MYSTRUCTCONTAININGANOPTION_FILLED = LINKER.downcallHandle(
-            LIB.find("MyStructContainingAnOption_filled").orElseThrow(),
+        MYSTRUCTCONTAININGANOPTION_FILLED = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyStructContainingAnOption_filled").orElseThrow(),
             FunctionDescriptor.of(MyStructContainingAnOption.LAYOUT)
         );
     }

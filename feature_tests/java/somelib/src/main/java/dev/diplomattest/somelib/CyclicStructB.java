@@ -12,9 +12,6 @@ public class CyclicStructB {
         ValueLayout.JAVA_BYTE.withName("field")
     );
     private static final VarHandle VH_FIELD = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("field"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle CYCLICSTRUCTB_GET_A;
     private static final MethodHandle CYCLICSTRUCTB_GET_A_OPTION;
     static final StructLayout CYCLICSTRUCTB_GET_A_OPTION_RESULT = MemoryLayout.structLayout(
@@ -23,14 +20,12 @@ public class CyclicStructB {
         );
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        CYCLICSTRUCTB_GET_A = LINKER.downcallHandle(
-            LIB.find("CyclicStructB_get_a").orElseThrow(),
+        CYCLICSTRUCTB_GET_A = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CyclicStructB_get_a").orElseThrow(),
             FunctionDescriptor.of(CyclicStructA.LAYOUT)
         );
-        CYCLICSTRUCTB_GET_A_OPTION = LINKER.downcallHandle(
-            LIB.find("CyclicStructB_get_a_option").orElseThrow(),
+        CYCLICSTRUCTB_GET_A_OPTION = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CyclicStructB_get_a_option").orElseThrow(),
             FunctionDescriptor.of(CYCLICSTRUCTB_GET_A_OPTION_RESULT)
         );
     }

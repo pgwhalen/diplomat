@@ -26,21 +26,16 @@ public class BigStructWithStuff {
     private static final VarHandle VH_THIRD = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("third"));
     private static final VarHandle VH_FIFTH = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("fifth"));
     private static final long OFFSET_FOURTH = LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement("fourth"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle BIGSTRUCTWITHSTUFF_ASSERT_VALUE;
     private static final MethodHandle BIGSTRUCTWITHSTUFF_ASSERT_SLICE;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        BIGSTRUCTWITHSTUFF_ASSERT_VALUE = LINKER.downcallHandle(
-            LIB.find("BigStructWithStuff_assert_value").orElseThrow(),
+        BIGSTRUCTWITHSTUFF_ASSERT_VALUE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("BigStructWithStuff_assert_value").orElseThrow(),
             FunctionDescriptor.ofVoid(BigStructWithStuff.LAYOUT, ValueLayout.JAVA_SHORT)
         );
-        BIGSTRUCTWITHSTUFF_ASSERT_SLICE = LINKER.downcallHandle(
-            LIB.find("BigStructWithStuff_assert_slice").orElseThrow(),
+        BIGSTRUCTWITHSTUFF_ASSERT_SLICE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("BigStructWithStuff_assert_slice").orElseThrow(),
             FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.JAVA_SHORT)
         );
     }

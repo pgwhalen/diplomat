@@ -23,21 +23,16 @@ public class MyStruct {
     private static final VarHandle VH_B = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("b"));
     private static final VarHandle VH_C = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("c"));
     private static final VarHandle VH_D = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("d"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle MYSTRUCT_NEW;
     private static final MethodHandle MYSTRUCT_INTO_A;
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        MYSTRUCT_NEW = LINKER.downcallHandle(
-            LIB.find("MyStruct_new").orElseThrow(),
+        MYSTRUCT_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyStruct_new").orElseThrow(),
             FunctionDescriptor.of(MyStruct.LAYOUT, ValueLayout.JAVA_BYTE, ValueLayout.JAVA_BOOLEAN, ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT)
         );
-        MYSTRUCT_INTO_A = LINKER.downcallHandle(
-            LIB.find("MyStruct_into_a").orElseThrow(),
+        MYSTRUCT_INTO_A = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyStruct_into_a").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_BYTE, MyStruct.LAYOUT)
         );
     }

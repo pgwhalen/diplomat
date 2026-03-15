@@ -6,31 +6,26 @@ import java.nio.charset.StandardCharsets;
 
 public class OpaqueThin implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle OPAQUETHIN_A;
     private static final MethodHandle OPAQUETHIN_B;
     private static final MethodHandle OPAQUETHIN_C;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("OpaqueThin_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueThin_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        OPAQUETHIN_A = LINKER.downcallHandle(
-            LIB.find("OpaqueThin_a").orElseThrow(),
+        OPAQUETHIN_A = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueThin_a").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
         );
-        OPAQUETHIN_B = LINKER.downcallHandle(
-            LIB.find("OpaqueThin_b").orElseThrow(),
+        OPAQUETHIN_B = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueThin_b").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_FLOAT, ValueLayout.ADDRESS)
         );
-        OPAQUETHIN_C = LINKER.downcallHandle(
-            LIB.find("OpaqueThin_c").orElseThrow(),
+        OPAQUETHIN_C = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueThin_c").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

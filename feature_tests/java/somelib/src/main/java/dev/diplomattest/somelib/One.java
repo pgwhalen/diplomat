@@ -6,9 +6,6 @@ import java.nio.charset.StandardCharsets;
 
 public class One implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle ONE_TRANSITIVITY;
     private static final MethodHandle ONE_CYCLE;
@@ -23,54 +20,52 @@ public class One implements AutoCloseable {
     private static final MethodHandle ONE_IMPLICIT_BOUNDS_DEEP;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("One_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("One_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        ONE_TRANSITIVITY = LINKER.downcallHandle(
-            LIB.find("One_transitivity").orElseThrow(),
+        ONE_TRANSITIVITY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("One_transitivity").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        ONE_CYCLE = LINKER.downcallHandle(
-            LIB.find("One_cycle").orElseThrow(),
+        ONE_CYCLE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("One_cycle").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        ONE_MANY_DEPENDENTS = LINKER.downcallHandle(
-            LIB.find("One_many_dependents").orElseThrow(),
+        ONE_MANY_DEPENDENTS = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("One_many_dependents").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        ONE_RETURN_OUTLIVES_PARAM = LINKER.downcallHandle(
-            LIB.find("One_return_outlives_param").orElseThrow(),
+        ONE_RETURN_OUTLIVES_PARAM = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("One_return_outlives_param").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        ONE_DIAMOND_TOP = LINKER.downcallHandle(
-            LIB.find("One_diamond_top").orElseThrow(),
+        ONE_DIAMOND_TOP = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("One_diamond_top").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        ONE_DIAMOND_LEFT = LINKER.downcallHandle(
-            LIB.find("One_diamond_left").orElseThrow(),
+        ONE_DIAMOND_LEFT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("One_diamond_left").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        ONE_DIAMOND_RIGHT = LINKER.downcallHandle(
-            LIB.find("One_diamond_right").orElseThrow(),
+        ONE_DIAMOND_RIGHT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("One_diamond_right").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        ONE_DIAMOND_BOTTOM = LINKER.downcallHandle(
-            LIB.find("One_diamond_bottom").orElseThrow(),
+        ONE_DIAMOND_BOTTOM = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("One_diamond_bottom").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        ONE_DIAMOND_AND_NESTED_TYPES = LINKER.downcallHandle(
-            LIB.find("One_diamond_and_nested_types").orElseThrow(),
+        ONE_DIAMOND_AND_NESTED_TYPES = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("One_diamond_and_nested_types").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        ONE_IMPLICIT_BOUNDS = LINKER.downcallHandle(
-            LIB.find("One_implicit_bounds").orElseThrow(),
+        ONE_IMPLICIT_BOUNDS = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("One_implicit_bounds").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        ONE_IMPLICIT_BOUNDS_DEEP = LINKER.downcallHandle(
-            LIB.find("One_implicit_bounds_deep").orElseThrow(),
+        ONE_IMPLICIT_BOUNDS_DEEP = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("One_implicit_bounds_deep").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

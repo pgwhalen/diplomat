@@ -10,26 +10,21 @@ import java.nio.charset.StandardCharsets;
 
 public class MyString implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle MYSTRING_GET_STR;
     private static final MethodHandle MYSTRING_STRING_TRANSFORM;
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("MyString_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyString_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        MYSTRING_GET_STR = LINKER.downcallHandle(
-            LIB.find("MyString_get_str").orElseThrow(),
+        MYSTRING_GET_STR = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyString_get_str").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        MYSTRING_STRING_TRANSFORM = LINKER.downcallHandle(
-            LIB.find("MyString_string_transform").orElseThrow(),
+        MYSTRING_STRING_TRANSFORM = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyString_string_transform").orElseThrow(),
             FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
         );
     }

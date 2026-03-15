@@ -47,9 +47,6 @@ import java.util.Optional;
 
 public class Foo implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle FOO_GET_STRUCT;
     static final StructLayout FOO_GET_STRUCT_RESULT = MemoryLayout.structLayout(
@@ -59,14 +56,12 @@ public class Foo implements AutoCloseable {
         );
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("Foo_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Foo_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        FOO_GET_STRUCT = LINKER.downcallHandle(
-            LIB.find("Foo_get_struct").orElseThrow(),
+        FOO_GET_STRUCT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Foo_get_struct").orElseThrow(),
             FunctionDescriptor.of(FOO_GET_STRUCT_RESULT, ValueLayout.ADDRESS)
         );
     }

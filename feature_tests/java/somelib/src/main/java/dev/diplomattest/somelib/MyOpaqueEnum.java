@@ -6,26 +6,21 @@ import java.nio.charset.StandardCharsets;
 
 public class MyOpaqueEnum implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle MYOPAQUEENUM_NEW;
     private static final MethodHandle MYOPAQUEENUM_TO_STRING;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("MyOpaqueEnum_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyOpaqueEnum_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        MYOPAQUEENUM_NEW = LINKER.downcallHandle(
-            LIB.find("MyOpaqueEnum_new").orElseThrow(),
+        MYOPAQUEENUM_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyOpaqueEnum_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS)
         );
-        MYOPAQUEENUM_TO_STRING = LINKER.downcallHandle(
-            LIB.find("MyOpaqueEnum_to_string").orElseThrow(),
+        MYOPAQUEENUM_TO_STRING = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyOpaqueEnum_to_string").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

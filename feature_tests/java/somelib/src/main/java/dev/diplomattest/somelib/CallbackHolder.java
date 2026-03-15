@@ -8,26 +8,21 @@ import java.lang.invoke.MethodType;
 
 public class CallbackHolder implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle CALLBACKHOLDER_NEW;
     private static final MethodHandle CALLBACKHOLDER_CALL;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("CallbackHolder_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CallbackHolder_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        CALLBACKHOLDER_NEW = LINKER.downcallHandle(
-            LIB.find("CallbackHolder_new").orElseThrow(),
+        CALLBACKHOLDER_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CallbackHolder_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
         );
-        CALLBACKHOLDER_CALL = LINKER.downcallHandle(
-            LIB.find("CallbackHolder_call").orElseThrow(),
+        CALLBACKHOLDER_CALL = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CallbackHolder_call").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
     }

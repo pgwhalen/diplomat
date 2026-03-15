@@ -15,16 +15,11 @@ public class NestedBorrowedFields {
     private static final long OFFSET_FIELDS = LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement("fields"));
     private static final long OFFSET_BOUNDS = LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement("bounds"));
     private static final long OFFSET_BOUNDS2 = LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement("bounds2"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle NESTEDBORROWEDFIELDS_FROM_BAR_AND_FOO_AND_STRINGS;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        NESTEDBORROWEDFIELDS_FROM_BAR_AND_FOO_AND_STRINGS = LINKER.downcallHandle(
-            LIB.find("NestedBorrowedFields_from_bar_and_foo_and_strings").orElseThrow(),
+        NESTEDBORROWEDFIELDS_FROM_BAR_AND_FOO_AND_STRINGS = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("NestedBorrowedFields_from_bar_and_foo_and_strings").orElseThrow(),
             FunctionDescriptor.of(NestedBorrowedFields.LAYOUT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
     }

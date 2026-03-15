@@ -33,21 +33,16 @@ public enum MyEnum {
         }
         throw new IllegalArgumentException("Invalid native value for MyEnum: " + value);
     }
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle MYENUM_INTO_VALUE;
     private static final MethodHandle MYENUM_GET_A;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        MYENUM_INTO_VALUE = LINKER.downcallHandle(
-            LIB.find("MyEnum_into_value").orElseThrow(),
+        MYENUM_INTO_VALUE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyEnum_into_value").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_BYTE, ValueLayout.JAVA_INT)
         );
-        MYENUM_GET_A = LINKER.downcallHandle(
-            LIB.find("MyEnum_get_a").orElseThrow(),
+        MYENUM_GET_A = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyEnum_get_a").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT)
         );
     }

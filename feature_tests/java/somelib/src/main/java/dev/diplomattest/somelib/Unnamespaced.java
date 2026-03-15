@@ -6,26 +6,21 @@ import java.nio.charset.StandardCharsets;
 
 public class Unnamespaced implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle NAMESPACE_UNNAMESPACED_MAKE;
     private static final MethodHandle NAMESPACE_UNNAMESPACED_USE_NAMESPACED;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("namespace_Unnamespaced_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_Unnamespaced_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        NAMESPACE_UNNAMESPACED_MAKE = LINKER.downcallHandle(
-            LIB.find("namespace_Unnamespaced_make").orElseThrow(),
+        NAMESPACE_UNNAMESPACED_MAKE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_Unnamespaced_make").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
-        NAMESPACE_UNNAMESPACED_USE_NAMESPACED = LINKER.downcallHandle(
-            LIB.find("namespace_Unnamespaced_use_namespaced").orElseThrow(),
+        NAMESPACE_UNNAMESPACED_USE_NAMESPACED = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_Unnamespaced_use_namespaced").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

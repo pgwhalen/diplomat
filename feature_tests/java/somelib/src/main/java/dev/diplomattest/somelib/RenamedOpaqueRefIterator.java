@@ -8,21 +8,16 @@ import java.util.NoSuchElementException;
 
 public class RenamedOpaqueRefIterator implements AutoCloseable, Iterator<AttrOpaque1Renamed> {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle NAMESPACE_OPAQUEREFITERATOR_NEXT;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("namespace_OpaqueRefIterator_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_OpaqueRefIterator_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        NAMESPACE_OPAQUEREFITERATOR_NEXT = LINKER.downcallHandle(
-            LIB.find("namespace_OpaqueRefIterator_next").orElseThrow(),
+        NAMESPACE_OPAQUEREFITERATOR_NEXT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_OpaqueRefIterator_next").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

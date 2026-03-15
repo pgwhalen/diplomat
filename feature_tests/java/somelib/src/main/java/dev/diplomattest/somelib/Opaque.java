@@ -7,9 +7,6 @@ import java.util.Optional;
 
 public class Opaque implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle OPAQUE_NEW;
     private static final MethodHandle OPAQUE_TRY_FROM_UTF8;
@@ -21,42 +18,40 @@ public class Opaque implements AutoCloseable {
     private static final MethodHandle OPAQUE_CMP;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("Opaque_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Opaque_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        OPAQUE_NEW = LINKER.downcallHandle(
-            LIB.find("Opaque_new").orElseThrow(),
+        OPAQUE_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Opaque_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS)
         );
-        OPAQUE_TRY_FROM_UTF8 = LINKER.downcallHandle(
-            LIB.find("Opaque_try_from_utf8").orElseThrow(),
+        OPAQUE_TRY_FROM_UTF8 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Opaque_try_from_utf8").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        OPAQUE_FROM_STR = LINKER.downcallHandle(
-            LIB.find("Opaque_from_str").orElseThrow(),
+        OPAQUE_FROM_STR = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Opaque_from_str").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        OPAQUE_GET_DEBUG_STR = LINKER.downcallHandle(
-            LIB.find("Opaque_get_debug_str").orElseThrow(),
+        OPAQUE_GET_DEBUG_STR = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Opaque_get_debug_str").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        OPAQUE_ASSERT_STRUCT = LINKER.downcallHandle(
-            LIB.find("Opaque_assert_struct").orElseThrow(),
+        OPAQUE_ASSERT_STRUCT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Opaque_assert_struct").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, MyStruct.LAYOUT)
         );
-        OPAQUE_RETURNS_USIZE = LINKER.downcallHandle(
-            LIB.find("Opaque_returns_usize").orElseThrow(),
+        OPAQUE_RETURNS_USIZE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Opaque_returns_usize").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_LONG)
         );
-        OPAQUE_RETURNS_IMPORTED = LINKER.downcallHandle(
-            LIB.find("Opaque_returns_imported").orElseThrow(),
+        OPAQUE_RETURNS_IMPORTED = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Opaque_returns_imported").orElseThrow(),
             FunctionDescriptor.of(ImportedStruct.LAYOUT)
         );
-        OPAQUE_CMP = LINKER.downcallHandle(
-            LIB.find("Opaque_cmp").orElseThrow(),
+        OPAQUE_CMP = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Opaque_cmp").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_BYTE)
         );
     }

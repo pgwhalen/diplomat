@@ -8,9 +8,6 @@ import java.util.Iterator;
 
 public class OpaqueThinVec implements AutoCloseable, Iterable<OpaqueThin> {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle OPAQUETHINVEC_CREATE;
     private static final MethodHandle OPAQUETHINVEC_ITER;
@@ -19,30 +16,28 @@ public class OpaqueThinVec implements AutoCloseable, Iterable<OpaqueThin> {
     private static final MethodHandle OPAQUETHINVEC_FIRST;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("OpaqueThinVec_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueThinVec_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        OPAQUETHINVEC_CREATE = LINKER.downcallHandle(
-            LIB.find("OpaqueThinVec_create").orElseThrow(),
+        OPAQUETHINVEC_CREATE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueThinVec_create").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        OPAQUETHINVEC_ITER = LINKER.downcallHandle(
-            LIB.find("OpaqueThinVec_iter").orElseThrow(),
+        OPAQUETHINVEC_ITER = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueThinVec_iter").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        OPAQUETHINVEC_LEN = LINKER.downcallHandle(
-            LIB.find("OpaqueThinVec_len").orElseThrow(),
+        OPAQUETHINVEC_LEN = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueThinVec_len").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS)
         );
-        OPAQUETHINVEC_GET = LINKER.downcallHandle(
-            LIB.find("OpaqueThinVec_get").orElseThrow(),
+        OPAQUETHINVEC_GET = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueThinVec_get").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
-        OPAQUETHINVEC_FIRST = LINKER.downcallHandle(
-            LIB.find("OpaqueThinVec_first").orElseThrow(),
+        OPAQUETHINVEC_FIRST = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueThinVec_first").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

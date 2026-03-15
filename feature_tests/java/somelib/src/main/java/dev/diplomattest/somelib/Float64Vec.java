@@ -6,9 +6,6 @@ import java.nio.charset.StandardCharsets;
 
 public class Float64Vec implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle FLOAT64VEC_NEW_BOOL;
     private static final MethodHandle FLOAT64VEC_NEW_I16;
@@ -30,62 +27,60 @@ public class Float64Vec implements AutoCloseable {
         );
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("Float64Vec_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        FLOAT64VEC_NEW_BOOL = LINKER.downcallHandle(
-            LIB.find("Float64Vec_new_bool").orElseThrow(),
+        FLOAT64VEC_NEW_BOOL = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_new_bool").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        FLOAT64VEC_NEW_I16 = LINKER.downcallHandle(
-            LIB.find("Float64Vec_new_i16").orElseThrow(),
+        FLOAT64VEC_NEW_I16 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_new_i16").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        FLOAT64VEC_NEW_U16 = LINKER.downcallHandle(
-            LIB.find("Float64Vec_new_u16").orElseThrow(),
+        FLOAT64VEC_NEW_U16 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_new_u16").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        FLOAT64VEC_NEW_ISIZE = LINKER.downcallHandle(
-            LIB.find("Float64Vec_new_isize").orElseThrow(),
+        FLOAT64VEC_NEW_ISIZE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_new_isize").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        FLOAT64VEC_NEW_USIZE = LINKER.downcallHandle(
-            LIB.find("Float64Vec_new_usize").orElseThrow(),
+        FLOAT64VEC_NEW_USIZE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_new_usize").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        FLOAT64VEC_NEW_F64_BE_BYTES = LINKER.downcallHandle(
-            LIB.find("Float64Vec_new_f64_be_bytes").orElseThrow(),
+        FLOAT64VEC_NEW_F64_BE_BYTES = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_new_f64_be_bytes").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        FLOAT64VEC_NEW_FROM_OWNED = LINKER.downcallHandle(
-            LIB.find("Float64Vec_new_from_owned").orElseThrow(),
+        FLOAT64VEC_NEW_FROM_OWNED = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_new_from_owned").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        FLOAT64VEC_AS_SLICE = LINKER.downcallHandle(
-            LIB.find("Float64Vec_as_slice").orElseThrow(),
+        FLOAT64VEC_AS_SLICE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_as_slice").orElseThrow(),
             FunctionDescriptor.of(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
         );
-        FLOAT64VEC_FILL_SLICE = LINKER.downcallHandle(
-            LIB.find("Float64Vec_fill_slice").orElseThrow(),
+        FLOAT64VEC_FILL_SLICE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_fill_slice").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        FLOAT64VEC_SET_VALUE = LINKER.downcallHandle(
-            LIB.find("Float64Vec_set_value").orElseThrow(),
+        FLOAT64VEC_SET_VALUE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_set_value").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        FLOAT64VEC_TO_STRING = LINKER.downcallHandle(
-            LIB.find("Float64Vec_to_string").orElseThrow(),
+        FLOAT64VEC_TO_STRING = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_to_string").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        FLOAT64VEC_BORROW = LINKER.downcallHandle(
-            LIB.find("Float64Vec_borrow").orElseThrow(),
+        FLOAT64VEC_BORROW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_borrow").orElseThrow(),
             FunctionDescriptor.of(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
         );
-        FLOAT64VEC_GET = LINKER.downcallHandle(
-            LIB.find("Float64Vec_get").orElseThrow(),
+        FLOAT64VEC_GET = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_get").orElseThrow(),
             FunctionDescriptor.of(FLOAT64VEC_GET_RESULT, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
     }

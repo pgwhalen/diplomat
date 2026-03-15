@@ -10,9 +10,6 @@ import java.nio.charset.StandardCharsets;
 
 public class MyVec implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle MYVEC_GET;
     static final StructLayout MYVEC_GET_RESULT = MemoryLayout.structLayout(
@@ -22,14 +19,12 @@ public class MyVec implements AutoCloseable {
         );
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("MyVec_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyVec_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        MYVEC_GET = LINKER.downcallHandle(
-            LIB.find("MyVec_get").orElseThrow(),
+        MYVEC_GET = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyVec_get").orElseThrow(),
             FunctionDescriptor.of(MYVEC_GET_RESULT, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
     }

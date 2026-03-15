@@ -12,9 +12,6 @@ import java.util.NoSuchElementException;
 
 public class MyIterator implements AutoCloseable, Iterator<Integer> {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle MYITERATOR_NEXT;
     static final StructLayout MYITERATOR_NEXT_RESULT = MemoryLayout.structLayout(
@@ -24,14 +21,12 @@ public class MyIterator implements AutoCloseable, Iterator<Integer> {
         );
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("MyIterator_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyIterator_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        MYITERATOR_NEXT = LINKER.downcallHandle(
-            LIB.find("MyIterator_next").orElseThrow(),
+        MYITERATOR_NEXT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyIterator_next").orElseThrow(),
             FunctionDescriptor.of(MYITERATOR_NEXT_RESULT, ValueLayout.ADDRESS)
         );
     }

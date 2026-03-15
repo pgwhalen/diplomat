@@ -6,26 +6,21 @@ import java.nio.charset.StandardCharsets;
 
 public class RenamedComparable implements AutoCloseable, Comparable<RenamedComparable> {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle NAMESPACE_COMPARABLE_NEW;
     private static final MethodHandle NAMESPACE_COMPARABLE_CMP;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("namespace_Comparable_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_Comparable_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        NAMESPACE_COMPARABLE_NEW = LINKER.downcallHandle(
-            LIB.find("namespace_Comparable_new").orElseThrow(),
+        NAMESPACE_COMPARABLE_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_Comparable_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_BYTE)
         );
-        NAMESPACE_COMPARABLE_CMP = LINKER.downcallHandle(
-            LIB.find("namespace_Comparable_cmp").orElseThrow(),
+        NAMESPACE_COMPARABLE_CMP = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_Comparable_cmp").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_BYTE, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

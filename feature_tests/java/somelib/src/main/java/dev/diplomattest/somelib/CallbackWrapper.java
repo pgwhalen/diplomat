@@ -13,9 +13,6 @@ public class CallbackWrapper {
         ValueLayout.JAVA_BOOLEAN.withName("cantBeEmpty")
     );
     private static final VarHandle VH_CANT_BE_EMPTY = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("cantBeEmpty"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle CALLBACKWRAPPER_TEST_MULTI_ARG_CALLBACK;
     private static final MethodHandle CALLBACKWRAPPER_TEST_NO_ARGS;
     private static final MethodHandle CALLBACKWRAPPER_TEST_CB_WITH_STRUCT;
@@ -24,30 +21,28 @@ public class CallbackWrapper {
     private static final MethodHandle CALLBACKWRAPPER_TEST_SLICE_CB_ARG;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        CALLBACKWRAPPER_TEST_MULTI_ARG_CALLBACK = LINKER.downcallHandle(
-            LIB.find("CallbackWrapper_test_multi_arg_callback").orElseThrow(),
+        CALLBACKWRAPPER_TEST_MULTI_ARG_CALLBACK = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CallbackWrapper_test_multi_arg_callback").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT, ValueLayout.JAVA_INT)
         );
-        CALLBACKWRAPPER_TEST_NO_ARGS = LINKER.downcallHandle(
-            LIB.find("CallbackWrapper_test_no_args").orElseThrow(),
+        CALLBACKWRAPPER_TEST_NO_ARGS = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CallbackWrapper_test_no_args").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
         );
-        CALLBACKWRAPPER_TEST_CB_WITH_STRUCT = LINKER.downcallHandle(
-            LIB.find("CallbackWrapper_test_cb_with_struct").orElseThrow(),
+        CALLBACKWRAPPER_TEST_CB_WITH_STRUCT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CallbackWrapper_test_cb_with_struct").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
         );
-        CALLBACKWRAPPER_TEST_MULTIPLE_CB_ARGS = LINKER.downcallHandle(
-            LIB.find("CallbackWrapper_test_multiple_cb_args").orElseThrow(),
+        CALLBACKWRAPPER_TEST_MULTIPLE_CB_ARGS = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CallbackWrapper_test_multiple_cb_args").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
         );
-        CALLBACKWRAPPER_TEST_STR_CB_ARG = LINKER.downcallHandle(
-            LIB.find("CallbackWrapper_test_str_cb_arg").orElseThrow(),
+        CALLBACKWRAPPER_TEST_STR_CB_ARG = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CallbackWrapper_test_str_cb_arg").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
         );
-        CALLBACKWRAPPER_TEST_SLICE_CB_ARG = LINKER.downcallHandle(
-            LIB.find("CallbackWrapper_test_slice_cb_arg").orElseThrow(),
+        CALLBACKWRAPPER_TEST_SLICE_CB_ARG = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CallbackWrapper_test_slice_cb_arg").orElseThrow(),
             FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
         );
     }

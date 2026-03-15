@@ -18,16 +18,11 @@ public class BorrowedFields {
     private static final VarHandle VH_B_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("b"), MemoryLayout.PathElement.groupElement("len"));
     private static final VarHandle VH_C_DATA = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("c"), MemoryLayout.PathElement.groupElement("data"));
     private static final VarHandle VH_C_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("c"), MemoryLayout.PathElement.groupElement("len"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle BORROWEDFIELDS_FROM_BAR_AND_STRINGS;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        BORROWEDFIELDS_FROM_BAR_AND_STRINGS = LINKER.downcallHandle(
-            LIB.find("BorrowedFields_from_bar_and_strings").orElseThrow(),
+        BORROWEDFIELDS_FROM_BAR_AND_STRINGS = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("BorrowedFields_from_bar_and_strings").orElseThrow(),
             FunctionDescriptor.of(BorrowedFields.LAYOUT, ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
     }

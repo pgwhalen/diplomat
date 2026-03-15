@@ -15,16 +15,11 @@ public class StructWithSlices {
     private static final VarHandle VH_FIRST_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("first"), MemoryLayout.PathElement.groupElement("len"));
     private static final VarHandle VH_SECOND_DATA = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("second"), MemoryLayout.PathElement.groupElement("data"));
     private static final VarHandle VH_SECOND_LEN = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("second"), MemoryLayout.PathElement.groupElement("len"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle STRUCTWITHSLICES_RETURN_LAST;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        STRUCTWITHSLICES_RETURN_LAST = LINKER.downcallHandle(
-            LIB.find("StructWithSlices_return_last").orElseThrow(),
+        STRUCTWITHSLICES_RETURN_LAST = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("StructWithSlices_return_last").orElseThrow(),
             FunctionDescriptor.ofVoid(StructWithSlices.LAYOUT, ValueLayout.ADDRESS)
         );
     }

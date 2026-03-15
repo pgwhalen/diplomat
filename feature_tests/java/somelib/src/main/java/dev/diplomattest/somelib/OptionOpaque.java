@@ -7,9 +7,6 @@ import java.util.Optional;
 
 public class OptionOpaque implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle OPTIONOPAQUE_NEW;
     private static final MethodHandle OPTIONOPAQUE_NEW_NONE;
@@ -53,70 +50,68 @@ public class OptionOpaque implements AutoCloseable {
         );
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        OPTIONOPAQUE_NEW = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_new").orElseThrow(),
+        OPTIONOPAQUE_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
-        OPTIONOPAQUE_NEW_NONE = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_new_none").orElseThrow(),
+        OPTIONOPAQUE_NEW_NONE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_new_none").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS)
         );
-        OPTIONOPAQUE_RETURNS = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_returns").orElseThrow(),
+        OPTIONOPAQUE_RETURNS = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_returns").orElseThrow(),
             FunctionDescriptor.of(OPTIONOPAQUE_RETURNS_RESULT)
         );
-        OPTIONOPAQUE_OPTION_ISIZE = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_option_isize").orElseThrow(),
+        OPTIONOPAQUE_OPTION_ISIZE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_option_isize").orElseThrow(),
             FunctionDescriptor.of(OPTIONOPAQUE_OPTION_ISIZE_RESULT, ValueLayout.ADDRESS)
         );
-        OPTIONOPAQUE_OPTION_USIZE = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_option_usize").orElseThrow(),
+        OPTIONOPAQUE_OPTION_USIZE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_option_usize").orElseThrow(),
             FunctionDescriptor.of(OPTIONOPAQUE_OPTION_USIZE_RESULT, ValueLayout.ADDRESS)
         );
-        OPTIONOPAQUE_OPTION_I32 = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_option_i32").orElseThrow(),
+        OPTIONOPAQUE_OPTION_I32 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_option_i32").orElseThrow(),
             FunctionDescriptor.of(OPTIONOPAQUE_OPTION_I32_RESULT, ValueLayout.ADDRESS)
         );
-        OPTIONOPAQUE_OPTION_U32 = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_option_u32").orElseThrow(),
+        OPTIONOPAQUE_OPTION_U32 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_option_u32").orElseThrow(),
             FunctionDescriptor.of(OPTIONOPAQUE_OPTION_U32_RESULT, ValueLayout.ADDRESS)
         );
-        OPTIONOPAQUE_NEW_STRUCT = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_new_struct").orElseThrow(),
+        OPTIONOPAQUE_NEW_STRUCT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_new_struct").orElseThrow(),
             FunctionDescriptor.of(OptionStruct.LAYOUT)
         );
-        OPTIONOPAQUE_NEW_STRUCT_NONES = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_new_struct_nones").orElseThrow(),
+        OPTIONOPAQUE_NEW_STRUCT_NONES = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_new_struct_nones").orElseThrow(),
             FunctionDescriptor.of(OptionStruct.LAYOUT)
         );
-        OPTIONOPAQUE_RETURNS_NONE_SELF = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_returns_none_self").orElseThrow(),
+        OPTIONOPAQUE_RETURNS_NONE_SELF = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_returns_none_self").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        OPTIONOPAQUE_RETURNS_SOME_SELF = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_returns_some_self").orElseThrow(),
+        OPTIONOPAQUE_RETURNS_SOME_SELF = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_returns_some_self").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        OPTIONOPAQUE_ASSERT_INTEGER = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_assert_integer").orElseThrow(),
+        OPTIONOPAQUE_ASSERT_INTEGER = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_assert_integer").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
-        OPTIONOPAQUE_OPTION_OPAQUE_ARGUMENT = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_option_opaque_argument").orElseThrow(),
+        OPTIONOPAQUE_OPTION_OPAQUE_ARGUMENT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_option_opaque_argument").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_BOOLEAN, ValueLayout.ADDRESS)
         );
-        OPTIONOPAQUE_ACCEPTS_BORROWING_OPTION_STRUCT = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_accepts_borrowing_option_struct").orElseThrow(),
+        OPTIONOPAQUE_ACCEPTS_BORROWING_OPTION_STRUCT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_accepts_borrowing_option_struct").orElseThrow(),
             FunctionDescriptor.ofVoid(BorrowingOptionStruct.LAYOUT)
         );
-        OPTIONOPAQUE_RETURNS_OPTION_INPUT_STRUCT = LINKER.downcallHandle(
-            LIB.find("OptionOpaque_returns_option_input_struct").orElseThrow(),
+        OPTIONOPAQUE_RETURNS_OPTION_INPUT_STRUCT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OptionOpaque_returns_option_input_struct").orElseThrow(),
             FunctionDescriptor.of(OptionInputStruct.LAYOUT)
         );
     }

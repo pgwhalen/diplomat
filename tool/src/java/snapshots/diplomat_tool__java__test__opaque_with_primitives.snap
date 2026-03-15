@@ -10,31 +10,26 @@ import java.nio.charset.StandardCharsets;
 
 public class Counter implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle COUNTER_NEW;
     private static final MethodHandle COUNTER_GET_VALUE;
     private static final MethodHandle COUNTER_ADD;
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("Counter_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Counter_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        COUNTER_NEW = LINKER.downcallHandle(
-            LIB.find("Counter_new").orElseThrow(),
+        COUNTER_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Counter_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
-        COUNTER_GET_VALUE = LINKER.downcallHandle(
-            LIB.find("Counter_get_value").orElseThrow(),
+        COUNTER_GET_VALUE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Counter_get_value").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
         );
-        COUNTER_ADD = LINKER.downcallHandle(
-            LIB.find("Counter_add").orElseThrow(),
+        COUNTER_ADD = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Counter_add").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
     }

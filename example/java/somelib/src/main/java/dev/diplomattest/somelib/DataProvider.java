@@ -11,9 +11,6 @@ import java.nio.charset.StandardCharsets;
  */
 public class DataProvider implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle ICU4X_DATAPROVIDER_NEW_STATIC_MV1;
     private static final MethodHandle ICU4X_DATAPROVIDER_RETURNS_RESULT_MV1;
@@ -22,18 +19,16 @@ public class DataProvider implements AutoCloseable {
         );
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("icu4x_DataProvider_destroy_mv1").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_DataProvider_destroy_mv1").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        ICU4X_DATAPROVIDER_NEW_STATIC_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_DataProvider_new_static_mv1").orElseThrow(),
+        ICU4X_DATAPROVIDER_NEW_STATIC_MV1 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_DataProvider_new_static_mv1").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS)
         );
-        ICU4X_DATAPROVIDER_RETURNS_RESULT_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_DataProvider_returns_result_mv1").orElseThrow(),
+        ICU4X_DATAPROVIDER_RETURNS_RESULT_MV1 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_DataProvider_returns_result_mv1").orElseThrow(),
             FunctionDescriptor.of(ICU4X_DATAPROVIDER_RETURNS_RESULT_MV1_RESULT)
         );
     }

@@ -6,9 +6,6 @@ import java.nio.charset.StandardCharsets;
 
 public class Foo implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle FOO_NEW;
     private static final MethodHandle FOO_GET_BAR;
@@ -17,30 +14,28 @@ public class Foo implements AutoCloseable {
     private static final MethodHandle FOO_EXTRACT_FROM_BOUNDS;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("Foo_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Foo_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        FOO_NEW = LINKER.downcallHandle(
-            LIB.find("Foo_new").orElseThrow(),
+        FOO_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Foo_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        FOO_GET_BAR = LINKER.downcallHandle(
-            LIB.find("Foo_get_bar").orElseThrow(),
+        FOO_GET_BAR = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Foo_get_bar").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        FOO_AS_RETURNING = LINKER.downcallHandle(
-            LIB.find("Foo_as_returning").orElseThrow(),
+        FOO_AS_RETURNING = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Foo_as_returning").orElseThrow(),
             FunctionDescriptor.of(BorrowedFieldsReturning.LAYOUT, ValueLayout.ADDRESS)
         );
-        FOO_EXTRACT_FROM_FIELDS = LINKER.downcallHandle(
-            LIB.find("Foo_extract_from_fields").orElseThrow(),
+        FOO_EXTRACT_FROM_FIELDS = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Foo_extract_from_fields").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, BorrowedFields.LAYOUT)
         );
-        FOO_EXTRACT_FROM_BOUNDS = LINKER.downcallHandle(
-            LIB.find("Foo_extract_from_bounds").orElseThrow(),
+        FOO_EXTRACT_FROM_BOUNDS = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Foo_extract_from_bounds").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, BorrowedFieldsWithBounds.LAYOUT, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
     }

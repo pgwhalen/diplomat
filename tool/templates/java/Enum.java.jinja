@@ -32,9 +32,6 @@ import java.util.Optional;
     }
     {%- if !native_methods.is_empty() %}
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     {%- for m in native_methods %}
     private static final MethodHandle {{m.handle_name}};
     {%- endfor %}
@@ -45,11 +42,9 @@ import java.util.Optional;
     {%- endfor %}
 
     static {
-        System.loadLibrary("{{dylib_name}}");
-        LIB = SymbolLookup.loaderLookup();
         {%- for m in native_methods %}
-        {{m.handle_name}} = LINKER.downcallHandle(
-            LIB.find("{{m.abi_name}}").orElseThrow(),
+        {{m.handle_name}} = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("{{m.abi_name}}").orElseThrow(),
             {{m.descriptor}}
         );
         {%- endfor %}

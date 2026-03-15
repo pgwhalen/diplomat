@@ -14,16 +14,11 @@ public class FixedDecimalFormatterOptions {
     );
     private static final VarHandle VH_GROUPING_STRATEGY = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("groupingStrategy"));
     private static final VarHandle VH_SOME_OTHER_CONFIG = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("someOtherConfig"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle ICU4X_FIXEDDECIMALFORMATTEROPTIONS_DEFAULT_MV1;
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        ICU4X_FIXEDDECIMALFORMATTEROPTIONS_DEFAULT_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimalFormatterOptions_default_mv1").orElseThrow(),
+        ICU4X_FIXEDDECIMALFORMATTEROPTIONS_DEFAULT_MV1 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_FixedDecimalFormatterOptions_default_mv1").orElseThrow(),
             FunctionDescriptor.of(FixedDecimalFormatterOptions.LAYOUT)
         );
     }

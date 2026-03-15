@@ -11,21 +11,16 @@ public class RenamedTestMacroStruct {
         ValueLayout.JAVA_LONG.withName("a")
     );
     private static final VarHandle VH_A = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("a"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle NAMESPACE_TESTMACROSTRUCT_TEST_FUNC;
     private static final MethodHandle NAMESPACE_TESTMACROSTRUCT_TEST_META;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        NAMESPACE_TESTMACROSTRUCT_TEST_FUNC = LINKER.downcallHandle(
-            LIB.find("namespace_TestMacroStruct_test_func").orElseThrow(),
+        NAMESPACE_TESTMACROSTRUCT_TEST_FUNC = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_TestMacroStruct_test_func").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_LONG)
         );
-        NAMESPACE_TESTMACROSTRUCT_TEST_META = LINKER.downcallHandle(
-            LIB.find("namespace_TestMacroStruct_test_meta").orElseThrow(),
+        NAMESPACE_TESTMACROSTRUCT_TEST_META = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_TestMacroStruct_test_meta").orElseThrow(),
             FunctionDescriptor.of(RenamedTestMacroStruct.LAYOUT)
         );
     }

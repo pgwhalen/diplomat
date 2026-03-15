@@ -10,26 +10,21 @@ import java.nio.charset.StandardCharsets;
 
 public class Weather implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle WEATHER_FROM_SEASON;
     private static final MethodHandle WEATHER_GET_SEASON;
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("Weather_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Weather_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        WEATHER_FROM_SEASON = LINKER.downcallHandle(
-            LIB.find("Weather_from_season").orElseThrow(),
+        WEATHER_FROM_SEASON = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Weather_from_season").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
-        WEATHER_GET_SEASON = LINKER.downcallHandle(
-            LIB.find("Weather_get_season").orElseThrow(),
+        WEATHER_GET_SEASON = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Weather_get_season").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
         );
     }

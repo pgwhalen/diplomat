@@ -11,21 +11,16 @@ public class CyclicStructC {
         CyclicStructA.LAYOUT.withName("a")
     );
     private static final long OFFSET_A = LAYOUT.byteOffset(MemoryLayout.PathElement.groupElement("a"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle CYCLICSTRUCTC_TAKES_NESTED_PARAMETERS;
     private static final MethodHandle CYCLICSTRUCTC_CYCLIC_OUT;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        CYCLICSTRUCTC_TAKES_NESTED_PARAMETERS = LINKER.downcallHandle(
-            LIB.find("CyclicStructC_takes_nested_parameters").orElseThrow(),
+        CYCLICSTRUCTC_TAKES_NESTED_PARAMETERS = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CyclicStructC_takes_nested_parameters").orElseThrow(),
             FunctionDescriptor.of(CyclicStructC.LAYOUT, CyclicStructC.LAYOUT)
         );
-        CYCLICSTRUCTC_CYCLIC_OUT = LINKER.downcallHandle(
-            LIB.find("CyclicStructC_cyclic_out").orElseThrow(),
+        CYCLICSTRUCTC_CYCLIC_OUT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("CyclicStructC_cyclic_out").orElseThrow(),
             FunctionDescriptor.ofVoid(CyclicStructC.LAYOUT, ValueLayout.ADDRESS)
         );
     }

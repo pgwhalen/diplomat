@@ -14,9 +14,6 @@ public class RenamedStructWithAttrs {
     );
     private static final VarHandle VH_A = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("a"));
     private static final VarHandle VH_B = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("b"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle NAMESPACE_STRUCTWITHATTRS_NEW_FALLIBLE;
     private static final MethodHandle NAMESPACE_STRUCTWITHATTRS_C;
     private static final MethodHandle NAMESPACE_STRUCTWITHATTRS_DEPRECATED;
@@ -27,18 +24,16 @@ public class RenamedStructWithAttrs {
         );
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        NAMESPACE_STRUCTWITHATTRS_NEW_FALLIBLE = LINKER.downcallHandle(
-            LIB.find("namespace_StructWithAttrs_new_fallible").orElseThrow(),
+        NAMESPACE_STRUCTWITHATTRS_NEW_FALLIBLE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_StructWithAttrs_new_fallible").orElseThrow(),
             FunctionDescriptor.of(NAMESPACE_STRUCTWITHATTRS_NEW_FALLIBLE_RESULT, ValueLayout.JAVA_BOOLEAN, ValueLayout.JAVA_INT)
         );
-        NAMESPACE_STRUCTWITHATTRS_C = LINKER.downcallHandle(
-            LIB.find("namespace_StructWithAttrs_c").orElseThrow(),
+        NAMESPACE_STRUCTWITHATTRS_C = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_StructWithAttrs_c").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, RenamedStructWithAttrs.LAYOUT)
         );
-        NAMESPACE_STRUCTWITHATTRS_DEPRECATED = LINKER.downcallHandle(
-            LIB.find("namespace_StructWithAttrs_deprecated").orElseThrow(),
+        NAMESPACE_STRUCTWITHATTRS_DEPRECATED = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_StructWithAttrs_deprecated").orElseThrow(),
             FunctionDescriptor.ofVoid(RenamedStructWithAttrs.LAYOUT)
         );
     }

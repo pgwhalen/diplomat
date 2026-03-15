@@ -8,9 +8,6 @@ import java.util.NoSuchElementException;
 
 public class RenamedMyIterator implements AutoCloseable, Iterator<Byte> {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle NAMESPACE_MYITERATOR_NEXT;
     static final StructLayout NAMESPACE_MYITERATOR_NEXT_RESULT = MemoryLayout.structLayout(
@@ -19,14 +16,12 @@ public class RenamedMyIterator implements AutoCloseable, Iterator<Byte> {
         );
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("namespace_MyIterator_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_MyIterator_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        NAMESPACE_MYITERATOR_NEXT = LINKER.downcallHandle(
-            LIB.find("namespace_MyIterator_next").orElseThrow(),
+        NAMESPACE_MYITERATOR_NEXT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_MyIterator_next").orElseThrow(),
             FunctionDescriptor.of(NAMESPACE_MYITERATOR_NEXT_RESULT, ValueLayout.ADDRESS)
         );
     }

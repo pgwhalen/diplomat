@@ -10,21 +10,16 @@ import java.nio.charset.StandardCharsets;
 
 public class Locale implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle ICU4X_LOCALE_NEW_MV1;
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("icu4x_Locale_destroy_mv1").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_Locale_destroy_mv1").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        ICU4X_LOCALE_NEW_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_Locale_new_mv1").orElseThrow(),
+        ICU4X_LOCALE_NEW_MV1 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_Locale_new_mv1").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
     }

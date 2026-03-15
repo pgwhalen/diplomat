@@ -57,21 +57,16 @@ import java.nio.charset.StandardCharsets;
 
 public class Renderer implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle RENDERER_NEW;
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("Renderer_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Renderer_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        RENDERER_NEW = LINKER.downcallHandle(
-            LIB.find("Renderer_new").orElseThrow(),
+        RENDERER_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Renderer_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, Config.LAYOUT)
         );
     }

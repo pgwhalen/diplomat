@@ -10,26 +10,21 @@ import java.nio.charset.StandardCharsets;
 
 public class Float64Vec implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle FLOAT64VEC_AS_SLICE;
     private static final MethodHandle FLOAT64VEC_AS_BOOLS;
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("Float64Vec_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        FLOAT64VEC_AS_SLICE = LINKER.downcallHandle(
-            LIB.find("Float64Vec_as_slice").orElseThrow(),
+        FLOAT64VEC_AS_SLICE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_as_slice").orElseThrow(),
             FunctionDescriptor.of(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
         );
-        FLOAT64VEC_AS_BOOLS = LINKER.downcallHandle(
-            LIB.find("Float64Vec_as_bools").orElseThrow(),
+        FLOAT64VEC_AS_BOOLS = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Float64Vec_as_bools").orElseThrow(),
             FunctionDescriptor.of(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
         );
     }

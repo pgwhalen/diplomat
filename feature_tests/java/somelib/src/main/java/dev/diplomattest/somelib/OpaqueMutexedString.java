@@ -6,9 +6,6 @@ import java.nio.charset.StandardCharsets;
 
 public class OpaqueMutexedString implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle OPAQUEMUTEXEDSTRING_FROM_USIZE;
     private static final MethodHandle OPAQUEMUTEXEDSTRING_CHANGE;
@@ -20,42 +17,40 @@ public class OpaqueMutexedString implements AutoCloseable {
     private static final MethodHandle OPAQUEMUTEXEDSTRING_TO_UNSIGNED_FROM_UNSIGNED;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("OpaqueMutexedString_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueMutexedString_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        OPAQUEMUTEXEDSTRING_FROM_USIZE = LINKER.downcallHandle(
-            LIB.find("OpaqueMutexedString_from_usize").orElseThrow(),
+        OPAQUEMUTEXEDSTRING_FROM_USIZE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueMutexedString_from_usize").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
-        OPAQUEMUTEXEDSTRING_CHANGE = LINKER.downcallHandle(
-            LIB.find("OpaqueMutexedString_change").orElseThrow(),
+        OPAQUEMUTEXEDSTRING_CHANGE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueMutexedString_change").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
-        OPAQUEMUTEXEDSTRING_BORROW = LINKER.downcallHandle(
-            LIB.find("OpaqueMutexedString_borrow").orElseThrow(),
+        OPAQUEMUTEXEDSTRING_BORROW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueMutexedString_borrow").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        OPAQUEMUTEXEDSTRING_BORROW_OTHER = LINKER.downcallHandle(
-            LIB.find("OpaqueMutexedString_borrow_other").orElseThrow(),
+        OPAQUEMUTEXEDSTRING_BORROW_OTHER = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueMutexedString_borrow_other").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        OPAQUEMUTEXEDSTRING_BORROW_SELF_OR_OTHER = LINKER.downcallHandle(
-            LIB.find("OpaqueMutexedString_borrow_self_or_other").orElseThrow(),
+        OPAQUEMUTEXEDSTRING_BORROW_SELF_OR_OTHER = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueMutexedString_borrow_self_or_other").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        OPAQUEMUTEXEDSTRING_GET_LEN_AND_ADD = LINKER.downcallHandle(
-            LIB.find("OpaqueMutexedString_get_len_and_add").orElseThrow(),
+        OPAQUEMUTEXEDSTRING_GET_LEN_AND_ADD = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueMutexedString_get_len_and_add").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
-        OPAQUEMUTEXEDSTRING_WRAPPER = LINKER.downcallHandle(
-            LIB.find("OpaqueMutexedString_wrapper").orElseThrow(),
+        OPAQUEMUTEXEDSTRING_WRAPPER = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueMutexedString_wrapper").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        OPAQUEMUTEXEDSTRING_TO_UNSIGNED_FROM_UNSIGNED = LINKER.downcallHandle(
-            LIB.find("OpaqueMutexedString_to_unsigned_from_unsigned").orElseThrow(),
+        OPAQUEMUTEXEDSTRING_TO_UNSIGNED_FROM_UNSIGNED = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("OpaqueMutexedString_to_unsigned_from_unsigned").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_SHORT, ValueLayout.ADDRESS, ValueLayout.JAVA_SHORT)
         );
     }

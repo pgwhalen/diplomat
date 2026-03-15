@@ -7,26 +7,21 @@ import java.util.Iterator;
 
 public class RenamedMyIterable implements AutoCloseable, Iterable<Byte> {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle NAMESPACE_MYITERABLE_NEW;
     private static final MethodHandle NAMESPACE_MYITERABLE_ITER;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("namespace_MyIterable_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_MyIterable_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        NAMESPACE_MYITERABLE_NEW = LINKER.downcallHandle(
-            LIB.find("namespace_MyIterable_new").orElseThrow(),
+        NAMESPACE_MYITERABLE_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_MyIterable_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
-        NAMESPACE_MYITERABLE_ITER = LINKER.downcallHandle(
-            LIB.find("namespace_MyIterable_iter").orElseThrow(),
+        NAMESPACE_MYITERABLE_ITER = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_MyIterable_iter").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

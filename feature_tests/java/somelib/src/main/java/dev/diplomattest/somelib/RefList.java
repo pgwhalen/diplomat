@@ -6,21 +6,16 @@ import java.nio.charset.StandardCharsets;
 
 public class RefList implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle REFLIST_NODE;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("RefList_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("RefList_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        REFLIST_NODE = LINKER.downcallHandle(
-            LIB.find("RefList_node").orElseThrow(),
+        REFLIST_NODE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("RefList_node").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

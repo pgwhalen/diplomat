@@ -11,26 +11,21 @@ public class TraitWrapper {
         ValueLayout.JAVA_BOOLEAN.withName("cantBeEmpty")
     );
     private static final VarHandle VH_CANT_BE_EMPTY = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("cantBeEmpty"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle TRAITWRAPPER_TEST_WITH_TRAIT;
     private static final MethodHandle TRAITWRAPPER_TEST_TRAIT_WITH_STRUCT;
     private static final MethodHandle TRAITWRAPPER_TEST_RESULT_OUTPUT;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        TRAITWRAPPER_TEST_WITH_TRAIT = LINKER.downcallHandle(
-            LIB.find("TraitWrapper_test_with_trait").orElseThrow(),
+        TRAITWRAPPER_TEST_WITH_TRAIT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("TraitWrapper_test_with_trait").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, TesterTrait.TRAIT_STRUCT_LAYOUT, ValueLayout.JAVA_INT)
         );
-        TRAITWRAPPER_TEST_TRAIT_WITH_STRUCT = LINKER.downcallHandle(
-            LIB.find("TraitWrapper_test_trait_with_struct").orElseThrow(),
+        TRAITWRAPPER_TEST_TRAIT_WITH_STRUCT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("TraitWrapper_test_trait_with_struct").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT, TesterTrait.TRAIT_STRUCT_LAYOUT)
         );
-        TRAITWRAPPER_TEST_RESULT_OUTPUT = LINKER.downcallHandle(
-            LIB.find("TraitWrapper_test_result_output").orElseThrow(),
+        TRAITWRAPPER_TEST_RESULT_OUTPUT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("TraitWrapper_test_result_output").orElseThrow(),
             FunctionDescriptor.ofVoid(TesterTrait.TRAIT_STRUCT_LAYOUT)
         );
     }

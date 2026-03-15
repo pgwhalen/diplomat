@@ -7,26 +7,21 @@ import java.util.Iterator;
 
 public class RenamedOpaqueRefIterable implements AutoCloseable, Iterable<AttrOpaque1Renamed> {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle NAMESPACE_OPAQUEREFITERABLE_NEW;
     private static final MethodHandle NAMESPACE_OPAQUEREFITERABLE_ITER;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("namespace_OpaqueRefIterable_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_OpaqueRefIterable_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        NAMESPACE_OPAQUEREFITERABLE_NEW = LINKER.downcallHandle(
-            LIB.find("namespace_OpaqueRefIterable_new").orElseThrow(),
+        NAMESPACE_OPAQUEREFITERABLE_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_OpaqueRefIterable_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
-        NAMESPACE_OPAQUEREFITERABLE_ITER = LINKER.downcallHandle(
-            LIB.find("namespace_OpaqueRefIterable_iter").orElseThrow(),
+        NAMESPACE_OPAQUEREFITERABLE_ITER = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_OpaqueRefIterable_iter").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

@@ -25,9 +25,6 @@ public class MyStruct {
     private static final VarHandle VH_E = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("e"));
     private static final VarHandle VH_F = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("f"));
     private static final VarHandle VH_G = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("g"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle MYSTRUCT_NEW;
     private static final MethodHandle MYSTRUCT_TAKES_MUT;
     private static final MethodHandle MYSTRUCT_TAKES_CONST;
@@ -42,30 +39,28 @@ public class MyStruct {
         );
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        MYSTRUCT_NEW = LINKER.downcallHandle(
-            LIB.find("MyStruct_new").orElseThrow(),
+        MYSTRUCT_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyStruct_new").orElseThrow(),
             FunctionDescriptor.of(MyStruct.LAYOUT)
         );
-        MYSTRUCT_TAKES_MUT = LINKER.downcallHandle(
-            LIB.find("MyStruct_takes_mut").orElseThrow(),
+        MYSTRUCT_TAKES_MUT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyStruct_takes_mut").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        MYSTRUCT_TAKES_CONST = LINKER.downcallHandle(
-            LIB.find("MyStruct_takes_const").orElseThrow(),
+        MYSTRUCT_TAKES_CONST = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyStruct_takes_const").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        MYSTRUCT_INTO_A = LINKER.downcallHandle(
-            LIB.find("MyStruct_into_a").orElseThrow(),
+        MYSTRUCT_INTO_A = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyStruct_into_a").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_BYTE, MyStruct.LAYOUT)
         );
-        MYSTRUCT_RETURNS_ZST_RESULT = LINKER.downcallHandle(
-            LIB.find("MyStruct_returns_zst_result").orElseThrow(),
+        MYSTRUCT_RETURNS_ZST_RESULT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyStruct_returns_zst_result").orElseThrow(),
             FunctionDescriptor.of(MYSTRUCT_RETURNS_ZST_RESULT_RESULT)
         );
-        MYSTRUCT_FAILS_ZST_RESULT = LINKER.downcallHandle(
-            LIB.find("MyStruct_fails_zst_result").orElseThrow(),
+        MYSTRUCT_FAILS_ZST_RESULT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyStruct_fails_zst_result").orElseThrow(),
             FunctionDescriptor.of(MYSTRUCT_FAILS_ZST_RESULT_RESULT)
         );
     }

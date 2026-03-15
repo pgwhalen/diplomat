@@ -63,7 +63,7 @@ public final class DiplomatLib {
 
     static final Linker LINKER_SHARED = Linker.nativeLinker();
     private static final Linker LINKER = LINKER_SHARED;
-    private static final SymbolLookup LIB;
+    static final SymbolLookup LIB;
 
     private static final MethodHandle DIPLOMAT_ALLOC;
     private static final MethodHandle DIPLOMAT_FREE;

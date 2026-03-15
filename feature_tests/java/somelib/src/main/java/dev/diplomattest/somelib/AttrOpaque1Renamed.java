@@ -12,9 +12,6 @@ import java.lang.invoke.MethodType;
  */
 public class AttrOpaque1Renamed implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle NAMESPACE_ATTROPAQUE1_NEW;
     private static final MethodHandle NAMESPACE_ATTROPAQUE1_TEST_NAMESPACED_CALLBACK;
@@ -26,42 +23,40 @@ public class AttrOpaque1Renamed implements AutoCloseable {
     private static final MethodHandle NAMESPACE_ATTROPAQUE1_USE_NAMESPACED;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("namespace_AttrOpaque1_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_AttrOpaque1_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        NAMESPACE_ATTROPAQUE1_NEW = LINKER.downcallHandle(
-            LIB.find("namespace_AttrOpaque1_new").orElseThrow(),
+        NAMESPACE_ATTROPAQUE1_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_AttrOpaque1_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS)
         );
-        NAMESPACE_ATTROPAQUE1_TEST_NAMESPACED_CALLBACK = LINKER.downcallHandle(
-            LIB.find("namespace_AttrOpaque1_test_namespaced_callback").orElseThrow(),
+        NAMESPACE_ATTROPAQUE1_TEST_NAMESPACED_CALLBACK = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_AttrOpaque1_test_namespaced_callback").orElseThrow(),
             FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_CALLBACK_LAYOUT)
         );
-        NAMESPACE_ATTROPAQUE1_MAC_TEST = LINKER.downcallHandle(
-            LIB.find("namespace_AttrOpaque1_mac_test").orElseThrow(),
+        NAMESPACE_ATTROPAQUE1_MAC_TEST = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_AttrOpaque1_mac_test").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT)
         );
-        NAMESPACE_ATTROPAQUE1_HELLO = LINKER.downcallHandle(
-            LIB.find("namespace_AttrOpaque1_hello").orElseThrow(),
+        NAMESPACE_ATTROPAQUE1_HELLO = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_AttrOpaque1_hello").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT)
         );
-        NAMESPACE_ATTROPAQUE1_METHOD = LINKER.downcallHandle(
-            LIB.find("namespace_AttrOpaque1_method").orElseThrow(),
+        NAMESPACE_ATTROPAQUE1_METHOD = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_AttrOpaque1_method").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_BYTE, ValueLayout.ADDRESS)
         );
-        RENAMED_ON_ABI_ONLY = LINKER.downcallHandle(
-            LIB.find("renamed_on_abi_only").orElseThrow(),
+        RENAMED_ON_ABI_ONLY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("renamed_on_abi_only").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_BYTE, ValueLayout.ADDRESS)
         );
-        NAMESPACE_ATTROPAQUE1_USE_UNNAMESPACED = LINKER.downcallHandle(
-            LIB.find("namespace_AttrOpaque1_use_unnamespaced").orElseThrow(),
+        NAMESPACE_ATTROPAQUE1_USE_UNNAMESPACED = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_AttrOpaque1_use_unnamespaced").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
-        NAMESPACE_ATTROPAQUE1_USE_NAMESPACED = LINKER.downcallHandle(
-            LIB.find("namespace_AttrOpaque1_use_namespaced").orElseThrow(),
+        NAMESPACE_ATTROPAQUE1_USE_NAMESPACED = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_AttrOpaque1_use_namespaced").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
     }

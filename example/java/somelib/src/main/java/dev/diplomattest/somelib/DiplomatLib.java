@@ -45,7 +45,10 @@ public final class DiplomatLib {
     }
 
     static void unregisterCallback(MemorySegment data) {
-        PREVENT_GC.remove(data.address());
+        Object cb = PREVENT_GC.remove(data.address());
+        if (cb instanceof AutoCloseable ac) {
+            try { ac.close(); } catch (Exception e) { /* ignore */ }
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -60,7 +63,7 @@ public final class DiplomatLib {
 
     static final Linker LINKER_SHARED = Linker.nativeLinker();
     private static final Linker LINKER = LINKER_SHARED;
-    private static final SymbolLookup LIB;
+    static final SymbolLookup LIB;
 
     private static final MethodHandle DIPLOMAT_ALLOC;
     private static final MethodHandle DIPLOMAT_FREE;

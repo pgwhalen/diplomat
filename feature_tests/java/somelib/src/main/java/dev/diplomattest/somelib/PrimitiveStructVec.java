@@ -6,9 +6,6 @@ import java.nio.charset.StandardCharsets;
 
 public class PrimitiveStructVec implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle PRIMITIVESTRUCTVEC_NEW;
     private static final MethodHandle PRIMITIVESTRUCTVEC_PUSH;
@@ -19,38 +16,36 @@ public class PrimitiveStructVec implements AutoCloseable {
     private static final MethodHandle PRIMITIVESTRUCTVEC_TAKE_SLICE_FROM_OTHER_NAMESPACE;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("PrimitiveStructVec_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("PrimitiveStructVec_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        PRIMITIVESTRUCTVEC_NEW = LINKER.downcallHandle(
-            LIB.find("PrimitiveStructVec_new").orElseThrow(),
+        PRIMITIVESTRUCTVEC_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("PrimitiveStructVec_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS)
         );
-        PRIMITIVESTRUCTVEC_PUSH = LINKER.downcallHandle(
-            LIB.find("PrimitiveStructVec_push").orElseThrow(),
+        PRIMITIVESTRUCTVEC_PUSH = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("PrimitiveStructVec_push").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, PrimitiveStruct.LAYOUT)
         );
-        PRIMITIVESTRUCTVEC_LEN = LINKER.downcallHandle(
-            LIB.find("PrimitiveStructVec_len").orElseThrow(),
+        PRIMITIVESTRUCTVEC_LEN = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("PrimitiveStructVec_len").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS)
         );
-        PRIMITIVESTRUCTVEC_AS_SLICE = LINKER.downcallHandle(
-            LIB.find("PrimitiveStructVec_as_slice").orElseThrow(),
+        PRIMITIVESTRUCTVEC_AS_SLICE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("PrimitiveStructVec_as_slice").orElseThrow(),
             FunctionDescriptor.of(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
         );
-        PRIMITIVESTRUCTVEC_AS_SLICE_MUT = LINKER.downcallHandle(
-            LIB.find("PrimitiveStructVec_as_slice_mut").orElseThrow(),
+        PRIMITIVESTRUCTVEC_AS_SLICE_MUT = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("PrimitiveStructVec_as_slice_mut").orElseThrow(),
             FunctionDescriptor.of(DiplomatLib.DIPLOMAT_STRING_VIEW, ValueLayout.ADDRESS)
         );
-        PRIMITIVESTRUCTVEC_GET = LINKER.downcallHandle(
-            LIB.find("PrimitiveStructVec_get").orElseThrow(),
+        PRIMITIVESTRUCTVEC_GET = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("PrimitiveStructVec_get").orElseThrow(),
             FunctionDescriptor.of(PrimitiveStruct.LAYOUT, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG)
         );
-        PRIMITIVESTRUCTVEC_TAKE_SLICE_FROM_OTHER_NAMESPACE = LINKER.downcallHandle(
-            LIB.find("PrimitiveStructVec_take_slice_from_other_namespace").orElseThrow(),
+        PRIMITIVESTRUCTVEC_TAKE_SLICE_FROM_OTHER_NAMESPACE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("PrimitiveStructVec_take_slice_from_other_namespace").orElseThrow(),
             FunctionDescriptor.ofVoid(DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
     }

@@ -26,16 +26,11 @@ public enum DefaultEnum {
         }
         throw new IllegalArgumentException("Invalid native value for DefaultEnum: " + value);
     }
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle DEFAULTENUM_NEW;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        DEFAULTENUM_NEW = LINKER.downcallHandle(
-            LIB.find("DefaultEnum_new").orElseThrow(),
+        DEFAULTENUM_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("DefaultEnum_new").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_INT)
         );
     }

@@ -23,9 +23,6 @@ import java.lang.invoke.MethodType;
     {%- if let Some(t) = special_methods.iterable_item_type.as_deref() %}, Iterable<{{t}}>{% endif %}
     {%- if special_methods.comparator %}, Comparable<{{type_name}}>{% endif %} {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     {%- for m in native_methods %}
     private static final MethodHandle {{m.handle_name}};
@@ -37,15 +34,13 @@ import java.lang.invoke.MethodType;
     {%- endfor %}
 
     static {
-        System.loadLibrary("{{dylib_name}}");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("{{dtor_abi_name}}").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("{{dtor_abi_name}}").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
         {%- for m in native_methods %}
-        {{m.handle_name}} = LINKER.downcallHandle(
-            LIB.find("{{m.abi_name}}").orElseThrow(),
+        {{m.handle_name}} = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("{{m.abi_name}}").orElseThrow(),
             {{m.descriptor}}
         );
         {%- endfor %}

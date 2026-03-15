@@ -9,9 +9,6 @@ import java.nio.charset.StandardCharsets;
  */
 public class FixedDecimal implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle ICU4X_FIXEDDECIMAL_NEW_MV1;
     private static final MethodHandle ICU4X_FIXEDDECIMAL_MULTIPLY_POW10_MV1;
@@ -21,22 +18,20 @@ public class FixedDecimal implements AutoCloseable {
         );
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimal_destroy_mv1").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_FixedDecimal_destroy_mv1").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        ICU4X_FIXEDDECIMAL_NEW_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimal_new_mv1").orElseThrow(),
+        ICU4X_FIXEDDECIMAL_NEW_MV1 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_FixedDecimal_new_mv1").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
-        ICU4X_FIXEDDECIMAL_MULTIPLY_POW10_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimal_multiply_pow10_mv1").orElseThrow(),
+        ICU4X_FIXEDDECIMAL_MULTIPLY_POW10_MV1 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_FixedDecimal_multiply_pow10_mv1").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_SHORT)
         );
-        ICU4X_FIXEDDECIMAL_TO_STRING_MV1 = LINKER.downcallHandle(
-            LIB.find("icu4x_FixedDecimal_to_string_mv1").orElseThrow(),
+        ICU4X_FIXEDDECIMAL_TO_STRING_MV1 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("icu4x_FixedDecimal_to_string_mv1").orElseThrow(),
             FunctionDescriptor.of(ICU4X_FIXEDDECIMAL_TO_STRING_MV1_RESULT, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

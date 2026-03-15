@@ -10,9 +10,6 @@ import java.nio.charset.StandardCharsets;
 
 public class Foo implements AutoCloseable {
 
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
-
     private static final MethodHandle DESTROY;
     private static final MethodHandle FOO_TRY_TO_STRING;
     static final StructLayout FOO_TRY_TO_STRING_RESULT = MemoryLayout.structLayout(
@@ -20,14 +17,12 @@ public class Foo implements AutoCloseable {
         );
 
     static {
-        System.loadLibrary("diplomat_example");
-        LIB = SymbolLookup.loaderLookup();
-        DESTROY = LINKER.downcallHandle(
-            LIB.find("Foo_destroy").orElseThrow(),
+        DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Foo_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
         );
-        FOO_TRY_TO_STRING = LINKER.downcallHandle(
-            LIB.find("Foo_try_to_string").orElseThrow(),
+        FOO_TRY_TO_STRING = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("Foo_try_to_string").orElseThrow(),
             FunctionDescriptor.of(FOO_TRY_TO_STRING_RESULT, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
         );
     }

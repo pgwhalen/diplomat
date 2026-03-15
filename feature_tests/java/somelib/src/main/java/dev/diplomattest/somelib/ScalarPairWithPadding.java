@@ -17,16 +17,11 @@ public class ScalarPairWithPadding {
     );
     private static final VarHandle VH_FIRST = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("first"));
     private static final VarHandle VH_SECOND = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("second"));
-
-    private static final Linker LINKER = Linker.nativeLinker();
-    private static final SymbolLookup LIB;
     private static final MethodHandle SCALARPAIRWITHPADDING_ASSERT_VALUE;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
-        SCALARPAIRWITHPADDING_ASSERT_VALUE = LINKER.downcallHandle(
-            LIB.find("ScalarPairWithPadding_assert_value").orElseThrow(),
+        SCALARPAIRWITHPADDING_ASSERT_VALUE = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("ScalarPairWithPadding_assert_value").orElseThrow(),
             FunctionDescriptor.ofVoid(ScalarPairWithPadding.LAYOUT)
         );
     }
