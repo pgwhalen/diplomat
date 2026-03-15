@@ -1576,6 +1576,13 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         match ok {
             SuccessType::Unit => "return;".to_string(),
             SuccessType::OutType(ty) => {
+                // Struct slices produce multi-statement blocks with their own return
+                if let Type::Slice(Slice::Struct(_, st)) = ty {
+                    let type_name = self.formatter.fmt_type_name(st.id()).to_string();
+                    return self.gen_struct_slice_return_stmt(&type_name, "result")
+                        .replacen("var resultSeg = (MemorySegment) result;\n            ", "", 1)
+                        .replace("resultSeg", "result");
+                }
                 let extract = self.gen_result_value_extract(ty, "result");
                 format!("return {extract};")
             }
