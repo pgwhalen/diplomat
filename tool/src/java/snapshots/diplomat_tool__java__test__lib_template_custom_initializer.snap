@@ -1,4 +1,9 @@
-package {{domain}}.{{lib_name}};
+---
+source: tool/src/java/mod.rs
+assertion_line: 4397
+expression: body
+---
+package dev.diplomattest.somelib;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
@@ -76,12 +81,7 @@ public final class DiplomatLib {
     static final MemorySegment DESTRUCTOR_STUB;
 
     static {
-{%- if let Some(initializer) = clib_initializer %}
-        LIB = {{initializer}};
-{%- else %}
-        System.loadLibrary("{{dylib_name}}");
-        LIB = SymbolLookup.loaderLookup();
-{%- endif %}
+        LIB = NativeLoader.get();
         DIPLOMAT_ALLOC = LINKER.downcallHandle(
             LIB.find("diplomat_alloc").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)

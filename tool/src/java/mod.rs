@@ -53,6 +53,7 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
 pub struct JavaConfig {
     domain: Option<String>,
     dylib_name: Option<String>,
+    clib_initializer: Option<String>,
 }
 
 impl JavaConfig {
@@ -66,6 +67,9 @@ impl JavaConfig {
             "dylib_name" => {
                 self.dylib_name = value.as_str().map(|val| val.to_string());
             }
+            "clib_initializer" => {
+                self.clib_initializer = value.as_str().map(|val| val.to_string());
+            }
             _ => {}
         }
     }
@@ -76,7 +80,11 @@ pub(crate) fn run<'tcx>(
     conf: Config,
     docs_url_gen: &'tcx DocsUrlGenerator,
 ) -> (FileMap, ErrorStore<'tcx, String>) {
-    let JavaConfig { domain, dylib_name } = conf.java_config;
+    let JavaConfig {
+        domain,
+        dylib_name,
+        clib_initializer,
+    } = conf.java_config;
 
     let domain = domain.expect("Failed to parse Java config. Missing required field `domain`.");
 
@@ -154,12 +162,14 @@ pub(crate) fn run<'tcx>(
         domain: &'a str,
         lib_name: &'a str,
         dylib_name: &'a str,
+        clib_initializer: Option<&'a str>,
     }
 
     let lib_body = LibTemplate {
         domain: &domain,
         lib_name: &lib_name,
         dylib_name,
+        clib_initializer: clib_initializer.as_deref(),
     }
     .render()
     .expect("Failed to render Lib.java");
@@ -4360,5 +4370,55 @@ mod test {
         };
 
         insta::assert_snapshot!(gen_opaque_for_test(tk_stream));
+    }
+
+    #[test]
+    fn test_lib_template_custom_initializer() {
+        use askama::Template;
+
+        #[derive(Template)]
+        #[template(path = "java/Lib.java.jinja", escape = "none")]
+        struct LibTemplate<'a> {
+            domain: &'a str,
+            lib_name: &'a str,
+            dylib_name: &'a str,
+            clib_initializer: Option<&'a str>,
+        }
+
+        let body = LibTemplate {
+            domain: "dev.diplomattest",
+            lib_name: "somelib",
+            dylib_name: "diplomat_feature_tests",
+            clib_initializer: Some("NativeLoader.get()"),
+        }
+        .render()
+        .expect("Failed to render Lib.java");
+
+        insta::assert_snapshot!(body);
+    }
+
+    #[test]
+    fn test_lib_template_default_loading() {
+        use askama::Template;
+
+        #[derive(Template)]
+        #[template(path = "java/Lib.java.jinja", escape = "none")]
+        struct LibTemplate<'a> {
+            domain: &'a str,
+            lib_name: &'a str,
+            dylib_name: &'a str,
+            clib_initializer: Option<&'a str>,
+        }
+
+        let body = LibTemplate {
+            domain: "dev.diplomattest",
+            lib_name: "somelib",
+            dylib_name: "diplomat_feature_tests",
+            clib_initializer: None,
+        }
+        .render()
+        .expect("Failed to render Lib.java");
+
+        insta::assert_snapshot!(body);
     }
 }

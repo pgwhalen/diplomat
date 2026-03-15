@@ -76,8 +76,7 @@ public final class DiplomatLib {
     static final MemorySegment DESTRUCTOR_STUB;
 
     static {
-        System.loadLibrary("diplomat_feature_tests");
-        LIB = SymbolLookup.loaderLookup();
+        LIB = dev.diplomattest.custom.NativeLibLoader.get();
         DIPLOMAT_ALLOC = LINKER.downcallHandle(
             LIB.find("diplomat_alloc").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)

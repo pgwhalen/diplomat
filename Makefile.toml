@@ -571,7 +571,7 @@ script_runner = "@duckscript"
 script = '''
 exit_on_error true
 !include_files ./support/functions.ds
-generate_generic example java somelib "" /src/main/java
+generate_generic example java somelib "" /src/main/java/dev/diplomattest/somelib
 '''
 
 [tasks.gen-java-feature]
@@ -580,7 +580,7 @@ script_runner = "@duckscript"
 script = '''
 exit_on_error true
 !include_files ./support/functions.ds
-generate_generic feature_tests java somelib "" /src/main/java
+generate_generic feature_tests java somelib "" /src/main/java/dev/diplomattest/somelib
 '''
 
 [tasks.gen-java]

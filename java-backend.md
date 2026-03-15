@@ -15,6 +15,7 @@ The Java backend uses the **Java FFM (Foreign Function & Memory) API** (`java.la
 - `tool/templates/java/Lib.java.jinja` — `DiplomatLib.java` runtime support (write buffer, string view layout)
 - `example/java/somelib/` — Gradle-based example project (JDK 25, JUnit 5)
 - `example/config.toml` — `[java]` section with `domain` and `dylib-name`
+- Config keys: `domain` (Java package prefix), `dylib-name` (native library name), `clib-initializer` (optional custom `SymbolLookup` expression, e.g. `NativeLoader.get()` — replaces default `System.loadLibrary` + `SymbolLookup.loaderLookup()`)
 - `feature_tests/java/somelib/` — Gradle-based feature test project (JDK 25, JUnit 5)
 - `tool/src/java/snapshots/` — insta snapshot tests
 
@@ -87,6 +88,7 @@ cargo test -p diplomat-tool -- java::test   # Run Java backend unit/snapshot tes
 - **Struct slices** (`&[Struct]` / `&mut [Struct]`) — struct array parameters are marshalled to contiguous native memory via `arena.allocate(LAYOUT, length)` with per-element `copyFrom`. For `&mut [Struct]`, post-call writeback updates each Java array element. Struct slice return types decode pointer+length into a Java array via `fromNative`. `PrimitiveStructVec` (opaque type wrapping `Vec<Struct>`) with `push`, `len`, `get`, `asSlice`, `asSliceMut` is supported.
 - **Primitive slice returns** (`&[f64]`, `&[i16]`, `&[bool]`, etc.) — methods returning `&[T]` for primitive `T` generate Java methods returning `T[]` arrays. The returned `MemorySegment` data pointer is copied to a Java heap array via `toArray()`, so the result is safe to use after the Rust object is freed. Boolean slices use a `bytesToBooleans` helper since FFM doesn't support `toArray(JAVA_BOOLEAN)`. Works for infallible, fallible, and nullable return types.
 - **Owned slices** — `Box<[T]>` and `Box<DiplomatStr>` parameters allocate Rust-side memory via `diplomat_alloc`, copy Java data there, and pass ownership to Rust (Rust frees via `Drop`). Owned slice returns (`Box<[T]>`, `Box<DiplomatStr>`) wrap the Rust-allocated pointer in an `OwnedSlice` class implementing `AutoCloseable` — use `segment()` for zero-copy access to the native data, or `asByteArray()` to copy the data and free in one step.
+- **Customizable library loading** — `clib-initializer` config key allows specifying a custom `SymbolLookup` expression (e.g., `NativeLoader.get()`) in place of the default `System.loadLibrary` + `SymbolLookup.loaderLookup()`. Useful for custom loading strategies (JAR extraction, platform detection, GraalVM support).
 - **Feature tests** — `feature_tests/java/somelib/` Gradle project with JUnit 5 tests
 
 ### What doesn't work yet
