@@ -26,12 +26,22 @@ class ResultOpaque internal constructor (
     // These ensure that anything that is borrowed is kept alive and not cleaned
     // up by the garbage collector.
     internal val selfEdges: List<Any>,
+    internal var owned: Boolean,
 ): Exception("Rust error result for ResultOpaque")  {
 
-    internal class ResultOpaqueCleaner(val handle: Pointer, val lib: ResultOpaqueLib) : Runnable {
+    init {
+        if (this.owned) {
+            this.registerCleaner()
+        }
+    }
+
+    private class ResultOpaqueCleaner(val handle: Pointer, val lib: ResultOpaqueLib) : Runnable {
         override fun run() {
             lib.ResultOpaque_destroy(handle)
         }
+    }
+    private fun registerCleaner() {
+        CLEANER.register(this, ResultOpaque.ResultOpaqueCleaner(handle, ResultOpaque.lib));
     }
 
     companion object {
@@ -42,14 +52,14 @@ class ResultOpaque internal constructor (
         fun new_(i: Int): Result<ResultOpaque> {
             
             val returnVal = lib.ResultOpaque_new(i);
-            if (returnVal.isOk == 1.toByte()) {
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
                 val selfEdges: List<Any> = listOf()
-                val handle = returnVal.union.ok 
-                val returnOpaque = ResultOpaque(handle, selfEdges)
-                CLEANER.register(returnOpaque, ResultOpaque.ResultOpaqueCleaner(handle, ResultOpaque.lib));
+                val handle = nativeOkVal 
+                val returnOpaque = ResultOpaque(handle, selfEdges, true)
                 return returnOpaque.ok()
             } else {
-                return ErrorEnumError(ErrorEnum.fromNative(returnVal.union.err)).err()
+                return ErrorEnumError(ErrorEnum.fromNative(returnVal.getNativeErr()!!)).err()
             }
         }
         @JvmStatic
@@ -57,14 +67,14 @@ class ResultOpaque internal constructor (
         fun newFailingFoo(): Result<ResultOpaque> {
             
             val returnVal = lib.ResultOpaque_new_failing_foo();
-            if (returnVal.isOk == 1.toByte()) {
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
                 val selfEdges: List<Any> = listOf()
-                val handle = returnVal.union.ok 
-                val returnOpaque = ResultOpaque(handle, selfEdges)
-                CLEANER.register(returnOpaque, ResultOpaque.ResultOpaqueCleaner(handle, ResultOpaque.lib));
+                val handle = nativeOkVal 
+                val returnOpaque = ResultOpaque(handle, selfEdges, true)
                 return returnOpaque.ok()
             } else {
-                return ErrorEnumError(ErrorEnum.fromNative(returnVal.union.err)).err()
+                return ErrorEnumError(ErrorEnum.fromNative(returnVal.getNativeErr()!!)).err()
             }
         }
         @JvmStatic
@@ -72,14 +82,14 @@ class ResultOpaque internal constructor (
         fun newFailingBar(): Result<ResultOpaque> {
             
             val returnVal = lib.ResultOpaque_new_failing_bar();
-            if (returnVal.isOk == 1.toByte()) {
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
                 val selfEdges: List<Any> = listOf()
-                val handle = returnVal.union.ok 
-                val returnOpaque = ResultOpaque(handle, selfEdges)
-                CLEANER.register(returnOpaque, ResultOpaque.ResultOpaqueCleaner(handle, ResultOpaque.lib));
+                val handle = nativeOkVal 
+                val returnOpaque = ResultOpaque(handle, selfEdges, true)
                 return returnOpaque.ok()
             } else {
-                return ErrorEnumError(ErrorEnum.fromNative(returnVal.union.err)).err()
+                return ErrorEnumError(ErrorEnum.fromNative(returnVal.getNativeErr()!!)).err()
             }
         }
         @JvmStatic
@@ -87,11 +97,11 @@ class ResultOpaque internal constructor (
         fun newFailingUnit(): Result<ResultOpaque> {
             
             val returnVal = lib.ResultOpaque_new_failing_unit();
-            if (returnVal.isOk == 1.toByte()) {
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
                 val selfEdges: List<Any> = listOf()
-                val handle = returnVal.union.ok 
-                val returnOpaque = ResultOpaque(handle, selfEdges)
-                CLEANER.register(returnOpaque, ResultOpaque.ResultOpaqueCleaner(handle, ResultOpaque.lib));
+                val handle = nativeOkVal 
+                val returnOpaque = ResultOpaque(handle, selfEdges, true)
                 return returnOpaque.ok()
             } else {
                 return UnitError().err()
@@ -102,14 +112,14 @@ class ResultOpaque internal constructor (
         fun newFailingStruct(i: Int): Result<ResultOpaque> {
             
             val returnVal = lib.ResultOpaque_new_failing_struct(i);
-            if (returnVal.isOk == 1.toByte()) {
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
                 val selfEdges: List<Any> = listOf()
-                val handle = returnVal.union.ok 
-                val returnOpaque = ResultOpaque(handle, selfEdges)
-                CLEANER.register(returnOpaque, ResultOpaque.ResultOpaqueCleaner(handle, ResultOpaque.lib));
+                val handle = nativeOkVal 
+                val returnOpaque = ResultOpaque(handle, selfEdges, true)
                 return returnOpaque.ok()
             } else {
-                val returnStruct = ErrorStruct.fromNative(returnVal.union.err)
+                val returnStruct = ErrorStruct.fromNative(returnVal.getNativeErr()!!)
                 return returnStruct.err()
             }
         }
@@ -118,13 +128,13 @@ class ResultOpaque internal constructor (
         fun newInErr(i: Int): Result<Unit> {
             
             val returnVal = lib.ResultOpaque_new_in_err(i);
-            if (returnVal.isOk == 1.toByte()) {
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
                 return Unit.ok()
             } else {
                 val selfEdges: List<Any> = listOf()
-                val handle = returnVal.union.err 
-                val returnOpaque = ResultOpaque(handle, selfEdges)
-                CLEANER.register(returnOpaque, ResultOpaque.ResultOpaqueCleaner(handle, ResultOpaque.lib));
+                val handle = returnVal.getNativeErr()!! 
+                val returnOpaque = ResultOpaque(handle, selfEdges, true)
                 return returnOpaque.err()
             }
         }
@@ -133,8 +143,9 @@ class ResultOpaque internal constructor (
         fun newInt(i: Int): Result<Int> {
             
             val returnVal = lib.ResultOpaque_new_int(i);
-            if (returnVal.isOk == 1.toByte()) {
-                return (returnVal.union.ok).ok()
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
+                return (nativeOkVal).ok()
             } else {
                 return UnitError().err()
             }
@@ -144,10 +155,11 @@ class ResultOpaque internal constructor (
         fun newFailingInt(i: Int): Result<Unit> {
             
             val returnVal = lib.ResultOpaque_new_failing_int(i);
-            if (returnVal.isOk == 1.toByte()) {
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
                 return Unit.ok()
             } else {
-                return IntError(returnVal.union.err).err()
+                return IntError(returnVal.getNativeErr()!!).err()
             }
         }
         @JvmStatic
@@ -155,13 +167,13 @@ class ResultOpaque internal constructor (
         fun newInEnumErr(i: Int): Result<ErrorEnum> {
             
             val returnVal = lib.ResultOpaque_new_in_enum_err(i);
-            if (returnVal.isOk == 1.toByte()) {
-                return (ErrorEnum.fromNative(returnVal.union.ok)).ok()
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
+                return (ErrorEnum.fromNative(nativeOkVal)).ok()
             } else {
                 val selfEdges: List<Any> = listOf()
-                val handle = returnVal.union.err 
-                val returnOpaque = ResultOpaque(handle, selfEdges)
-                CLEANER.register(returnOpaque, ResultOpaque.ResultOpaqueCleaner(handle, ResultOpaque.lib));
+                val handle = returnVal.getNativeErr()!! 
+                val returnOpaque = ResultOpaque(handle, selfEdges, true)
                 return returnOpaque.err()
             }
         }
@@ -172,12 +184,13 @@ class ResultOpaque internal constructor (
         val aEdges: MutableList<Any> = mutableListOf(this);
         
         val returnVal = lib.ResultOpaque_give_self(handle);
-        if (returnVal.isOk == 1.toByte()) {
+        val nativeOkVal = returnVal.getNativeOk();
+        if (nativeOkVal != null) {
             return Unit.ok()
         } else {
             val selfEdges: List<Any> = listOf(this)
-            val handle = returnVal.union.err 
-            val returnOpaque = ResultOpaque(handle, selfEdges)
+            val handle = returnVal.getNativeErr()!! 
+            val returnOpaque = ResultOpaque(handle, selfEdges, false)
             return returnOpaque.err()
         }
     }
@@ -186,16 +199,19 @@ class ResultOpaque internal constructor (
     *Test that this interacts gracefully with returning a reference type
     */
     fun takesStr(v: String): ResultOpaque {
-        val vSliceMemory = PrimitiveArrayTools.borrowUtf8(v)
         // This lifetime edge depends on lifetimes: 'a
         val aEdges: MutableList<Any> = mutableListOf(this);
+        val vSliceMemory = PrimitiveArrayTools.borrowUtf8(v)
         
         val returnVal = lib.ResultOpaque_takes_str(handle, vSliceMemory.slice);
-        val selfEdges: List<Any> = listOf(this)
-        val handle = returnVal 
-        val returnOpaque = ResultOpaque(handle, selfEdges)
-        vSliceMemory?.close()
-        return returnOpaque
+        try {
+            val selfEdges: List<Any> = listOf(this)
+            val handle = returnVal 
+            val returnOpaque = ResultOpaque(handle, selfEdges, false)
+            return returnOpaque
+        } finally {
+            vSliceMemory.close()
+        }
     }
     
     fun assertInteger(i: Int): Unit {

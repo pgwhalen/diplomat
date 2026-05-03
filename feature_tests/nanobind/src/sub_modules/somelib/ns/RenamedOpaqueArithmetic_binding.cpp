@@ -23,7 +23,8 @@ void add_RenamedOpaqueArithmetic_binding(nb::module_ mod) {
         .def(nb::self *= nb::self, nb::rv_policy::none)
         .def("__sub__", std::move(maybe_op_unwrap(&somelib::ns::RenamedOpaqueArithmetic::operator-)), nb::is_operator())
         .def(nb::self -= nb::self, nb::rv_policy::none)
-        .def("x", &somelib::ns::RenamedOpaqueArithmetic::x)
+        .def("x", nb::overload_cast<>(&somelib::ns::RenamedOpaqueArithmetic::x, nb::const_))
+        .def("x", nb::overload_cast<int32_t>(&somelib::ns::RenamedOpaqueArithmetic::x, nb::const_), "add"_a)
         .def("y", &somelib::ns::RenamedOpaqueArithmetic::y);
 }
 

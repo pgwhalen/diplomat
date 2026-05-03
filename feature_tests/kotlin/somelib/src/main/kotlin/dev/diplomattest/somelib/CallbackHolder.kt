@@ -37,6 +37,12 @@ internal class DiplomatCallback_CallbackHolder_new_diplomatCallback_func_Native:
     }
 }
 
+// Explicit non-JNA struct wrapper to use as a GC hook; this will wrap the native callback
+// so that the global_ref construction is run on a real object instead of the JNA Structure
+// passed by-value to native code (which results in a null global_ref as it's not an address).
+internal class DiplomatCallback_CallbackHolder_new_diplomatCallback_func_holder (
+    internal val nativeStruct: DiplomatCallback_CallbackHolder_new_diplomatCallback_func_Native) {}
+
 internal class DiplomatCallback_CallbackHolder_new_diplomatCallback_func internal constructor (
     internal val nativeStruct: DiplomatCallback_CallbackHolder_new_diplomatCallback_func_Native) {
     val data_: Pointer = nativeStruct.data_
@@ -54,7 +60,8 @@ internal class DiplomatCallback_CallbackHolder_new_diplomatCallback_func interna
             }
             val cb_wrap = DiplomatCallback_CallbackHolder_new_diplomatCallback_func_Native()
             cb_wrap.run_callback = callback;
-            cb_wrap.data_ = DiplomatJVMRuntime.buildRustCookie(cb_wrap as Object);
+            val holder = DiplomatCallback_CallbackHolder_new_diplomatCallback_func_holder(cb_wrap)
+            cb_wrap.data_ = DiplomatJVMRuntime.buildRustCookie(holder as Object);
             return DiplomatCallback_CallbackHolder_new_diplomatCallback_func(cb_wrap)
         }
     }
@@ -66,12 +73,22 @@ class CallbackHolder internal constructor (
     // These ensure that anything that is borrowed is kept alive and not cleaned
     // up by the garbage collector.
     internal val selfEdges: List<Any>,
+    internal var owned: Boolean,
 )  {
 
-    internal class CallbackHolderCleaner(val handle: Pointer, val lib: CallbackHolderLib) : Runnable {
+    init {
+        if (this.owned) {
+            this.registerCleaner()
+        }
+    }
+
+    private class CallbackHolderCleaner(val handle: Pointer, val lib: CallbackHolderLib) : Runnable {
         override fun run() {
             lib.CallbackHolder_destroy(handle)
         }
+    }
+    private fun registerCleaner() {
+        CLEANER.register(this, CallbackHolder.CallbackHolderCleaner(handle, CallbackHolder.lib));
     }
 
     companion object {
@@ -84,8 +101,7 @@ class CallbackHolder internal constructor (
             val returnVal = lib.CallbackHolder_new(DiplomatCallback_CallbackHolder_new_diplomatCallback_func.fromCallback(func).nativeStruct);
             val selfEdges: List<Any> = listOf()
             val handle = returnVal 
-            val returnOpaque = CallbackHolder(handle, selfEdges)
-            CLEANER.register(returnOpaque, CallbackHolder.CallbackHolderCleaner(handle, CallbackHolder.lib));
+            val returnOpaque = CallbackHolder(handle, selfEdges, true)
             return returnOpaque
         }
     }

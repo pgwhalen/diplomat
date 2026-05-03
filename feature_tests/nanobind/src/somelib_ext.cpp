@@ -13,17 +13,21 @@ void add_BorrowedFieldsWithBounds_binding(nb::module_);
 void add_NestedBorrowedFields_binding(nb::module_);
 void add_BorrowingOptionStruct_binding(nb::module_);
 void add_OptionInputStruct_binding(nb::module_);
+void add_CachedIncludeZST_binding(nb::module_);
 void add_ErrorStruct_binding(nb::module_);
+void add_FallibleOpaqueConstructor_binding(nb::module_);
 void add_BigStructWithStuff_binding(nb::module_);
 void add_CyclicStructA_binding(nb::module_);
 void add_CyclicStructB_binding(nb::module_);
 void add_CyclicStructC_binding(nb::module_);
+void add_ImmutableStructOfOpaque_binding(nb::module_);
 void add_MyStruct_binding(nb::module_);
 void add_MyStructContainingAnOption_binding(nb::module_);
 void add_MyZst_binding(nb::module_);
 void add_PrimitiveStruct_binding(nb::module_);
 void add_ScalarPairWithPadding_binding(nb::module_);
 void add_StructArithmetic_binding(nb::module_);
+void add_StructOfOpaque_binding(nb::module_);
 void add_StructWithSlices_binding(nb::module_);
 void add_OptionStruct_binding(nb::module_);
 void add_Unnamespaced_binding(nb::module_);
@@ -47,6 +51,7 @@ void add_Float64VecError_binding(nb::module_);
 void add_MyString_binding(nb::module_);
 void add_MyOpaqueEnum_binding(nb::module_);
 void add_Opaque_binding(nb::module_);
+void add_OpaqueMut_binding(nb::module_);
 void add_OpaqueMutexedString_binding(nb::module_);
 void add_PrimitiveStructVec_binding(nb::module_);
 void add_Utf16Wrap_binding(nb::module_);
@@ -57,6 +62,9 @@ void add_ContiguousEnum_binding(nb::module_);
 void add_DefaultEnum_binding(nb::module_);
 void add_MyEnum_binding(nb::module_);
 void add_free_function_binding(nb::module_);
+}namespace somelib::mylib{
+  
+void add_MethodOverloading_binding(nb::module_);
 }namespace somelib::nested::ns{
   
 void add_Nested_binding(nb::module_);
@@ -67,6 +75,7 @@ void add_Nested_binding(nb::module_);
 }namespace somelib::ns{
   
 void add_RenamedDeprecatedStruct_binding(nb::module_);
+void add_RenamedRenamedCachedIncludeZST_binding(nb::module_);
 void add_RenamedStructWithAttrs_binding(nb::module_);
 void add_RenamedTestMacroStruct_binding(nb::module_);
 void add_AttrOpaque1Renamed_binding(nb::module_);
@@ -74,6 +83,7 @@ void add_RenamedAttrOpaque2_binding(nb::module_);
 void add_RenamedBlockOverride_binding(nb::module_);
 void add_RenamedComparable_binding(nb::module_);
 void add_RenamedDeprecatedOpaque_binding(nb::module_);
+void add_RenamedMixinTest_binding(nb::module_);
 void add_RenamedMyIndexer_binding(nb::module_);
 void add_RenamedMyIterable_binding(nb::module_);
 void add_RenamedMyIterator_binding(nb::module_);
@@ -83,7 +93,9 @@ void add_RenamedOpaqueIterator_binding(nb::module_);
 void add_RenamedOpaqueRefIterable_binding(nb::module_);
 void add_RenamedOpaqueRefIterator_binding(nb::module_);
 void add_RenamedOpaqueZST_binding(nb::module_);
+void add_RenamedOpaqueZSTIndexer_binding(nb::module_);
 void add_RenamedOpaqueZSTIterator_binding(nb::module_);
+void add_RenamedPartialComparable_binding(nb::module_);
 void add_RenamedStringList_binding(nb::module_);
 void add_RenamedTestOpaque_binding(nb::module_);
 void add_RenamedVectorTest_binding(nb::module_);
@@ -144,6 +156,7 @@ NB_MODULE(somelib, mod)
              { return ""; })
         .def("__str__", [](const std::monostate &)
              { return ""; });// Module declarations
+    nb::module_ mylib_mod = mod.def_submodule("mylib");
     nb::module_ nested_mod = mod.def_submodule("nested");
     nb::module_ nested_ns_mod = nested_mod.def_submodule("ns");
     nb::module_ nested_ns2_mod = nested_mod.def_submodule("ns2");
@@ -158,17 +171,21 @@ NB_MODULE(somelib, mod)
     add_NestedBorrowedFields_binding(mod);
     add_BorrowingOptionStruct_binding(mod);
     add_OptionInputStruct_binding(mod);
+    add_CachedIncludeZST_binding(mod);
     add_ErrorStruct_binding(mod);
+    add_FallibleOpaqueConstructor_binding(mod);
     add_BigStructWithStuff_binding(mod);
     add_CyclicStructA_binding(mod);
     add_CyclicStructB_binding(mod);
     add_CyclicStructC_binding(mod);
+    add_ImmutableStructOfOpaque_binding(mod);
     add_MyStruct_binding(mod);
     add_MyStructContainingAnOption_binding(mod);
     add_MyZst_binding(mod);
     add_PrimitiveStruct_binding(mod);
     add_ScalarPairWithPadding_binding(mod);
     add_StructArithmetic_binding(mod);
+    add_StructOfOpaque_binding(mod);
     add_StructWithSlices_binding(mod);
     add_OptionStruct_binding(mod);
     add_Unnamespaced_binding(mod);
@@ -192,6 +209,7 @@ NB_MODULE(somelib, mod)
     add_MyString_binding(mod);
     add_MyOpaqueEnum_binding(mod);
     add_Opaque_binding(mod);
+    add_OpaqueMut_binding(mod);
     add_OpaqueMutexedString_binding(mod);
     add_PrimitiveStructVec_binding(mod);
     add_Utf16Wrap_binding(mod);
@@ -203,12 +221,15 @@ NB_MODULE(somelib, mod)
     add_MyEnum_binding(mod);
     add_free_function_binding(mod);
     
+    mylib::add_MethodOverloading_binding(mylib_mod);
+    
     nested::ns::add_Nested_binding(nested_ns_mod);
     nested::ns::add_free_function_binding(nested_ns_mod);
     
     nested::ns2::add_Nested_binding(nested_ns2_mod);
     
     ns::add_RenamedDeprecatedStruct_binding(ns_mod);
+    ns::add_RenamedRenamedCachedIncludeZST_binding(ns_mod);
     ns::add_RenamedStructWithAttrs_binding(ns_mod);
     ns::add_RenamedTestMacroStruct_binding(ns_mod);
     ns::add_AttrOpaque1Renamed_binding(ns_mod);
@@ -216,6 +237,7 @@ NB_MODULE(somelib, mod)
     ns::add_RenamedBlockOverride_binding(ns_mod);
     ns::add_RenamedComparable_binding(ns_mod);
     ns::add_RenamedDeprecatedOpaque_binding(ns_mod);
+    ns::add_RenamedMixinTest_binding(ns_mod);
     ns::add_RenamedMyIndexer_binding(ns_mod);
     ns::add_RenamedMyIterable_binding(ns_mod);
     ns::add_RenamedMyIterator_binding(ns_mod);
@@ -225,7 +247,9 @@ NB_MODULE(somelib, mod)
     ns::add_RenamedOpaqueRefIterable_binding(ns_mod);
     ns::add_RenamedOpaqueRefIterator_binding(ns_mod);
     ns::add_RenamedOpaqueZST_binding(ns_mod);
+    ns::add_RenamedOpaqueZSTIndexer_binding(ns_mod);
     ns::add_RenamedOpaqueZSTIterator_binding(ns_mod);
+    ns::add_RenamedPartialComparable_binding(ns_mod);
     ns::add_RenamedStringList_binding(ns_mod);
     ns::add_RenamedTestOpaque_binding(ns_mod);
     ns::add_RenamedVectorTest_binding(ns_mod);

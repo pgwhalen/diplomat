@@ -14,11 +14,23 @@ pub(crate) use formatter::Cpp2Formatter;
 pub(crate) use gen::ExtraCode;
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct CppConfig {}
+pub struct CppConfig {
+    /// Should structures always generate as if they have the `mut_struct_ref` attribute applied?
+    /// Right now, this ensures that opaques will always generate as pointers instead of references.
+    /// Required by [Nanobind, as structures are always accessed mutably](https://rust-diplomat.github.io/diplomat/backends/nanobind.html#structs)
+    pub structs_always_mut_ref: bool,
+}
 
 impl CppConfig {
-    pub fn set(&mut self, key: &str, _value: toml::Value) {
-        panic!("C++ does not support any backend-specific configs, found {key}");
+    pub fn set(&mut self, key: &str, value: toml::Value) {
+        match key {
+            "structs_always_mut_ref" => {
+                self.structs_always_mut_ref = value
+                    .as_bool()
+                    .expect("Expected boolean value for structs_always_mut_ref")
+            }
+            _ => panic!("Unrecognized C++ config key: {key}"),
+        }
     }
 }
 pub(crate) fn attr_support() -> BackendAttrSupport {
@@ -39,6 +51,7 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.accessors = false;
     a.static_accessors = false;
     a.comparators = true;
+    a.partial_comparators = true;
     a.stringifiers = false; // TODO
     a.iterators = true;
     a.iterables = true;
@@ -53,9 +66,11 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.generate_mocking_interface = false;
     a.abi_compatibles = true;
     a.struct_refs = true;
+    a.mut_struct_refs = true;
     a.free_functions = true;
     a.custom_bindings = true;
     a.default_args = true;
+    a.mutable_slices = true;
 
     a
 }

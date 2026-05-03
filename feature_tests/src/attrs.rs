@@ -1,8 +1,19 @@
+mod cache_test;
+mod mixins;
+
+// For mixins macro imports:
+use super::*;
+
 #[diplomat::bridge]
 #[diplomat::abi_rename = "namespace_{0}"]
-#[diplomat::attr(not(any(c, kotlin)), rename = "Renamed{0}")]
+#[diplomat::attr(not(c), rename = "Renamed{0}")]
 #[diplomat::attr(auto, namespace = "ns")]
+#[diplomat::include("src/attrs/mixins.rs")]
+#[diplomat::include("src/attrs/cache_test.rs")]
 pub mod ffi {
+    super::mixin_macro! {}
+    super::cache_test_macro! {RenamedCachedIncludeZST}
+
     #[diplomat::macro_rules]
     macro_rules! impl_mac {
         ($arg1:ident, $arg2:ident, $arg3:block) => {
@@ -20,7 +31,7 @@ pub mod ffi {
     #[diplomat::macro_rules]
     macro_rules! create_vec {
         ($vec_name:ident contains "hello"; [$ty:ident]) => {
-            #[diplomat::opaque]
+            #[diplomat::opaque_mut]
             pub struct $vec_name(Vec<$ty>);
 
             impl $vec_name {
@@ -53,7 +64,7 @@ pub mod ffi {
     #[diplomat::opaque]
     // Attr for generating mocking interface in kotlin backend to enable JVM test fakes.
     #[diplomat::attr(kotlin, generate_mocking_interface)]
-    #[diplomat::attr(not(kotlin), rename = "AttrOpaque1Renamed")]
+    #[diplomat::attr(*, rename = "AttrOpaque1Renamed")]
     /// Some example docs
     #[diplomat::docs(any(nanobind, cpp))]
     /// Some Nanobind/C++ example docs
@@ -64,6 +75,12 @@ pub mod ffi {
     pub struct AttrOpaque1;
 
     impl AttrOpaque1 {
+        #[diplomat::cfg(supports=method_overloading)]
+        #[diplomat::attr(auto, constructor)]
+        pub fn new_overload(_i: i32) -> Box<AttrOpaque1> {
+            Box::new(AttrOpaque1)
+        }
+
         #[diplomat::attr(not(kotlin), rename = "totally_not_{0}")]
         #[diplomat::attr(auto, constructor)]
         /// More example docs
@@ -114,7 +131,7 @@ pub mod ffi {
 
     #[diplomat::opaque]
     #[diplomat::attr(auto, namespace = "")]
-    #[diplomat::attr(not(kotlin), rename = "Unnamespaced")]
+    #[diplomat::attr(*, rename = "Unnamespaced")]
     pub struct Unnamespaced;
 
     impl Unnamespaced {
@@ -151,6 +168,28 @@ pub mod ffi {
     }
 
     #[diplomat::opaque]
+    #[diplomat::cfg(supports = partial_comparators)]
+    pub struct PartialComparable(f32);
+    impl PartialComparable {
+        #[diplomat::attr(auto, constructor)]
+        pub fn new(float: f32) -> Box<Self> {
+            Box::new(Self(float))
+        }
+
+        #[diplomat::attr(auto, comparison)]
+        pub fn partial_cmp(&self, other: &PartialComparable) -> Option<core::cmp::Ordering> {
+            self.0.partial_cmp(&other.0)
+        }
+
+        pub fn test_nonstd(
+            &self,
+            other: &PartialComparable,
+        ) -> DiplomatOption<core::cmp::Ordering> {
+            self.0.partial_cmp(&other.0).into()
+        }
+    }
+
+    #[diplomat::opaque]
     #[diplomat::cfg(supports = indexing)]
     pub struct MyIndexer(Vec<String>);
 
@@ -174,7 +213,7 @@ pub mod ffi {
         }
     }
 
-    #[diplomat::opaque]
+    #[diplomat::opaque_mut]
     #[diplomat::cfg(supports = iterators)]
     pub struct MyIterator<'a>(std::slice::Iter<'a, u8>);
     impl<'a> MyIterator<'a> {
@@ -185,9 +224,26 @@ pub mod ffi {
     }
 
     impl MyIndexer {
+        #[diplomat::attr(auto, constructor)]
+        pub fn new(v: DiplomatSlice<DiplomatStrSlice>) -> Box<Self> {
+            let boxed: &[DiplomatStrSlice] = v.into();
+            let new_vec = boxed
+                .iter()
+                .map(|sl| String::from_utf8(sl.to_vec()).unwrap())
+                .collect::<Vec<_>>();
+            Box::new(Self(new_vec))
+        }
+
         #[diplomat::attr(auto, indexer)]
         pub fn get<'a>(&'a self, i: usize) -> Option<&'a DiplomatStr> {
             self.0.get(i).as_ref().map(|string| string.as_bytes())
+        }
+
+        #[diplomat::cfg(all(supports=method_overloading, not(kotlin)))]
+        #[diplomat::attr(auto, indexer)]
+        pub fn get_str<'a>(&'a self, s: &DiplomatStr) -> Option<&'a DiplomatStr> {
+            let st = String::from_utf8(s.to_vec()).unwrap();
+            self.0.iter().find(|i| **i == st).map(|s| s.as_bytes())
         }
     }
 
@@ -207,7 +263,7 @@ pub mod ffi {
         }
     }
 
-    #[diplomat::opaque]
+    #[diplomat::opaque_mut]
     #[diplomat::cfg(supports = iterators)]
     struct OpaqueIterator<'a>(Box<dyn Iterator<Item = AttrOpaque1> + 'a>);
     impl<'a> OpaqueIterator<'a> {
@@ -233,7 +289,7 @@ pub mod ffi {
         }
     }
 
-    #[diplomat::opaque]
+    #[diplomat::opaque_mut]
     #[diplomat::cfg(supports = iterators)]
     struct OpaqueRefIterator<'a>(std::slice::Iter<'a, AttrOpaque1>);
     impl<'a> OpaqueRefIterator<'a> {
@@ -243,7 +299,7 @@ pub mod ffi {
         }
     }
 
-    #[diplomat::opaque]
+    #[diplomat::opaque_mut]
     #[diplomat::cfg(supports = arithmetic)]
     pub(crate) struct OpaqueArithmetic {
         x: i32,
@@ -276,6 +332,12 @@ pub mod ffi {
 
         pub fn x(&self) -> i32 {
             self.x
+        }
+
+        #[diplomat::attr(supports=method_overloading, rename="x")]
+        #[diplomat::cfg(supports=method_overloading)]
+        pub fn x_overload(&self, add: i32) -> i32 {
+            self.x + add
         }
 
         pub fn y(&self) -> i32 {
@@ -493,6 +555,10 @@ pub mod ffi {
         )
     )]
     #[diplomat::attr(
+        any(nanobind, cpp),
+        custom_extra_code(source = "//Test!", location = "pre_impl_block")
+    )]
+    #[diplomat::attr(
         nanobind,
         custom_extra_code(
             source = r#"opaque.def("special_function", &somelib::ns::RenamedBlockOverride::special_function);"#,
@@ -510,7 +576,7 @@ pub mod ffi {
     pub struct FeatureTest();
 
     #[diplomat::attr(not(nanobind), disable)]
-    #[diplomat::opaque]
+    #[diplomat::opaque_mut]
     /// Tests for https://github.com/rust-diplomat/diplomat/issues/1050.
     /// C++ generates unique_ptrs for Opaque ZSTs, and Nanobind
     /// expects every unique_ptr it converts to wrap a unique pointer type. It errors otherwise.
@@ -614,8 +680,8 @@ pub mod ffi {
         }
 
         #[diplomat::attr(auto, indexer)]
-        pub fn indexer(&self, _idx: usize) -> Box<Self> {
-            Box::new(Self)
+        pub fn indexer(&self, _idx: usize) -> Option<Box<Self>> {
+            Some(Box::new(Self))
         }
     }
 
@@ -643,6 +709,25 @@ pub mod ffi {
         #[diplomat::attr(auto, stringifier)]
         pub fn stringify(&self, _w: &mut DiplomatWrite) -> Result<(), Box<OpaqueZST>> {
             Err(Box::new(OpaqueZST))
+        }
+    }
+
+    #[diplomat::opaque]
+    pub struct OpaqueZSTIndexer;
+
+    impl OpaqueZSTIndexer {
+        #[diplomat::attr(auto, constructor)]
+        pub fn new() -> Box<Self> {
+            Box::new(Self)
+        }
+
+        #[diplomat::attr(auto, indexer)]
+        pub fn index(&self, idx: usize) -> Option<Box<Self>> {
+            if idx > 2 {
+                None
+            } else {
+                Some(Box::new(Self))
+            }
         }
     }
 }

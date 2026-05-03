@@ -609,7 +609,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                 self.formatter.fmt_accessor_name(name, method)
             ),
             Some(SpecialMethod::Stringifier) => "@override\n  String toString()".into(),
-            Some(SpecialMethod::Comparison) => {
+            Some(SpecialMethod::Comparison(false)) => {
                 format!("@override\n  int compareTo({type_name} other)")
             }
             Some(SpecialMethod::Iterator) => format!("{return_ty} _iteratorNext({params})"),

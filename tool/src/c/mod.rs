@@ -42,7 +42,9 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.generate_mocking_interface = false;
     a.abi_compatibles = true;
     a.struct_refs = true;
+    a.mut_struct_refs = true;
     a.free_functions = true;
+    a.mutable_slices = true;
 
     a
 }

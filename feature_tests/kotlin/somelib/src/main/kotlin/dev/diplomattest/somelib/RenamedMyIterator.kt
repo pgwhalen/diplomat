@@ -1,0 +1,65 @@
+package dev.diplomattest.somelib;
+import com.sun.jna.Callback
+import com.sun.jna.Library
+import com.sun.jna.Native
+import com.sun.jna.Pointer
+import com.sun.jna.Structure
+
+internal interface RenamedMyIteratorLib: Library {
+    fun namespace_MyIterator_destroy(handle: Pointer)
+    fun namespace_MyIterator_next(handle: Pointer): OptionFFIUint8
+}
+typealias RenamedMyIteratorIteratorItem = UByte
+
+class RenamedMyIterator internal constructor (
+    internal val handle: Pointer,
+    // These ensure that anything that is borrowed is kept alive and not cleaned
+    // up by the garbage collector.
+    internal val selfEdges: List<Any>,
+    internal val aEdges: List<Any?>,
+    internal var owned: Boolean,
+): Iterator<UByte> {
+
+    init {
+        if (this.owned) {
+            this.registerCleaner()
+        }
+    }
+
+    private class RenamedMyIteratorCleaner(val handle: Pointer, val lib: RenamedMyIteratorLib) : Runnable {
+        override fun run() {
+            lib.namespace_MyIterator_destroy(handle)
+        }
+    }
+    private fun registerCleaner() {
+        CLEANER.register(this, RenamedMyIterator.RenamedMyIteratorCleaner(handle, RenamedMyIterator.lib));
+    }
+
+    companion object {
+        internal val libClass: Class<RenamedMyIteratorLib> = RenamedMyIteratorLib::class.java
+        internal val lib: RenamedMyIteratorLib = Native.load("diplomat_feature_tests", libClass)
+    }
+    
+    internal fun nextInternal(): UByte? {
+        
+        val returnVal = lib.namespace_MyIterator_next(handle);
+        return returnVal.option()?.toUByte()
+    }
+
+    var iterVal = nextInternal()
+
+    override fun hasNext(): Boolean {
+       return iterVal != null
+    }
+
+    override fun next(): UByte{
+        val returnVal = iterVal
+        if (returnVal == null) {
+            throw NoSuchElementException()
+        } else {
+            iterVal = nextInternal()
+            return returnVal
+        }
+    }
+
+}

@@ -26,6 +26,8 @@ namespace capi {
 
     int32_t namespace_OpaqueArithmetic_x(const somelib::ns::capi::RenamedOpaqueArithmetic* self);
 
+    int32_t namespace_OpaqueArithmetic_x_overload(const somelib::ns::capi::RenamedOpaqueArithmetic* self, int32_t add);
+
     int32_t namespace_OpaqueArithmetic_y(const somelib::ns::capi::RenamedOpaqueArithmetic* self);
 
     somelib::ns::capi::RenamedOpaqueArithmetic* namespace_OpaqueArithmetic_add(const somelib::ns::capi::RenamedOpaqueArithmetic* self, const somelib::ns::capi::RenamedOpaqueArithmetic* o);
@@ -70,6 +72,12 @@ inline std::unique_ptr<somelib::ns::RenamedOpaqueArithmetic> somelib::ns::Rename
 
 inline int32_t somelib::ns::RenamedOpaqueArithmetic::x() const {
     auto result = somelib::ns::capi::namespace_OpaqueArithmetic_x(this->AsFFI());
+    return result;
+}
+
+inline int32_t somelib::ns::RenamedOpaqueArithmetic::x(int32_t add) const {
+    auto result = somelib::ns::capi::namespace_OpaqueArithmetic_x_overload(this->AsFFI(),
+        add);
     return result;
 }
 

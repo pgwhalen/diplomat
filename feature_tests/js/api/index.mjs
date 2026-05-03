@@ -4,6 +4,8 @@ export { RenamedDeprecatedStruct } from "./RenamedDeprecatedStruct.mjs"
 
 export { RenamedFeatureTest } from "./RenamedFeatureTest.mjs"
 
+export { RenamedRenamedCachedIncludeZST } from "./RenamedRenamedCachedIncludeZST.mjs"
+
 export { RenamedStructWithAttrs } from "./RenamedStructWithAttrs.mjs"
 
 export { RenamedTestMacroStruct } from "./RenamedTestMacroStruct.mjs"
@@ -22,7 +24,11 @@ export { BorrowingOptionStruct } from "./BorrowingOptionStruct.mjs"
 
 export { OptionInputStruct } from "./OptionInputStruct.mjs"
 
+export { CachedIncludeZST } from "./CachedIncludeZST.mjs"
+
 export { ErrorStruct } from "./ErrorStruct.mjs"
+
+export { FallibleOpaqueConstructor } from "./FallibleOpaqueConstructor.mjs"
 
 export { BigStructWithStuff } from "./BigStructWithStuff.mjs"
 
@@ -42,6 +48,8 @@ export { PrimitiveStruct } from "./PrimitiveStruct.mjs"
 
 export { ScalarPairWithPadding } from "./ScalarPairWithPadding.mjs"
 
+export { StructOfOpaque } from "./StructOfOpaque.mjs"
+
 export { StructWithSlices } from "./StructWithSlices.mjs"
 
 export { OptionStruct } from "./OptionStruct.mjs"
@@ -51,6 +59,8 @@ export { AttrOpaque1Renamed } from "./AttrOpaque1Renamed.mjs"
 export { RenamedAttrOpaque2 } from "./RenamedAttrOpaque2.mjs"
 
 export { RenamedDeprecatedOpaque } from "./RenamedDeprecatedOpaque.mjs"
+
+export { RenamedMixinTest } from "./RenamedMixinTest.mjs"
 
 export { RenamedMyIterable } from "./RenamedMyIterable.mjs"
 
@@ -67,6 +77,8 @@ export { RenamedOpaqueIterator } from "./RenamedOpaqueIterator.mjs"
 export { RenamedOpaqueRefIterable } from "./RenamedOpaqueRefIterable.mjs"
 
 export { RenamedOpaqueRefIterator } from "./RenamedOpaqueRefIterator.mjs"
+
+export { RenamedOpaqueZSTIndexer } from "./RenamedOpaqueZSTIndexer.mjs"
 
 export { RenamedTestOpaque } from "./RenamedTestOpaque.mjs"
 
@@ -107,6 +119,8 @@ export { MyString } from "./MyString.mjs"
 export { MyOpaqueEnum } from "./MyOpaqueEnum.mjs"
 
 export { Opaque } from "./Opaque.mjs"
+
+export { OpaqueMut } from "./OpaqueMut.mjs"
 
 export { OpaqueMutexedString } from "./OpaqueMutexedString.mjs"
 

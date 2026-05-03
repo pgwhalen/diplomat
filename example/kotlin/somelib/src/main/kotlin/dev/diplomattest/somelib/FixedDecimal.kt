@@ -22,12 +22,22 @@ class FixedDecimal internal constructor (
     // These ensure that anything that is borrowed is kept alive and not cleaned
     // up by the garbage collector.
     internal val selfEdges: List<Any>,
+    internal var owned: Boolean,
 ): FixedDecimalInterface  {
 
-    internal class FixedDecimalCleaner(val handle: Pointer, val lib: FixedDecimalLib) : Runnable {
+    init {
+        if (this.owned) {
+            this.registerCleaner()
+        }
+    }
+
+    private class FixedDecimalCleaner(val handle: Pointer, val lib: FixedDecimalLib) : Runnable {
         override fun run() {
             lib.icu4x_FixedDecimal_destroy_mv1(handle)
         }
+    }
+    private fun registerCleaner() {
+        CLEANER.register(this, FixedDecimal.FixedDecimalCleaner(handle, FixedDecimal.lib));
     }
 
     companion object {
@@ -42,8 +52,7 @@ class FixedDecimal internal constructor (
             val returnVal = lib.icu4x_FixedDecimal_new_mv1(v);
             val selfEdges: List<Any> = listOf()
             val handle = returnVal 
-            val returnOpaque = FixedDecimal(handle, selfEdges)
-            CLEANER.register(returnOpaque, FixedDecimal.FixedDecimalCleaner(handle, FixedDecimal.lib));
+            val returnOpaque = FixedDecimal(handle, selfEdges, true)
             return returnOpaque
         }
     }
@@ -65,7 +74,8 @@ class FixedDecimal internal constructor (
     override fun toString_(): Result<String> {
         val write = DW.lib.diplomat_buffer_write_create(0)
         val returnVal = lib.icu4x_FixedDecimal_to_string_mv1(handle, write);
-        if (returnVal.isOk == 1.toByte()) {
+        val nativeOkVal = returnVal.getNativeOk();
+        if (nativeOkVal != null) {
             
             val returnString = DW.writeToString(write)
             return returnString.ok()

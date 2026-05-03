@@ -125,6 +125,12 @@ internal class DiplomatCallback_MyNativeStruct_test_multi_arg_callback_diplomatC
     }
 }
 
+// Explicit non-JNA struct wrapper to use as a GC hook; this will wrap the native callback
+// so that the global_ref construction is run on a real object instead of the JNA Structure
+// passed by-value to native code (which results in a null global_ref as it's not an address).
+internal class DiplomatCallback_MyNativeStruct_test_multi_arg_callback_diplomatCallback_f_holder (
+    internal val nativeStruct: DiplomatCallback_MyNativeStruct_test_multi_arg_callback_diplomatCallback_f_Native) {}
+
 internal class DiplomatCallback_MyNativeStruct_test_multi_arg_callback_diplomatCallback_f internal constructor (
     internal val nativeStruct: DiplomatCallback_MyNativeStruct_test_multi_arg_callback_diplomatCallback_f_Native) {
     val data_: Pointer = nativeStruct.data_
@@ -142,7 +148,8 @@ internal class DiplomatCallback_MyNativeStruct_test_multi_arg_callback_diplomatC
             }
             val cb_wrap = DiplomatCallback_MyNativeStruct_test_multi_arg_callback_diplomatCallback_f_Native()
             cb_wrap.run_callback = callback;
-            cb_wrap.data_ = DiplomatJVMRuntime.buildRustCookie(cb_wrap as Object);
+            val holder = DiplomatCallback_MyNativeStruct_test_multi_arg_callback_diplomatCallback_f_holder(cb_wrap)
+            cb_wrap.data_ = DiplomatJVMRuntime.buildRustCookie(holder as Object);
             return DiplomatCallback_MyNativeStruct_test_multi_arg_callback_diplomatCallback_f(cb_wrap)
         }
     }
@@ -170,7 +177,7 @@ class MyNativeStruct (var a: Boolean, var b: Byte, var c: UByte, var d: Short, v
             val k: Float = nativeStruct.k
             val l: Double = nativeStruct.l
             val m: DoubleArray = PrimitiveArrayTools.getDoubleArray(nativeStruct.m)
-            val n: Opaque = Opaque(nativeStruct.n, listOf())
+            val n: Opaque = Opaque(nativeStruct.n, listOf(), false)
 
             return MyNativeStruct(a, b, c, d, e, f, g, h, i, j, k, l, m, n)
         }
@@ -206,8 +213,9 @@ class MyNativeStruct (var a: Boolean, var b: Byte, var c: UByte, var d: Short, v
         fun booleanResult(): Result<Boolean> {
             
             val returnVal = lib.MyNativeStruct_boolean_result();
-            if (returnVal.isOk == 1.toByte()) {
-                return (returnVal.union.ok > 0).ok()
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
+                return (nativeOkVal > 0).ok()
             } else {
                 return UnitError().err()
             }
@@ -217,8 +225,9 @@ class MyNativeStruct (var a: Boolean, var b: Byte, var c: UByte, var d: Short, v
         fun ubyteResult(): Result<UByte> {
             
             val returnVal = lib.MyNativeStruct_ubyte_result();
-            if (returnVal.isOk == 1.toByte()) {
-                return (returnVal.union.ok.toUByte()).ok()
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
+                return (nativeOkVal.toUByte()).ok()
             } else {
                 return UnitError().err()
             }
@@ -238,7 +247,7 @@ class MyNativeStruct (var a: Boolean, var b: Byte, var c: UByte, var d: Short, v
         native.j = this.j
         native.k = this.k
         native.l = this.l
-        native.m = PrimitiveArrayTools.borrow(this.m).slice
+        native.m = PrimitiveArrayTools.borrow(this.m).into(listOf(*bAppendArray)).slice
         native.n = this.n.handle
         return native
     }

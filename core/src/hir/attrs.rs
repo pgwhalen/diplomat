@@ -63,6 +63,8 @@ pub struct Attrs {
     pub generate_mocking_interface: bool,
     /// From #[diplomat::attr()]. If true, Diplomat will check that this struct has the same memory layout in backends which support it. Allows this struct to be used in slices ([`super::Slice::Struct`]) and to be borrowed in function parameters.
     pub abi_compatible: bool,
+    /// From #[diplomat::attr()], found on structs. If true, Diplomat will allow &mut T references to the struct, and the backend may change the types of fields to better support mutation.
+    pub mut_struct_ref: bool,
 
     /// Information on if a type declaration/impl block has custom bindings, and if so, what kind.
     pub custom_extra_code: HashMap<IncludeLocation, IncludeSource>,
@@ -92,7 +94,8 @@ pub enum IncludeLocation {
     PostDefBlock,
     /// An extension to the implementation of the class (i.e., in C++, the .hpp file)
     ImplBlock,
-    /// Before the impl block. Used only for free functions.
+    /// Before the impl block. Used for free functions and classes
+    /// (i.e., if you want to type alias and include no function definitions)
     PreImplBlock,
     /// A block for adding to an initialization function. Intended for backends that build off of C/C++.
     /// Used by the Nanobind backend to override functionality for Nanobind bindings.
@@ -266,8 +269,10 @@ pub enum SpecialMethod {
     Setter(Option<String>),
     /// A stringifier. Must have no parameters and return a string (DiplomatWrite)
     Stringifier,
-    /// A comparison operator. Currently not universally supported
-    Comparison,
+    /// A comparison operator. Currently not universally supported.
+    ///
+    /// bool is true if the comparison is partial (i.e., [`Option<std::cmp::Ordering>`]).
+    Comparison(bool),
     /// An iterator (a type that is mutated to produce new values)
     Iterator,
     /// An iterable (a type that can produce an iterator)
@@ -304,7 +309,7 @@ impl SpecialMethod {
             "getter" => Ok(Some(Self::Getter(parse_meta(meta)?))),
             "setter" => Ok(Some(Self::Setter(parse_meta(meta)?))),
             "stringifier" => Ok(Some(Self::Stringifier)),
-            "comparison" => Ok(Some(Self::Comparison)),
+            "comparison" => Ok(Some(Self::Comparison(false))),
             "iterator" => Ok(Some(Self::Iterator)),
             "iterable" => Ok(Some(Self::Iterable)),
             "indexer" => Ok(Some(Self::Indexer)),
@@ -570,6 +575,18 @@ impl Attrs {
                             }
                             this.abi_compatible = true;
                         }
+                        "mut_struct_ref" => {
+                            if !support.mut_struct_refs {
+                                maybe_error_unsupported(
+                                    auto_found,
+                                    "mut_struct_ref",
+                                    backend,
+                                    errors,
+                                );
+                                continue;
+                            }
+                            this.mut_struct_ref = true;
+                        }
                         "custom_extra_code" => {
                             let (location, source) =
                                 IncludeLocation::pair_from_meta(&attr.meta, errors);
@@ -721,6 +738,7 @@ impl Attrs {
             demo_attrs: _,
             generate_mocking_interface,
             abi_compatible,
+            mut_struct_ref,
             custom_extra_code,
             default_value,
         } = &self;
@@ -822,7 +840,7 @@ impl Attrs {
                             ));
                         }
                     }
-                    SpecialMethod::Comparison => {
+                    SpecialMethod::Comparison(_) => {
                         check_param_count("Comparator", 1, errors);
                         if special_method_presence.comparator {
                             errors.push(LoweringError::Other(
@@ -1106,6 +1124,12 @@ impl Attrs {
             ));
         }
 
+        if *mut_struct_ref && !matches!(context, AttributeContext::Type(TypeDef::Struct(..))) {
+            errors.push(LoweringError::Other(
+                "`mut_struct_ref` can only be used on input structs.".into(),
+            ));
+        }
+
         if !custom_extra_code.is_empty() {
             if !validator.attrs_supported().custom_bindings {
                 // We only validate that the language supports the bindings. We don't validate
@@ -1183,6 +1207,7 @@ impl Attrs {
             // Not inherited
             generate_mocking_interface: false,
             abi_compatible: false,
+            mut_struct_ref: false,
             // Not inherited
             custom_extra_code: Default::default(),
             // Not inherited
@@ -1254,6 +1279,8 @@ pub struct BackendAttrSupport {
     pub stringifiers: bool,
     /// Marking a method as the `compare_to` method, which is special in this language.
     pub comparators: bool,
+    /// Supports comparators that return `Option`
+    pub partial_comparators: bool,
     /// Marking a method as the `next` method, which is special in this language.
     pub iterators: bool,
     /// Marking a method as the `iterator` method, which is special in this language.
@@ -1279,8 +1306,12 @@ pub struct BackendAttrSupport {
     /// Passing of structs that only hold (non-slice) primitive types
     /// (for use in slices and languages that support taking direct pointers to structs):
     pub abi_compatibles: bool,
-    /// Whether or not the language supports &Struct or &mut Struct
+    /// Whether or not the language supports &Struct
     pub struct_refs: bool,
+    /// Whether or not the language supports &mut Struct.
+    /// Some languages will modify their generation code based on the contents of the struct to make it acceptable to mutate.
+    /// Some languages will also copy the structure to accomplish mutation (this is not the case with abi_compatible structs).
+    pub mut_struct_refs: bool,
     /// Whether the language supports generating functions not associated with any type.
     pub free_functions: bool,
     /// Whether the language supports being able to include custom bindings.
@@ -1289,6 +1320,8 @@ pub struct BackendAttrSupport {
     pub owned_slices: bool,
     /// Whether the language supports default arguments.
     pub default_args: bool,
+    /// Whether the language supports mutable slices.
+    pub mutable_slices: bool,
 }
 
 impl BackendAttrSupport {
@@ -1311,6 +1344,7 @@ impl BackendAttrSupport {
             accessors: true,
             stringifiers: true,
             comparators: true,
+            partial_comparators: true,
             iterators: true,
             iterables: true,
             indexing: true,
@@ -1324,14 +1358,16 @@ impl BackendAttrSupport {
             generate_mocking_interface: true,
             abi_compatibles: true,
             struct_refs: true,
+            mut_struct_refs: true,
             free_functions: true,
             custom_bindings: true,
             owned_slices: true,
             default_args: true,
+            mutable_slices: true,
         }
     }
 
-    fn check_string(&self, v: &str) -> Option<bool> {
+    pub fn check_string(&self, v: &str) -> Option<bool> {
         match v {
             "namespacing" => Some(self.namespacing),
             "memory_sharing" => Some(self.memory_sharing),
@@ -1347,6 +1383,7 @@ impl BackendAttrSupport {
             "accessors" => Some(self.accessors),
             "stringifiers" => Some(self.stringifiers),
             "comparators" => Some(self.comparators),
+            "partial_comparators" => Some(self.partial_comparators),
             "iterators" => Some(self.iterators),
             "iterables" => Some(self.iterables),
             "indexing" => Some(self.indexing),
@@ -1359,9 +1396,11 @@ impl BackendAttrSupport {
             "traits_are_sync" => Some(self.traits_are_sync),
             "abi_compatibles" => Some(self.abi_compatibles),
             "struct_refs" => Some(self.struct_refs),
+            "mut_struct_refs" => Some(self.mut_struct_refs),
             "free_functions" => Some(self.free_functions),
             "custom_bindings" => Some(self.custom_bindings),
             "owned_slices" => Some(self.owned_slices),
+            "mutable_slices" => Some(self.mutable_slices),
             _ => None,
         }
     }
@@ -1493,6 +1532,7 @@ impl AttributeValidator for BasicAttributeValidator {
                 static_accessors,
                 stringifiers,
                 comparators,
+                partial_comparators,
                 iterators,
                 iterables,
                 indexing,
@@ -1506,10 +1546,12 @@ impl AttributeValidator for BasicAttributeValidator {
                 generate_mocking_interface,
                 abi_compatibles,
                 struct_refs,
+                mut_struct_refs,
                 free_functions,
                 custom_bindings,
                 owned_slices,
                 default_args,
+                mutable_slices,
             } = self.support;
             match value {
                 "namespacing" => namespacing,
@@ -1528,6 +1570,7 @@ impl AttributeValidator for BasicAttributeValidator {
                 "static_accessors" => static_accessors,
                 "stringifiers" => stringifiers,
                 "comparators" => comparators,
+                "partial_comparators" => partial_comparators,
                 "iterators" => iterators,
                 "iterables" => iterables,
                 "indexing" => indexing,
@@ -1541,10 +1584,12 @@ impl AttributeValidator for BasicAttributeValidator {
                 "generate_mocking_interface" => generate_mocking_interface,
                 "abi_compatibles" => abi_compatibles,
                 "struct_refs" => struct_refs,
+                "mut_struct_refs" => mut_struct_refs,
                 "free_functions" => free_functions,
                 "custom_bindings" => custom_bindings,
                 "owned_slices" => owned_slices,
                 "default_args" => default_args,
+                "mutable_slices" => mutable_slices,
                 _ => {
                     return Err(LoweringError::Other(format!(
                         "Unknown supports = value found: {value}"
@@ -1577,7 +1622,7 @@ mod tests {
 
             let mut attr_validator = hir::BasicAttributeValidator::new("tests");
             attr_validator.support = $attrs;
-            match hir::TypeContext::from_syn(&parsed, Default::default(), attr_validator) {
+            match hir::TypeContext::from_syn(&parsed, Default::default(), attr_validator, None) {
                 Ok(_context) => (),
                 Err(e) => {
                     for (ctx, err) in e {
@@ -1598,7 +1643,7 @@ mod tests {
             mod ffi {
                 use std::cmp;
 
-                #[diplomat::opaque]
+                #[diplomat::opaque_mut]
                 #[diplomat::attr(auto, namespace = "should_not_show_up")]
                 struct Opaque;
 
@@ -1631,7 +1676,7 @@ mod tests {
             mod ffi {
                 use std::cmp;
 
-                #[diplomat::opaque]
+                #[diplomat::opaque_mut]
                 struct Opaque;
 
                 struct Struct {
@@ -1708,7 +1753,7 @@ mod tests {
 
                 #[diplomat::opaque]
                 struct Opaque(Vec<u8>);
-                #[diplomat::opaque]
+                #[diplomat::opaque_mut]
                 struct OpaqueIterator<'a>(std::slice::Iter<'a>);
 
 
@@ -1923,6 +1968,26 @@ mod tests {
 
     #[test]
     fn test_struct_ref_for_unsupported_backend() {
+        uitest_lowering_attr! { hir::BackendAttrSupport::default(),
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::attr(auto, abi_compatible)]
+                pub struct Foo {
+                    pub x: u32,
+                    pub y: u32
+                }
+
+                impl Foo {
+                    pub fn takes_mut(&self) {
+                        todo!()
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_mut_struct_ref_for_unsupported_backend() {
         uitest_lowering_attr! { hir::BackendAttrSupport::default(),
             #[diplomat::bridge]
             mod ffi {

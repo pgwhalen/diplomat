@@ -39,27 +39,33 @@ inline int8_t somelib::ns::RenamedComparable::cmp(const somelib::ns::RenamedComp
     return result;
 }
 inline bool somelib::ns::RenamedComparable::operator==(const somelib::ns::RenamedComparable& other) const {
-    return this->cmp(other) == 0;
+    auto val = this->cmp(other);
+    return val == 0;
 }
 
 inline bool somelib::ns::RenamedComparable::operator!=(const somelib::ns::RenamedComparable& other) const {
-    return this->cmp(other) != 0;
+    auto val = this->cmp(other);
+    return val != 0;
 }
 
 inline bool somelib::ns::RenamedComparable::operator<=(const somelib::ns::RenamedComparable& other) const {
-    return this->cmp(other) <= 0;
+    auto val = this->cmp(other);
+    return val <= 0;
 }
 
 inline bool somelib::ns::RenamedComparable::operator>=(const somelib::ns::RenamedComparable& other) const {
-    return this->cmp(other) >= 0;
+    auto val = this->cmp(other);
+    return val >= 0;
 }
 
 inline bool somelib::ns::RenamedComparable::operator<(const somelib::ns::RenamedComparable& other) const {
-    return this->cmp(other) < 0;
+    auto val = this->cmp(other);
+    return val < 0;
 }
 
 inline bool somelib::ns::RenamedComparable::operator>(const somelib::ns::RenamedComparable& other) const {
-    return this->cmp(other) > 0;
+    auto val = this->cmp(other);
+    return val > 0;
 }
 
 inline const somelib::ns::capi::RenamedComparable* somelib::ns::RenamedComparable::AsFFI() const {

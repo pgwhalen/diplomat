@@ -14,6 +14,8 @@
 #include "../include/Float64Vec.hpp"
 #include "../include/ns/RenamedStringList.hpp"
 #include "../include/ns/RenamedBlockOverride.hpp"
+#include "../include/ns/RenamedMixinTest.hpp"
+#include "../include/ns/RenamedPartialComparable.hpp"
 
 using namespace somelib;
 
@@ -127,4 +129,18 @@ int main(int argc, char* argv[]) {
     simple_assert_eq("Default values float", make_default_f->y(), 14);
 
     simple_assert_eq("Default values bool", nested::ns::Renamednested_ns_fn(), false);
+
+    simple_assert_eq("Mixin generation", ns::RenamedMixinTest::hello(), "Hello!");
+
+    auto partial_cmp_a = ns::RenamedPartialComparable::new_(10.0f);
+    auto partial_cmp_b = ns::RenamedPartialComparable::new_(100.0f);
+    auto partial_cmp_c = ns::RenamedPartialComparable::new_(std::numeric_limits<float>::quiet_NaN());
+
+
+    simple_assert("Partial Comparison GT", (*partial_cmp_b > *partial_cmp_a).value());
+    simple_assert("Partial Comparison LT", (*partial_cmp_a < *partial_cmp_b).value());
+    simple_assert("Partial Comparison NE", (*partial_cmp_a != *partial_cmp_b).value());
+    simple_assert("Partial Comparison EQ None", !(*partial_cmp_a == *partial_cmp_c).has_value());
+    simple_assert("Partial Comparison GT None", !(*partial_cmp_c > *partial_cmp_a).has_value());
+    simple_assert("Partial Comparison LT None", !(*partial_cmp_c < *partial_cmp_a).has_value());
 }

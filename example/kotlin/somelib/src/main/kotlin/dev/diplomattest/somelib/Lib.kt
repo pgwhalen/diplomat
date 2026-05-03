@@ -80,6 +80,16 @@ internal class GCSlice(val memory: Memory?, val slice: Slice) {
         }
         return this
     }
+
+    // Stop managing this memory
+    fun leakStatic(): GCSlice {
+        GCSlice.persistedStaticSlices.add(this)
+        return this
+    }
+
+    companion object {
+        val persistedStaticSlices: MutableList<GCSlice> = mutableListOf()
+    }
 }
 
 internal class GCSlices(val memory: Memory?, val subMemory: List<Memory?>, val slice: Slice) {
@@ -96,6 +106,16 @@ internal class GCSlices(val memory: Memory?, val subMemory: List<Memory?>, val s
             edge.add(this)
         }
         return this
+    }
+
+    // Stop managing this memory
+    fun leakStatic(): GCSlices {
+        GCSlices.persistedStaticSlices.add(this)
+        return this
+    }
+
+    companion object {
+        val persistedStaticSlices: MutableList<GCSlices> = mutableListOf()
     }
 }
 
@@ -676,6 +696,19 @@ class ResultPointerUnit: Structure(), Structure.ByValue  {
     override fun getFieldOrder(): List<String> {
         return listOf("union", "isOk")
     }
+    internal fun getNativeOk(): Pointer? {
+        if (isOk == 1.toByte()) {
+            return union.getTypedValue(Pointer::class.java) as Pointer
+        }
+        return null
+    }
+    internal fun getNativeErr(): Unit? {
+        if (isOk == 0.toByte()) {
+            return Unit
+        }
+        return null
+    }
+
 }
 internal class ResultUnitUnitUnion: Union() {
 }
@@ -691,6 +724,19 @@ class ResultUnitUnit: Structure(), Structure.ByValue  {
     override fun getFieldOrder(): List<String> {
         return listOf("union", "isOk")
     }
+    internal fun getNativeOk(): Unit? {
+        if (isOk == 1.toByte()) {
+            return Unit
+        }
+        return null
+    }
+    internal fun getNativeErr(): Unit? {
+        if (isOk == 0.toByte()) {
+            return Unit
+        }
+        return null
+    }
+
 }
 
 

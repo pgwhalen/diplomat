@@ -16,12 +16,22 @@ class Unnamespaced internal constructor (
     // These ensure that anything that is borrowed is kept alive and not cleaned
     // up by the garbage collector.
     internal val selfEdges: List<Any>,
+    internal var owned: Boolean,
 )  {
 
-    internal class UnnamespacedCleaner(val handle: Pointer, val lib: UnnamespacedLib) : Runnable {
+    init {
+        if (this.owned) {
+            this.registerCleaner()
+        }
+    }
+
+    private class UnnamespacedCleaner(val handle: Pointer, val lib: UnnamespacedLib) : Runnable {
         override fun run() {
             lib.namespace_Unnamespaced_destroy(handle)
         }
+    }
+    private fun registerCleaner() {
+        CLEANER.register(this, Unnamespaced.UnnamespacedCleaner(handle, Unnamespaced.lib));
     }
 
     companion object {
@@ -29,18 +39,17 @@ class Unnamespaced internal constructor (
         internal val lib: UnnamespacedLib = Native.load("diplomat_feature_tests", libClass)
         @JvmStatic
         
-        fun make(e: AttrEnum): Unnamespaced {
+        fun make(e: RenamedAttrEnum): Unnamespaced {
             
             val returnVal = lib.namespace_Unnamespaced_make(e.toNative());
             val selfEdges: List<Any> = listOf()
             val handle = returnVal 
-            val returnOpaque = Unnamespaced(handle, selfEdges)
-            CLEANER.register(returnOpaque, Unnamespaced.UnnamespacedCleaner(handle, Unnamespaced.lib));
+            val returnOpaque = Unnamespaced(handle, selfEdges, true)
             return returnOpaque
         }
     }
     
-    fun useNamespaced(n: AttrOpaque1): Unit {
+    fun useNamespaced(n: AttrOpaque1Renamed): Unit {
         
         val returnVal = lib.namespace_Unnamespaced_use_namespaced(handle, n.handle);
         

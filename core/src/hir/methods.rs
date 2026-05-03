@@ -253,6 +253,14 @@ impl ParamSelf {
             SelfType::Enum(_) => (0, 0),
         }
     }
+
+    pub fn get_mutability(&self) -> crate::hir::Mutability {
+        match &self.ty {
+            SelfType::Opaque(op) => op.owner.mutability,
+            SelfType::Struct(st) => st.owner.mutability(),
+            SelfType::Enum(..) => super::Mutability::Immutable,
+        }
+    }
 }
 
 impl TraitParamSelf {

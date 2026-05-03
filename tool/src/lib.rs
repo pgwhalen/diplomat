@@ -20,6 +20,7 @@ use config::toml_value_from_str;
 use config::{find_top_level_attr, Config};
 use core::mem;
 use core::panic;
+use diplomat_core::ast::ModuleIncludeInfo;
 use diplomat_core::hir;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -28,6 +29,20 @@ use std::fmt;
 use std::path::Path;
 
 pub use hir::DocsUrlGenerator;
+
+pub fn get_supported(target_language: &str) -> hir::BackendAttrSupport {
+    match target_language {
+        "c" => c::attr_support(),
+        "cpp" => cpp::attr_support(),
+        "dart" => dart::attr_support(),
+        "js" => js::attr_support(),
+        "demo_gen" => demo_gen::attr_support(),
+        "java" => java::attr_support(),
+        "kotlin" => kotlin::attr_support(),
+        "py-nanobind" | "nanobind" => nanobind::attr_support(),
+        o => panic!("Unknown target: {}", o),
+    }
+}
 
 pub fn gen(
     entry: &Path,
@@ -67,21 +82,11 @@ pub fn gen(
     // The HIR backends used to be named "c2", "js2", etc
     let target_language = target_language.strip_suffix('2').unwrap_or(target_language);
     let mut attr_validator = hir::BasicAttributeValidator::new(target_language);
-    attr_validator.support = match target_language {
-        "c" => c::attr_support(),
-        "cpp" => cpp::attr_support(),
-        "dart" => dart::attr_support(),
-        "js" => js::attr_support(),
-        "demo_gen" => {
-            // So renames and disables are carried across.
-            attr_validator.other_backend_names = vec!["js".to_string()];
-            demo_gen::attr_support()
-        }
-        "java" => java::attr_support(),
-        "kotlin" => kotlin::attr_support(),
-        "py-nanobind" | "nanobind" => nanobind::attr_support(),
-        o => panic!("Unknown target: {}", o),
-    };
+    attr_validator.support = get_supported(target_language);
+    if matches!(target_language, "demo_gen") {
+        // So renames and disables are carried across.
+        attr_validator.other_backend_names = vec!["js".to_string()];
+    }
 
     let module = syn_inline_mod::parse_and_inline_modules(entry);
 
@@ -100,13 +105,33 @@ pub fn gen(
 
     attr_validator.features_enabled = config.shared_config.features_enabled.clone();
 
-    let tcx =
-        hir::TypeContext::from_syn(&module, lowering_config, attr_validator).unwrap_or_else(|e| {
-            for (ctx, err) in e {
-                eprintln!("Lowering error in {ctx}: {err}");
-            }
-            std::process::exit(1);
-        });
+    let manifest_path = config
+        .shared_config
+        .manifest_dir
+        .as_ref()
+        .map(std::path::Path::new)
+        .unwrap_or(
+            entry
+                .parent()
+                .expect("Could not get parent for entry file.")
+                .parent()
+                .expect("Could not get parent folder of entry file."),
+        );
+
+    let cache = Some(&RefCell::new(HashMap::new()));
+
+    let tcx = hir::TypeContext::from_syn(
+        &module,
+        lowering_config,
+        attr_validator,
+        Some(ModuleIncludeInfo::new(manifest_path, cache)),
+    )
+    .unwrap_or_else(|e| {
+        for (ctx, err) in e {
+            eprintln!("Lowering error in {ctx}: {err}");
+        }
+        std::process::exit(1);
+    });
 
     let (files, errors) = match target_language {
         "c" => c::run(&tcx, &config, docs_url_gen),

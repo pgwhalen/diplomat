@@ -7,10 +7,12 @@ import com.sun.jna.Structure
 
 internal interface FooLib: Library {
     fun Foo_destroy(handle: Pointer)
+    fun Foo_new(x: Slice): Pointer
     fun Foo_get_bar(handle: Pointer): Pointer
     fun Foo_new_static(x: Slice): Pointer
     fun Foo_as_returning(handle: Pointer): BorrowedFieldsReturningNative
     fun Foo_extract_from_fields(fields: BorrowedFieldsNative): Pointer
+    fun Foo_extract_from_bounds(bounds: BorrowedFieldsWithBoundsNative, anotherString: Slice): Pointer
 }
 
 class Foo internal constructor (
@@ -19,12 +21,22 @@ class Foo internal constructor (
     // up by the garbage collector.
     internal val selfEdges: List<Any>,
     internal val aEdges: List<Any?>,
+    internal var owned: Boolean,
 )  {
 
-    internal class FooCleaner(val handle: Pointer, val lib: FooLib) : Runnable {
+    init {
+        if (this.owned) {
+            this.registerCleaner()
+        }
+    }
+
+    private class FooCleaner(val handle: Pointer, val lib: FooLib) : Runnable {
         override fun run() {
             lib.Foo_destroy(handle)
         }
+    }
+    private fun registerCleaner() {
+        CLEANER.register(this, Foo.FooCleaner(handle, Foo.lib));
     }
 
     companion object {
@@ -32,17 +44,28 @@ class Foo internal constructor (
         internal val lib: FooLib = Native.load("diplomat_feature_tests", libClass)
         @JvmStatic
         
-        fun newStatic(x: String): Foo {
-            val xSliceMemory = PrimitiveArrayTools.borrowUtf8(x)
+        fun new_(x: String): Foo {
             // This lifetime edge depends on lifetimes: 'a
             val aEdges: MutableList<Any> = mutableListOf();
+            val xSliceMemory = PrimitiveArrayTools.borrowUtf8(x).into(listOf(aEdges))
+            
+            val returnVal = lib.Foo_new(xSliceMemory.slice);
+            val selfEdges: List<Any> = listOf()
+            val handle = returnVal 
+            val returnOpaque = Foo(handle, selfEdges, aEdges, true)
+            return returnOpaque
+        }
+        @JvmStatic
+        
+        fun newStatic(x: String): Foo {
+            // This lifetime edge depends on lifetimes: 'a
+            val aEdges: MutableList<Any> = mutableListOf();
+            val xSliceMemory = PrimitiveArrayTools.borrowUtf8(x).leakStatic()
             
             val returnVal = lib.Foo_new_static(xSliceMemory.slice);
             val selfEdges: List<Any> = listOf()
             val handle = returnVal 
-            val returnOpaque = Foo(handle, selfEdges, aEdges)
-            CLEANER.register(returnOpaque, Foo.FooCleaner(handle, Foo.lib));
-            xSliceMemory?.close()
+            val returnOpaque = Foo(handle, selfEdges, aEdges, true)
             return returnOpaque
         }
         @JvmStatic
@@ -54,8 +77,23 @@ class Foo internal constructor (
             val returnVal = lib.Foo_extract_from_fields(fields.toNative(aAppendArray = arrayOf(aEdges)));
             val selfEdges: List<Any> = listOf()
             val handle = returnVal 
-            val returnOpaque = Foo(handle, selfEdges, aEdges)
-            CLEANER.register(returnOpaque, Foo.FooCleaner(handle, Foo.lib));
+            val returnOpaque = Foo(handle, selfEdges, aEdges, true)
+            return returnOpaque
+        }
+        @JvmStatic
+        
+        /** Test that the extraction logic correctly pins the right fields
+        */
+        fun extractFromBounds(bounds: BorrowedFieldsWithBounds, anotherString: String): Foo {
+            val temporaryEdgeArena: MutableList<Any> = mutableListOf()
+            // This lifetime edge depends on lifetimes: 'a, 'y, 'z
+            val aEdges: MutableList<Any> = mutableListOf();
+            val anotherStringSliceMemory = PrimitiveArrayTools.borrowUtf8(anotherString).into(listOf(aEdges))
+            
+            val returnVal = lib.Foo_extract_from_bounds(bounds.toNative(aAppendArray = arrayOf(temporaryEdgeArena), bAppendArray = arrayOf(aEdges), cAppendArray = arrayOf(aEdges)), anotherStringSliceMemory.slice);
+            val selfEdges: List<Any> = listOf()
+            val handle = returnVal 
+            val returnOpaque = Foo(handle, selfEdges, aEdges, true)
             return returnOpaque
         }
     }
@@ -69,8 +107,7 @@ class Foo internal constructor (
         val returnVal = lib.Foo_get_bar(handle);
         val selfEdges: List<Any> = listOf()
         val handle = returnVal 
-        val returnOpaque = Bar(handle, selfEdges, bEdges, aEdges)
-        CLEANER.register(returnOpaque, Bar.BarCleaner(handle, Bar.lib));
+        val returnOpaque = Bar(handle, selfEdges, bEdges, aEdges, true)
         return returnOpaque
     }
     

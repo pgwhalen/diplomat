@@ -17,6 +17,7 @@ part 'BorrowedFields.g.dart';
 part 'BorrowedFieldsReturning.g.dart';
 part 'BorrowedFieldsWithBounds.g.dart';
 part 'BorrowingOptionStruct.g.dart';
+part 'CachedIncludeZST.g.dart';
 part 'ContiguousEnum.g.dart';
 part 'CyclicStructA.g.dart';
 part 'CyclicStructB.g.dart';
@@ -36,6 +37,7 @@ part 'MyZst.g.dart';
 part 'NestedBorrowedFields.g.dart';
 part 'One.g.dart';
 part 'Opaque.g.dart';
+part 'OpaqueMut.g.dart';
 part 'OpaqueMutexedString.g.dart';
 part 'OpaqueThin.g.dart';
 part 'OpaqueThinIter.g.dart';
@@ -54,6 +56,7 @@ part 'RenamedComparable.g.dart';
 part 'RenamedDeprecatedEnum.g.dart';
 part 'RenamedDeprecatedOpaque.g.dart';
 part 'RenamedDeprecatedStruct.g.dart';
+part 'RenamedMixinTest.g.dart';
 part 'RenamedMyIndexer.g.dart';
 part 'RenamedMyIterable.g.dart';
 part 'RenamedMyIterator.g.dart';
@@ -63,6 +66,8 @@ part 'RenamedOpaqueIterable.g.dart';
 part 'RenamedOpaqueIterator.g.dart';
 part 'RenamedOpaqueRefIterable.g.dart';
 part 'RenamedOpaqueRefIterator.g.dart';
+part 'RenamedOpaqueZSTIndexer.g.dart';
+part 'RenamedRenamedCachedIncludeZST.g.dart';
 part 'RenamedStructWithAttrs.g.dart';
 part 'RenamedTestMacroStruct.g.dart';
 part 'RenamedTestOpaque.g.dart';
@@ -894,6 +899,56 @@ extension on core.List<int> {
     slice._data = alloc(length);
     for (var i = 0; i < length; i++) {
       slice._data[i] = this[i];
+    }
+    slice._length = length;
+    return slice;
+  }
+}
+
+final class _SliceSliceUtf16 extends ffi.Struct {
+  external ffi.Pointer<_SliceUtf16> _data;
+
+  @ffi.Size()
+  external int _length;
+
+  // This is expensive
+  @override
+  bool operator ==(Object other) {
+    if (other is! _SliceSliceUtf16 || other._length != _length) {
+      return false;
+    }
+
+    for (var i = 0; i < _length; i++) {
+      if (other._data[i] != _data[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // This is cheap
+  @override
+  int get hashCode => _length.hashCode;
+
+  // ignore: unused_element
+  core.List<core.String> _toDart(core.List<Object> lifetimeEdges, {bool isStatic = false}) {
+    final r = core.Iterable.generate(_length, (i) => _data[i]._toDart(lifetimeEdges)).toList(growable: false);
+    if (lifetimeEdges.isEmpty && !isStatic) {
+      // unsupported
+    } else {
+      // Lifetime edges will be cleaned up
+    }
+    return r;
+  }
+}
+
+extension on core.List<core.String> {
+  // ignore: unused_element
+  _SliceSliceUtf16 _utf16SliceAllocIn(ffi.Allocator alloc) {
+    final slice = ffi.Struct.create<_SliceSliceUtf16>();
+    slice._data = alloc(length);
+    for (var i = 0; i < length; i++) {
+      slice._data[i] = this[i]._utf16AllocIn(alloc);
     }
     slice._length = length;
     return slice;

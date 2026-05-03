@@ -22,11 +22,15 @@ namespace capi {
 
     somelib::capi::MyStruct MyStruct_new(void);
 
+    somelib::capi::MyStruct MyStruct_new_overload(int32_t i);
+
     void MyStruct_takes_mut(somelib::capi::MyStruct* self, somelib::capi::MyStruct* o);
 
     void MyStruct_takes_const(const somelib::capi::MyStruct* self, somelib::capi::MyStruct* o);
 
     uint8_t MyStruct_into_a(somelib::capi::MyStruct self);
+
+    uint8_t MyStruct_take_ref_ret(const somelib::capi::MyStruct* self);
 
     typedef struct MyStruct_returns_zst_result_result { bool is_ok;} MyStruct_returns_zst_result_result;
     MyStruct_returns_zst_result_result MyStruct_returns_zst_result(void);
@@ -40,6 +44,11 @@ namespace capi {
 
 inline somelib::MyStruct somelib::MyStruct::new_() {
     auto result = somelib::capi::MyStruct_new();
+    return somelib::MyStruct::FromFFI(result);
+}
+
+inline somelib::MyStruct somelib::MyStruct::new_overload(int32_t i) {
+    auto result = somelib::capi::MyStruct_new_overload(i);
     return somelib::MyStruct::FromFFI(result);
 }
 
@@ -62,6 +71,12 @@ inline void somelib::MyStruct::takes_const(somelib::MyStruct& o) const {
 
 inline uint8_t somelib::MyStruct::into_a() const {
     auto result = somelib::capi::MyStruct_into_a(this->AsFFI());
+    return result;
+}
+
+inline uint8_t somelib::MyStruct::take_ref_ret() const {
+    auto thisDiplomatRefClone = this->AsFFI();
+    auto result = somelib::capi::MyStruct_take_ref_ret(&thisDiplomatRefClone);
     return result;
 }
 

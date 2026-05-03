@@ -32,6 +32,7 @@ public:
   inline static std::unique_ptr<somelib::ns::RenamedComparable> new_(uint8_t int_);
 
   inline int8_t cmp(const somelib::ns::RenamedComparable& other) const;
+
   inline bool operator==(const somelib::ns::RenamedComparable& other) const;
   inline bool operator!=(const somelib::ns::RenamedComparable& other) const;
   inline bool operator<=(const somelib::ns::RenamedComparable& other) const;

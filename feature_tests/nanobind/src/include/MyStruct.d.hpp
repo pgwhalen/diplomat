@@ -48,11 +48,15 @@ struct MyStruct {
 
   inline static somelib::MyStruct new_();
 
+  inline static somelib::MyStruct new_overload(int32_t i);
+
   inline void takes_mut(somelib::MyStruct& o);
 
   inline void takes_const(somelib::MyStruct& o) const;
 
   inline uint8_t into_a() const;
+
+  inline uint8_t take_ref_ret() const;
 
   inline static somelib::diplomat::result<std::monostate, somelib::MyZst> returns_zst_result();
 

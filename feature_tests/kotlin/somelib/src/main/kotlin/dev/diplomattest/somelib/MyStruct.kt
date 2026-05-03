@@ -8,6 +8,7 @@ import com.sun.jna.Structure
 
 internal interface MyStructLib: Library {
     fun MyStruct_new(): MyStructNative
+    fun MyStruct_new_overload(i: Int): MyStructNative
     fun MyStruct_into_a(nativeStruct: MyStructNative): FFIUint8
     fun MyStruct_returns_zst_result(): ResultUnitMyZstNative
     fun MyStruct_fails_zst_result(): ResultUnitMyZstNative
@@ -105,10 +106,19 @@ class MyStruct (var a: UByte, var b: Boolean, var c: UByte, var d: ULong, var e:
         }
         @JvmStatic
         
+        fun newOverload(i: Int): MyStruct {
+            
+            val returnVal = lib.MyStruct_new_overload(i);
+            val returnStruct = MyStruct.fromNative(returnVal)
+            return returnStruct
+        }
+        @JvmStatic
+        
         fun returnsZstResult(): Result<Unit> {
             
             val returnVal = lib.MyStruct_returns_zst_result();
-            if (returnVal.isOk == 1.toByte()) {
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
                 return Unit.ok()
             } else {
                 return MyZst().err()
@@ -119,7 +129,8 @@ class MyStruct (var a: UByte, var b: Boolean, var c: UByte, var d: ULong, var e:
         fun failsZstResult(): Result<Unit> {
             
             val returnVal = lib.MyStruct_fails_zst_result();
-            if (returnVal.isOk == 1.toByte()) {
+            val nativeOkVal = returnVal.getNativeOk();
+            if (nativeOkVal != null) {
                 return Unit.ok()
             } else {
                 return MyZst().err()

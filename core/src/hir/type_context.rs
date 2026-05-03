@@ -217,8 +217,9 @@ impl TypeContext {
         s: &'ast syn::File,
         cfg: LoweringConfig,
         attr_validator: impl AttributeValidator + 'static,
+        include_info: Option<ast::ModuleIncludeInfo<'ast>>,
     ) -> Result<Self, Vec<ErrorAndContext>> {
-        let types = ast::File::from(s).all_types();
+        let types = ast::File::from_syn(s, include_info).all_types();
         let (mut ctx, hir) = Self::from_ast_without_validation(&types, cfg, attr_validator)?;
         ctx.errors.set_item("(validation)");
         hir.validate(&mut ctx.errors);
@@ -464,19 +465,37 @@ impl TypeContext {
     /// Currently used to check if a given type is a slice of structs,
     /// and ensure the relevant attributes are set there.
     fn validate_ty<P: super::TyPosition>(&self, errors: &mut ErrorStore, ty: &hir::Type<P>) {
-        if let hir::Type::Slice(hir::Slice::Struct(_, st)) = ty {
-            let st = self.resolve_type(st.id());
-            match st {
-                TypeDef::Struct(st) => {
-                    if !st.attrs.abi_compatible {
-                        errors.push(LoweringError::Other(format!(
-                            "Cannot construct a slice of {:?}. Try marking with `#[diplomat::attr(auto, abi_compatible)]`",
-                            st.name
-                        )));
-                    }
+        match &ty {
+            hir::Type::Struct(st) => {
+                let d = self.resolve_type(st.id());
+                match d {
+                    TypeDef::Struct(st_d) => match st.owner() {
+                        MaybeOwn::Borrow(b)
+                            if b.mutability.is_mutable() && !st_d.attrs.mut_struct_ref =>
+                        {
+                            errors.push(LoweringError::Other(format!("Found a mutable struct ref &mut {}. Try marking the struct def with `#[diplomat::attr(auto, mut_struct_ref)]`", st_d.name)));
+                        }
+                        _ => {}
+                    },
+                    TypeDef::OutStruct(..) => {}
+                    _ => unreachable!(),
                 }
-                _ => unreachable!(),
             }
+            hir::Type::Slice(hir::Slice::Struct(_, st)) => {
+                let st = self.resolve_type(st.id());
+                match st {
+                    TypeDef::Struct(st) => {
+                        if !st.attrs.abi_compatible {
+                            errors.push(LoweringError::Other(format!(
+                                "Cannot construct a slice of {:?}. Try marking with `#[diplomat::attr(auto, abi_compatible)]`",
+                                st.name
+                            )));
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            _ => {}
         }
     }
 
@@ -804,7 +823,7 @@ mod tests {
             attr_validator.support.option = true;
             attr_validator.support.abi_compatibles = true;
             attr_validator.support.free_functions = true;
-            match hir::TypeContext::from_syn(&parsed, Default::default(), attr_validator) {
+            match hir::TypeContext::from_syn(&parsed, Default::default(), attr_validator, None) {
                 Ok(_context) => (),
                 Err(e) => {
                     for (ctx, err) in e {
@@ -1218,15 +1237,25 @@ mod tests {
                        todo!()
                    }
                }
+
+               #[diplomat::attr(auto, mut_struct_ref)]
+               pub struct ProperlyMarked {
+                pub x: u32,
+               }
+               impl ProperlyMarked {
+                  pub fn takes_mut(&mut self) {
+                    todo!()
+                  }
+               }
            }
         };
 
         let mut output = String::new();
 
         let mut attr_validator = hir::BasicAttributeValidator::new("tests");
-        attr_validator.support.struct_refs = true;
+        attr_validator.support.mut_struct_refs = true;
         attr_validator.support.abi_compatibles = true;
-        match hir::TypeContext::from_syn(&parsed, Default::default(), attr_validator) {
+        match hir::TypeContext::from_syn(&parsed, Default::default(), attr_validator, None) {
             Ok(_context) => (),
             Err(e) => {
                 for (ctx, err) in e {
@@ -1259,8 +1288,8 @@ mod tests {
 
         let mut attr_validator = hir::BasicAttributeValidator::new("tests");
         attr_validator.support.abi_compatibles = true;
-        attr_validator.support.struct_refs = true;
-        match hir::TypeContext::from_syn(&parsed, Default::default(), attr_validator) {
+        attr_validator.support.mut_struct_refs = true;
+        match hir::TypeContext::from_syn(&parsed, Default::default(), attr_validator, None) {
             Ok(_context) => (),
             Err(e) => {
                 for (ctx, err) in e {
@@ -1296,7 +1325,7 @@ mod tests {
         let mut attr_validator = hir::BasicAttributeValidator::new("tests");
         attr_validator.support.abi_compatibles = true;
         attr_validator.support.struct_refs = true;
-        match hir::TypeContext::from_syn(&parsed, Default::default(), attr_validator) {
+        match hir::TypeContext::from_syn(&parsed, Default::default(), attr_validator, None) {
             Ok(_context) => (),
             Err(e) => {
                 for (ctx, err) in e {
@@ -1328,7 +1357,7 @@ mod tests {
         attr_validator.support.abi_compatibles = true;
         attr_validator.support.struct_refs = true;
         attr_validator.support.callbacks = true;
-        match hir::TypeContext::from_syn(&parsed, Default::default(), attr_validator) {
+        match hir::TypeContext::from_syn(&parsed, Default::default(), attr_validator, None) {
             Ok(_context) => (),
             Err(e) => {
                 for (ctx, err) in e {
@@ -1372,7 +1401,7 @@ mod tests {
         let config = super::LoweringConfig {
             unsafe_references_in_callbacks: true,
         };
-        match hir::TypeContext::from_syn(&parsed, config, attr_validator) {
+        match hir::TypeContext::from_syn(&parsed, config, attr_validator, None) {
             Ok(_context) => (),
             Err(e) => {
                 for (ctx, err) in e {
@@ -1381,5 +1410,47 @@ mod tests {
             }
         };
         insta::with_settings!({}, { insta::assert_snapshot!(output) });
+    }
+
+    #[test]
+    fn test_unsupported_mut_slice() {
+        uitest_lowering! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::attr(auto, abi_compatible)]
+                pub struct Foo {
+                    x : f32,
+                    y : f32,
+                }
+
+                impl Foo {
+                    pub fn takes_slice<'a>(a : &'a mut [f32], b : &'a mut [Foo] ) -> &'a mut [f32] {
+                        todo!()
+                    }
+
+                    pub fn returns_abi_slice<'a>() -> &'a mut [Foo] {
+                        todo!()
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_partial_comparison_unsupported() {
+        uitest_lowering! {
+            #[diplomat::bridge]
+            mod ffi {
+                #[diplomat::opaque]
+                pub struct PartialComparable;
+
+                impl PartialComparable {
+                    #[diplomat::attr(auto, comparison)]
+                    pub fn cmp(&self, other : &PartialComparable) -> Option<core::cmp::Ordering> {
+                        todo!()
+                    }
+                }
+            }
+        }
     }
 }

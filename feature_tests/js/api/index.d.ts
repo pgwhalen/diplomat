@@ -6,6 +6,8 @@ export { RenamedDeprecatedStruct } from "./RenamedDeprecatedStruct"
 
 export { RenamedFeatureTest } from "./RenamedFeatureTest"
 
+export { RenamedRenamedCachedIncludeZST } from "./RenamedRenamedCachedIncludeZST"
+
 export { RenamedStructWithAttrs, RenamedStructWithAttrs_obj } from "./RenamedStructWithAttrs"
 
 export { RenamedTestMacroStruct, RenamedTestMacroStruct_obj } from "./RenamedTestMacroStruct"
@@ -24,7 +26,11 @@ export { BorrowingOptionStruct, BorrowingOptionStruct_obj } from "./BorrowingOpt
 
 export { OptionInputStruct, OptionInputStruct_obj } from "./OptionInputStruct"
 
+export { CachedIncludeZST } from "./CachedIncludeZST"
+
 export { ErrorStruct, ErrorStruct_obj } from "./ErrorStruct"
+
+export { FallibleOpaqueConstructor, FallibleOpaqueConstructor_obj } from "./FallibleOpaqueConstructor"
 
 export { BigStructWithStuff, BigStructWithStuff_obj } from "./BigStructWithStuff"
 
@@ -44,6 +50,8 @@ export { PrimitiveStruct, PrimitiveStruct_obj } from "./PrimitiveStruct"
 
 export { ScalarPairWithPadding, ScalarPairWithPadding_obj } from "./ScalarPairWithPadding"
 
+export { StructOfOpaque, StructOfOpaque_obj } from "./StructOfOpaque"
+
 export { StructWithSlices, StructWithSlices_obj } from "./StructWithSlices"
 
 export { OptionStruct } from "./OptionStruct"
@@ -53,6 +61,8 @@ export { AttrOpaque1Renamed } from "./AttrOpaque1Renamed"
 export { RenamedAttrOpaque2 } from "./RenamedAttrOpaque2"
 
 export { RenamedDeprecatedOpaque } from "./RenamedDeprecatedOpaque"
+
+export { RenamedMixinTest } from "./RenamedMixinTest"
 
 export { RenamedMyIterable } from "./RenamedMyIterable"
 
@@ -69,6 +79,8 @@ export { RenamedOpaqueIterator } from "./RenamedOpaqueIterator"
 export { RenamedOpaqueRefIterable } from "./RenamedOpaqueRefIterable"
 
 export { RenamedOpaqueRefIterator } from "./RenamedOpaqueRefIterator"
+
+export { RenamedOpaqueZSTIndexer } from "./RenamedOpaqueZSTIndexer"
 
 export { RenamedTestOpaque } from "./RenamedTestOpaque"
 
@@ -109,6 +121,8 @@ export { MyString } from "./MyString"
 export { MyOpaqueEnum } from "./MyOpaqueEnum"
 
 export { Opaque } from "./Opaque"
+
+export { OpaqueMut } from "./OpaqueMut"
 
 export { OpaqueMutexedString } from "./OpaqueMutexedString"
 

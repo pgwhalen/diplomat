@@ -3,7 +3,14 @@
 {%- macro original_cpp_method() -%}&{{- type_name }}::{{m.cpp_method_name}}{%- endmacro -%}
 {%- macro operator(name) %}("__{{name}}__", {% call method_name_cpp() %}{{original_cpp_method()}}{% endcall %}, nb::is_operator()){%- endmacro -%}
 
-{%- block cpp_method_name -%}{{- type_name }}::{{ m.cpp_method_name -}}{%- endblock -%}
+
+{%- macro gen_constructor_body(method_name, params, is_overload=false) -%}
+        (nb::new_({%- call method_name_cpp() %}&{{- type_name}}::{{ method_name -}} {%- endcall -%})
+    {{- method_params::params(params, m.lifetime_args) }})
+{%- endmacro -%}
+
+{%- block pre_cpp_method_name  -%}{{- type_name }}::{%- endblock -%}
+{%- block cpp_method_name -%}{{ m.cpp_method_name -}}{%- endblock -%}
 {%- block special_methods -%}
     {%- match special_method -%}
     {%- when crate::hir::SpecialMethod::Add -%}
@@ -17,7 +24,7 @@
     {%- when crate::hir::SpecialMethod::AddAssign | crate::hir::SpecialMethod::SubAssign |
             crate::hir::SpecialMethod::MulAssign | crate::hir::SpecialMethod::DivAssign -%}
         (nb::self {{special_method.operator_str().unwrap()}} nb::self, nb::rv_policy::none)
-    {%- when crate::hir::SpecialMethod::Comparison -%}
+    {%- when crate::hir::SpecialMethod::Comparison(_) -%}
         (nb::self == nb::self)
         .def(nb::self != nb::self)
         .def(nb::self <= nb::self)
@@ -54,32 +61,15 @@
             {{- method_params::params(m.method.params, m.lifetime_args) }}
         {%- endif -%})
     {%- when crate::hir::SpecialMethod::Constructor -%}
-        {%- if is_self_opaque -%}
-            (nb::new_({%- call method_name_cpp() %}&{{- type_name}}::{{ m.cpp_method_name -}} {%- endcall -%})
-        {%- else -%} {#- nanobind's nb::init<> only works for *actual* constructors -#}
-            ("__init__", {%- call method_name_cpp() %}[]({{ type_name }}* self
-            {%- for p in m.param_decls.params -%}
-            , {{p.type_name}} {{p.name}}
-            {%- endfor -%}
-            {%- match m.method.output -%}
-            {%- when hir::ReturnType::Infallible(_) -%}
-                ){ *self = {{type_name}}::{{ m.cpp_method_name -}}({% for p in m.param_decls.params -%}
-                                                {%- if !loop.first -%}, {% endif %}{{p.name}}
-                                                {%- endfor -%}
-            ); }
-            {%- when hir::ReturnType::Fallible(_, _) -%}
-                ){ auto tmp = {{type_name}}::{{ m.cpp_method_name -}}({% for p in m.param_decls.params -%}
-                                                {%- if !loop.first -%}, {% endif %}{{p.name}}
-                                                {%- endfor -%} );
-                if(tmp.is_ok()) {
-                    *self = std::move(tmp).ok().value();
-                } else {
-                    nb::cast(tmp); // This will raise a python error with the contents of the error type
-                }}
-            {%- when hir::ReturnType::Nullable(_) -%}
-            static_assert(false, "This is unsupported by diplomat");
-            {%- endmatch -%}
-        {%- endcall -%}
+        {{- gen_constructor_body(m.cpp_method_name, m.param_decls.params.clone()) -}}
+        {%- for o in m.overloads %}
+    .def{{- gen_constructor_body(o.method_name.clone().unwrap_or(m.cpp_method_name.to_string()), o.parameters.params.clone(), true) -}}
+        {%- endfor -%}
+    {%- when crate::hir::SpecialMethod::NamedConstructor(_) -%}
+        ("{{m.method_name}}", {% if m.overloads.len() > 0 -%}
+            {% call method_name_cpp() %}nb::overload_cast<{%- for p in m.param_decls.params -%}{%- if !loop.first -%}, {% endif -%}{{p.type_name}}{%- endfor -%}>(&{{- type_name }}::{{ m.cpp_method_name -}}){% endcall %}
+        {%- else -%}
+            {% call method_name_cpp() %}&{{- type_name }}::{{ m.cpp_method_name -}}{% endcall %}
         {%- endif -%}
         {{- method_params::params(m.method.params, m.lifetime_args) }})
     {%- when crate::hir::SpecialMethod::Indexer -%}
@@ -102,8 +92,21 @@
                 return out;
             }
         }
+        {%- when crate::hir::ReturnType::Infallible(crate::hir::SuccessType::OutType(hir::Type::Opaque(op))) -%}
+        []({{type_name}}* self, {{m.param_decls.params[0].type_name}} index) {
+            auto out = {% call method_name_cpp("map_inner(", ")") %}self->operator[] (index){% endcall %};
+            {%- if op.is_optional() %}
+            if ({% if op.is_owned() -%} out.get() {%- else -%} out {%- endif %} == nullptr) {
+                throw nb::index_error("Could not get index.");
+            } else {
+                return out;
+            }
+            {%- else -%}
+            static_assert(false, "Non-optional opaques are unsupported by Nanobind backend.");
+            {%- endif -%}
+        }
         {%- when crate::hir::ReturnType::Infallible(..) -%}
-        {% call method_name_cpp() %}&{{- type_name }}::operator[]{% endcall %}
+        static_assert(false, "Non-optional types are unsupported by Nanobind backend.");
         {%- endmatch -%}
 
         {{- method_params::params(m.method.params, m.lifetime_args) }})

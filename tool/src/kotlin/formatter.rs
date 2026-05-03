@@ -1,9 +1,9 @@
 use diplomat_core::hir::{
     self,
     borrowing_param::{LifetimeEdge, LifetimeEdgeKind},
-    Docs, DocsTypeReferenceSyntax, DocsUrlGenerator, FloatType, IntSizeType, IntType, LifetimeEnv,
-    MaybeStatic, PrimitiveType, Slice, StringEncoding, StructPathLike, TraitId, TyPosition, Type,
-    TypeContext, TypeId,
+    Docs, DocsTypeReferenceSyntax, DocsUrlGenerator, EnumVariant, FloatType, IntSizeType, IntType,
+    LifetimeEnv, MaybeStatic, PrimitiveType, Slice, StringEncoding, StructPathLike, TraitId,
+    TyPosition, Type, TypeContext, TypeId,
 };
 use heck::ToLowerCamelCase;
 use std::collections::HashSet;
@@ -275,11 +275,11 @@ impl<'tcx> KotlinFormatter<'tcx> {
             }
             .into(),
             Type::Struct(s) => {
-                let field_type_name: &str = self.tcx.resolve_type(s.id()).name().as_ref();
+                let field_type_name = self.fmt_type_name(s.id());
                 format!("{field_type_name}Native()").into()
             }
             Type::Enum(enum_def) => {
-                let field_type_name: &str = self.tcx.resolve_enum(enum_def.tcx_id).name.as_ref();
+                let field_type_name = self.fmt_type_name(enum_def.id());
                 if for_results {
                     "0".into()
                 } else {
@@ -350,6 +350,7 @@ impl<'tcx> KotlinFormatter<'tcx> {
                 format!("{field_val}{maybe_unsized_conversion}").into()
             }
             Type::Opaque(opaque) => {
+                let is_owned = opaque.is_owned();
                 let lt_list: String =
                     once("listOf()".to_string()) // we only support owned opaque types, so the self edges
                                      // should be empty
@@ -375,15 +376,9 @@ impl<'tcx> KotlinFormatter<'tcx> {
                 let ty_name =
                     self.fmt_type_name(ty.id().expect("Failed to get type id for opaque"));
                 if opaque.is_optional() {
-                    format!(
-                        r#"if ({field_val} == null) {{
-        null
-    }} else {{
-        {ty_name}({field_val}!!, {lt_list})
-    }}"#
-                    )
+                    format!("{field_val}?.let {{ {ty_name}(it, {lt_list}, {is_owned}) }}")
                 } else {
-                    format!("{ty_name}({field_val}, {lt_list})")
+                    format!("{ty_name}({field_val}, {lt_list}, {is_owned})")
                 }
                 .into()
             }
@@ -542,6 +537,15 @@ impl<'tcx> KotlinFormatter<'tcx> {
         resolved.attrs.rename.apply(candidate)
     }
 
+    pub fn fmt_variant_name(&self, variant: &'tcx EnumVariant) -> Cow<'tcx, str> {
+        let name = variant.name.as_str();
+
+        if KEYWORDS.contains(&name) {
+            panic!("{name:?} is not a valid Kotlin trait name. Please rename.");
+        }
+
+        variant.attrs.rename.apply(name.into())
+    }
     pub fn fmt_nullable(&self, ident: &str) -> String {
         format!("{ident}?")
     }
@@ -561,7 +565,7 @@ pub mod test {
         let mut attr_validator = hir::BasicAttributeValidator::new("kotlin_test");
         attr_validator.support = super::super::attr_support();
 
-        match TypeContext::from_syn(&file, Default::default(), attr_validator) {
+        match TypeContext::from_syn(&file, Default::default(), attr_validator, None) {
             Ok(context) => context,
             Err(e) => {
                 for (_cx, err) in e {

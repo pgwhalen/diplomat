@@ -8,6 +8,8 @@
 #include "../include/PrimitiveStructVec.hpp"
 #include "../include/PrimitiveStruct.hpp"
 #include "../include/CyclicStructA.hpp"
+#include "../include/StructOfOpaque.hpp"
+#include "../include/ImmutableStructOfOpaque.hpp"
 #include "assert.hpp"
 
 using namespace somelib;
@@ -95,12 +97,12 @@ int main(int argc, char* argv[]) {
     primitive_vec->push({.x = -1.0f});
 
     PrimitiveStruct::mutable_slice(primitive_vec->as_slice_mut());
-    simple_assert_eq("primitiveArr cumulative sum", primitive_vec->get(2).x, 2.0f);
-    simple_assert_eq("primitiveArr alternating bool", primitive_vec->get(0).a, false);
-    simple_assert_eq("primitiveArr alternating bool 2", primitive_vec->get(1).a, true);
-    simple_assert_eq("primitiveArr DiplomatChar", (int)primitive_vec->get(2).b, 2);
-    simple_assert_eq("primitiveArr isize", primitive_vec->get(0).d, 101);
-    simple_assert_eq("primitiveArr DiplomatByte", primitive_vec->get(1).e, 3);
+    simple_assert_eq("primitiveArr cumulative sum", primitive_vec->get(2).value().x, 2.0f);
+    simple_assert_eq("primitiveArr alternating bool", primitive_vec->get(0).value().a, false);
+    simple_assert_eq("primitiveArr alternating bool 2", primitive_vec->get(1).value().a, true);
+    simple_assert_eq("primitiveArr DiplomatChar", (int)primitive_vec->get(2).value().b, 2);
+    simple_assert_eq("primitiveArr isize", primitive_vec->get(0).value().d, 101);
+    simple_assert_eq("primitiveArr DiplomatByte", primitive_vec->get(1).value().e, 3);
 
     CyclicStructA cyclic_arr[] {
         {
@@ -149,7 +151,23 @@ int main(int argc, char* argv[]) {
     struct_ref_one.takes_mut(struct_ref_two);
     simple_assert_eq("Mutable ref cloned in", struct_ref_one.a, 0);
     simple_assert_eq("Mutable ref cloned in", struct_ref_two.c, 100);
+    simple_assert_eq("Mutable struct ref return", struct_ref_one.take_ref_ret(), 0);
 
     struct_ref_one.takes_const(struct_ref_two);
     simple_assert_eq("Mutable ref cloned in", struct_ref_two.c, 0);
+
+    auto op_one = Opaque::new_();
+    auto op_two = OpaqueMut::new_();
+
+    StructOfOpaque mut_struct_opaque = StructOfOpaque {op_one.get(), op_two.get()};
+
+    simple_assert_eq("Mutable Struct Opaque Ref Before", mut_struct_opaque.i->get_debug_str(), "\"\"");
+
+    auto op_three = Opaque::from_str("String").ok().value();
+
+    mut_struct_opaque.take_in(*op_three);
+    simple_assert_eq("Mutable Struct Opaque Ref After", mut_struct_opaque.i->get_debug_str(), "\"String\"");
+
+    ImmutableStructOfOpaque immut_struct_opaque = ImmutableStructOfOpaque { *op_three.get() };
+    simple_assert_eq("Immutable Struct Ref", immut_struct_opaque.take_in(), "\"String\"");
 }

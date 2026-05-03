@@ -37,6 +37,8 @@ public:
 
   inline int32_t x() const;
 
+  inline int32_t x(int32_t add) const;
+
   inline int32_t y() const;
 
   inline std::unique_ptr<somelib::ns::RenamedOpaqueArithmetic> operator+(const somelib::ns::RenamedOpaqueArithmetic& o) const;

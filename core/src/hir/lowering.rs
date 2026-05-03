@@ -1,9 +1,9 @@
 use super::{
     AttributeContext, AttributeValidator, Attrs, Borrow, BoundedLifetime, Callback, CallbackParam,
     EnumDef, EnumPath, EnumVariant, Everywhere, IdentBuf, InputOnly, Lifetime, LifetimeEnv,
-    LifetimeLowerer, LookupId, MaybeOwn, Method, NonOptional, OpaqueDef, OpaquePath, Optional,
-    OutStructDef, OutStructField, OutStructPath, OutType, Param, ParamLifetimeLowerer, ParamSelf,
-    PrimitiveType, ReturnLifetimeLowerer, ReturnType, ReturnableStructPath,
+    LifetimeLowerer, LookupId, MaybeOwn, Method, Mutability, NonOptional, OpaqueDef, OpaquePath,
+    Optional, OutStructDef, OutStructField, OutStructPath, OutType, Param, ParamLifetimeLowerer,
+    ParamSelf, PrimitiveType, ReturnLifetimeLowerer, ReturnType, ReturnableStructPath,
     SelfParamLifetimeLowerer, SelfType, Slice, SpecialMethod, SpecialMethodPresence, StructDef,
     StructField, StructPath, SuccessType, TraitDef, TraitParamSelf, TraitPath, TyPosition, Type,
     TypeDef, TypeId,
@@ -713,7 +713,7 @@ impl<'ast> LoweringContext<'ast> {
 
         let abi_name = self.lower_ident(&method.abi_name, "method abi name")?;
 
-        let hir_method = Method {
+        let mut hir_method = Method {
             docs: Docs::from_ast(&method.docs, self.attr_validator.as_ref(), &mut self.errors),
             name: name?,
             abi_name,
@@ -734,13 +734,30 @@ impl<'ast> LoweringContext<'ast> {
 
         let is_comparison = matches!(
             hir_method.attrs.special_method,
-            Some(SpecialMethod::Comparison)
+            Some(SpecialMethod::Comparison(_))
         );
-        if is_comparison && method.return_type != Some(ast::TypeName::Ordering) {
-            self.errors.push(LoweringError::Other(
-                "Found comparison method that does not return cmp::Ordering".into(),
-            ));
-            return Err(());
+
+        if is_comparison {
+            let is_optional_ord = if let Some(ast::TypeName::Option(t, _)) = &method.return_type {
+                if matches!(**t, ast::TypeName::Ordering) {
+                    if !self.attr_validator.attrs_supported().partial_comparators {
+                        self.errors.push(LoweringError::Other("Comparators that return `Option` are not supported by this backend (Filter with #[diplomat::cfg(supports=partial_comparators)]).".into()));
+                    }
+                    hir_method.attrs.special_method = Some(SpecialMethod::Comparison(true));
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if !(method.return_type == Some(ast::TypeName::Ordering) || is_optional_ord) {
+                self.errors.push(LoweringError::Other(
+                    "Found comparison method that does not return cmp::Ordering or Optional<cmp::Ordering>".into(),
+                ));
+                return Err(());
+            }
         }
 
         Ok(hir_method)
@@ -809,9 +826,11 @@ impl<'ast> LoweringContext<'ast> {
                         method.attrs.special_method,
                         Some(SpecialMethod::Constructor)
                     ) {
-                        if !has_unnamed_constructor {
-                            methods.push(method);
+                        if self.attr_validator.attrs_supported().method_overloading
+                            || !has_unnamed_constructor
+                        {
                             has_unnamed_constructor = true;
+                            methods.push(method);
                         } else {
                             self.errors.push(LoweringError::Other(format!(
                                 "At most one unnamed constructor is allowed, see https://github.com/rust-diplomat/diplomat/issues/234 if you need overloading (extra abi_name: {})",
@@ -916,6 +935,11 @@ impl<'ast> LoweringContext<'ast> {
                 ast::TypeName::Named(path) | ast::TypeName::SelfType(path) => {
                     match path.resolve(in_path, self.env) {
                         ast::CustomType::Opaque(opaque) => {
+                            if *mutability == Mutability::Mutable
+                                && opaque.mutability != Mutability::Mutable
+                            {
+                                self.errors.push(LoweringError::Other(format!("found opaque type {} being passed around as &mut without #[diplomat::opaque_mut] annotation", opaque.name)));
+                            }
                             let borrow = Borrow::new(ltl.lower_lifetime(lifetime), *mutability);
                             let lifetimes = ltl.lower_generics(
                                 &path.lifetimes[..],
@@ -937,7 +961,11 @@ impl<'ast> LoweringContext<'ast> {
                             disallow_in_callbacks(
                                 "Cannot return references to structs from callbacks",
                             )?;
-                            if self.attr_validator.attrs_supported().struct_refs {
+                            if (mutability.is_immutable()
+                                && self.attr_validator.attrs_supported().struct_refs)
+                                || (mutability.is_mutable()
+                                    && self.attr_validator.attrs_supported().mut_struct_refs)
+                            {
                                 let borrow = Borrow::new(ltl.lower_lifetime(lifetime), *mutability);
                                 let lifetimes = ltl.lower_generics(
                                     &path.lifetimes[..],
@@ -953,7 +981,11 @@ impl<'ast> LoweringContext<'ast> {
                                     MaybeOwn::Borrow(borrow),
                                 )))
                             } else {
-                                self.errors.push(LoweringError::Other("found &T in input where T is a struct. The backend must support struct_refs.".to_string()));
+                                let (ref_type, support_type) = match mutability {
+                                    Mutability::Mutable => ("&mut ", "mut_struct_refs"),
+                                    Mutability::Immutable => ("&", "struct_refs"),
+                                };
+                                self.errors.push(LoweringError::Other(format!("found {ref_type}T in input where T is a struct. The backend must support {support_type}.")));
                                 Err(())
                             }
                         }
@@ -1130,6 +1162,14 @@ impl<'ast> LoweringContext<'ast> {
                     }
                 }
 
+                if new_lifetime
+                    .map(|mt| mt.mutability.is_mutable())
+                    .unwrap_or(false)
+                    && !self.attr_validator.attrs_supported().mutable_slices
+                {
+                    self.errors.push(LoweringError::Other(format!("&mut [{prim}] not supported in this backend. Try #[diplomat::cfg(supports=mutable_slices)] to restrict this API only to backends which support mutable slices.")));
+                }
+
                 Ok(Type::Slice(Slice::Primitive(
                     new_lifetime.into(),
                     PrimitiveType::from_ast(*prim),
@@ -1167,6 +1207,13 @@ impl<'ast> LoweringContext<'ast> {
                             ));
                         }
                     }
+                }
+                if new_lifetime
+                    .map(|mt| mt.mutability.is_mutable())
+                    .unwrap_or(false)
+                    && !self.attr_validator.attrs_supported().mutable_slices
+                {
+                    self.errors.push(LoweringError::Other(format!("&mut [{type_name}] not supported in this backend. Try #[diplomat::cfg(supports=mutable_slices)] to restrict this API only to backends which support mutable slices.")));
                 }
 
                 match type_name.as_ref() {
@@ -1508,6 +1555,9 @@ impl<'ast> LoweringContext<'ast> {
                 Err(())
             }
             ast::TypeName::PrimitiveSlice(Some((lt, m)), prim, _stdlib) => {
+                if m.is_mutable() && !self.attr_validator.attrs_supported().mutable_slices {
+                    self.errors.push(LoweringError::Other(format!("&mut [{prim}] not supported in this backend. Try #[diplomat::cfg(supports=mutable_slices)] to restrict this API only to backends which support mutable slices.")));
+                }
                 Ok(OutType::Slice(Slice::Primitive(
                     MaybeOwn::Borrow(Borrow::new(ltl.lower_lifetime(lt), *m)),
                     PrimitiveType::from_ast(*prim),
@@ -1526,6 +1576,14 @@ impl<'ast> LoweringContext<'ast> {
                             ));
                         }
                     }
+                }
+
+                if new_lifetime
+                    .map(|mt| mt.mutability.is_mutable())
+                    .unwrap_or(false)
+                    && !self.attr_validator.attrs_supported().mutable_slices
+                {
+                    self.errors.push(LoweringError::Other(format!("&mut [{type_name}] not supported in this backend. Try #[diplomat::cfg(supports=mutable_slices)] to restrict this API only to backends which support mutable slices.")));
                 }
 
                 match &type_name.as_ref() {
@@ -1593,13 +1651,20 @@ impl<'ast> LoweringContext<'ast> {
             ast::CustomType::Struct(strct) => {
                 if let Some(tcx_id) = self.lookup_id.resolve_struct(strct) {
                     let (borrow, mut param_ltl) = if let Some((lt, mt)) = &self_param.reference {
-                        if self.attr_validator.attrs_supported().struct_refs {
+                        if (mt.is_immutable() && self.attr_validator.attrs_supported().struct_refs)
+                            || (mt.is_mutable()
+                                && self.attr_validator.attrs_supported().mut_struct_refs)
+                        {
                             let (borrow_lt, param_ltl) = self_param_ltl.lower_self_ref(lt);
                             let borrow = Borrow::new(borrow_lt, *mt);
 
                             (MaybeOwn::Borrow(borrow), param_ltl)
                         } else {
-                            self.errors.push(LoweringError::Other(format!("Method `{method_full_path}` takes a reference to a struct as a self parameter, which isn't allowed. Backend must support struct_refs.")));
+                            let (ref_type, support_type) = match mt {
+                                Mutability::Immutable => ("reference", "struct_refs"),
+                                Mutability::Mutable => ("mutable reference", "mut_struct_refs"),
+                            };
+                            self.errors.push(LoweringError::Other(format!("Method `{method_full_path}` takes a {ref_type} to a struct as a self parameter, which isn't allowed. Backend must support {support_type}.")));
                             return Err(());
                         }
                     } else {
@@ -1656,6 +1721,11 @@ impl<'ast> LoweringContext<'ast> {
                     .expect("opaque is in env");
 
                 if let Some((lifetime, mutability)) = &self_param.reference {
+                    if *mutability == Mutability::Mutable
+                        && opaque.mutability != Mutability::Mutable
+                    {
+                        self.errors.push(LoweringError::Other(format!("found opaque type {} being passed around as &mut without #[diplomat::opaque_mut] annotation", opaque.name)));
+                    }
                     let (borrow_lifetime, mut param_ltl) = self_param_ltl.lower_self_ref(lifetime);
                     let borrow = Borrow::new(borrow_lifetime, *mutability);
                     let lifetimes = param_ltl.lower_generics(

@@ -5,7 +5,6 @@
 {%- endif %}
 {% if add_override_specifier_for_opaque_self_methods %}override {% endif -%}
 {{ declaration }} {
-{%- for slice_conv in slice_conversions %}{{slice_conv|indent(4)}}{% endfor %}
 
     {%- if needs_temporary %}
     val temporaryEdgeArena: MutableList<Any> = mutableListOf()
@@ -22,6 +21,10 @@
     );
     {%- endif %}
     {%- endfor %}
+
+    {%- for (kt_param_name, slice_conv) in slice_conversions %}
+    val {{kt_param_name}}SliceMemory = {{slice_conv}}
+    {%- endfor %}
     {% if write_return %}val write = DW.lib.diplomat_buffer_write_create(0){% endif %}
     val returnVal = lib.{{ native_method_name -}}(
         {%- for param in param_conversions %}
@@ -29,5 +32,15 @@
         {{ param }}
         {%- endfor -%}
     );
+    {%- if cleanups.is_empty() %}
     {{return_expression|indent(4)}}
+    {%- else %}
+    try {
+        {{return_expression|indent(8)}}
+    } finally {
+        {%- for cleanup in cleanups %}
+        {{cleanup|indent(8)}}
+        {%- endfor %}
+    }
+    {%- endif %}
 }
