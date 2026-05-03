@@ -13,6 +13,7 @@ import java.lang.invoke.MethodType;
 public class AttrOpaque1Renamed implements AutoCloseable {
 
     private static final MethodHandle DESTROY;
+    private static final MethodHandle NAMESPACE_ATTROPAQUE1_NEW_OVERLOAD;
     private static final MethodHandle NAMESPACE_ATTROPAQUE1_NEW;
     private static final MethodHandle NAMESPACE_ATTROPAQUE1_TEST_NAMESPACED_CALLBACK;
     private static final MethodHandle NAMESPACE_ATTROPAQUE1_MAC_TEST;
@@ -26,6 +27,10 @@ public class AttrOpaque1Renamed implements AutoCloseable {
         DESTROY = DiplomatLib.LINKER_SHARED.downcallHandle(
             DiplomatLib.LIB.find("namespace_AttrOpaque1_destroy").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+        );
+        NAMESPACE_ATTROPAQUE1_NEW_OVERLOAD = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("namespace_AttrOpaque1_new_overload").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
         );
         NAMESPACE_ATTROPAQUE1_NEW = DiplomatLib.LINKER_SHARED.downcallHandle(
             DiplomatLib.LIB.find("namespace_AttrOpaque1_new").orElseThrow(),
@@ -97,6 +102,16 @@ public class AttrOpaque1Renamed implements AutoCloseable {
 
     AttrOpaque1Renamed(MemorySegment handle) {
         this.handle = handle;
+    }
+
+    public AttrOpaque1Renamed(int i) {
+        try {
+            this.handle = (MemorySegment) NAMESPACE_ATTROPAQUE1_NEW_OVERLOAD.invokeExact(i);
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     /**

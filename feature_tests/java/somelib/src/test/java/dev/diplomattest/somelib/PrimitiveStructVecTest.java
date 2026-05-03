@@ -1,5 +1,6 @@
 package dev.diplomattest.somelib;
 
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -38,7 +39,9 @@ class PrimitiveStructVecTest {
             p.e = 55;
             vec.push(p);
 
-            PrimitiveStruct got = vec.get(0);
+            Optional<PrimitiveStruct> result = vec.get(0);
+            assertTrue(result.isPresent());
+            PrimitiveStruct got = result.get();
             assertEquals(3.14f, got.x, 0.001f);
             assertTrue(got.a);
             assertEquals(66, got.b);

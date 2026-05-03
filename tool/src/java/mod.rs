@@ -44,6 +44,8 @@ pub(crate) fn attr_support() -> BackendAttrSupport {
     a.generate_mocking_interface = false;
     a.owned_slices = true;
     a.struct_refs = true;
+    a.mut_struct_refs = true;
+    a.mutable_slices = true;
     a.abi_compatibles = true;
 
     a
@@ -448,6 +450,98 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         }
     }
 
+    /// Compute the Java-visible method name a method would receive (before any
+    /// disambiguation for signature collisions). Mirrors `gen_method_inner`'s
+    /// name-resolution logic and is used to detect duplicate signatures.
+    fn resolve_java_method_name(
+        &self,
+        method: &Method,
+        owner_type_name: &str,
+        honor_constructors: bool,
+    ) -> String {
+        match &method.attrs.special_method {
+            Some(SpecialMethod::Constructor) if honor_constructors => owner_type_name.to_string(),
+            Some(SpecialMethod::NamedConstructor(name)) if honor_constructors => self
+                .formatter
+                .fmt_named_constructor_name(name, method)
+                .into_owned(),
+            Some(SpecialMethod::Iterator) => "nextInternal".to_string(),
+            Some(SpecialMethod::Indexer) => "getInternal".to_string(),
+            Some(SpecialMethod::Iterable) => "iterator".to_string(),
+            Some(SpecialMethod::Stringifier) => "toString".to_string(),
+            Some(SpecialMethod::Comparison(false)) => "compareTo".to_string(),
+            _ => self.formatter.fmt_method_name(method).into_owned(),
+        }
+    }
+
+    /// Compute Java parameter type names for collision detection. Self params
+    /// are excluded since Java instance methods don't include `this` in the
+    /// signature. The returned vector parallels `method.params`.
+    fn java_param_signature(&self, method: &Method) -> Vec<String> {
+        method
+            .params
+            .iter()
+            .map(|p| self.type_to_java_name(&p.ty))
+            .collect()
+    }
+
+    /// Build a per-method override-name map for the methods in a Java class.
+    /// Detects collisions on (Java method name, parameter type list) within
+    /// each Java name scope: constructors form one scope (called via `new`),
+    /// while static and instance methods share the other scope. Two distinct
+    /// Rust methods can map to the same Java signature when, e.g., `i32` and
+    /// `u32` both project to `int`; in that case the later method falls back
+    /// to its original camel-cased Rust name.
+    ///
+    /// Returns a map keyed by `&Method` pointer; methods without an entry
+    /// keep their default name.
+    fn build_java_method_name_overrides(
+        &self,
+        methods: &[&'cx Method],
+        owner_type_name: &str,
+        honor_constructors: bool,
+    ) -> std::collections::HashMap<*const Method, String> {
+        use std::collections::{HashMap, HashSet};
+        let mut overrides: HashMap<*const Method, String> = HashMap::new();
+        let mut method_seen: HashSet<(String, Vec<String>)> = HashSet::new();
+        let mut ctor_seen: HashSet<Vec<String>> = HashSet::new();
+        for method in methods {
+            let params = self.java_param_signature(method);
+            let is_constructor = honor_constructors
+                && method.param_self.is_none()
+                && matches!(method.attrs.special_method, Some(SpecialMethod::Constructor));
+            if is_constructor {
+                if ctor_seen.insert(params.clone()) {
+                    continue;
+                }
+                // Constructor collision: demote to static factory using the original Rust name.
+                let alt = method.name.as_str().to_lower_camel_case();
+                let mut candidate = alt.clone();
+                let mut counter: usize = 2;
+                while !method_seen.insert((candidate.clone(), params.clone())) {
+                    candidate = format!("{alt}{counter}");
+                    counter += 1;
+                }
+                overrides.insert(*method as *const Method, candidate);
+                continue;
+            }
+            let resolved =
+                self.resolve_java_method_name(method, owner_type_name, honor_constructors);
+            if method_seen.insert((resolved, params.clone())) {
+                continue;
+            }
+            let alt = method.name.as_str().to_lower_camel_case();
+            let mut candidate = alt.clone();
+            let mut counter: usize = 2;
+            while !method_seen.insert((candidate.clone(), params.clone())) {
+                candidate = format!("{alt}{counter}");
+                counter += 1;
+            }
+            overrides.insert(*method as *const Method, candidate);
+        }
+        overrides
+    }
+
     /// Check if any methods use Optional (optional opaque return/params, nullable returns).
     fn methods_use_optional(&self, methods: &[&Method]) -> bool {
         methods.iter().any(|method| {
@@ -666,7 +760,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                         }
                     }
                 }
-                Some(SpecialMethod::Comparison) => {
+                Some(SpecialMethod::Comparison(false)) => {
                     special_methods.comparator = true;
                 }
                 Some(SpecialMethod::Indexer) => {
@@ -712,6 +806,12 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             .map(|method| self.gen_native_method_info(method))
             .collect();
 
+        let name_overrides =
+            self.build_java_method_name_overrides(&supported_methods, type_name, true);
+        let lookup_override = |m: &&'cx Method| -> Option<String> {
+            name_overrides.get(&(*m as *const Method)).cloned()
+        };
+
         let constructor_methods: Vec<JavaMethodInfo> = supported_methods
             .iter()
             .filter(|method| {
@@ -720,20 +820,25 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                         method.attrs.special_method,
                         Some(SpecialMethod::Constructor)
                     )
+                    && !name_overrides.contains_key(&(**method as *const Method))
             })
-            .map(|method| self.gen_method(method, None, type_name, is_error, None))
+            .map(|method| self.gen_method(method, None, type_name, is_error, None, None))
             .collect();
 
         let companion_methods: Vec<JavaMethodInfo> = supported_methods
             .iter()
             .filter(|method| {
                 method.param_self.is_none()
-                    && !matches!(
-                        method.attrs.special_method,
-                        Some(SpecialMethod::Constructor)
-                    )
+                    && (name_overrides.contains_key(&(**method as *const Method))
+                        || !matches!(
+                            method.attrs.special_method,
+                            Some(SpecialMethod::Constructor)
+                        ))
             })
-            .map(|method| self.gen_method(method, None, type_name, false, None))
+            .map(|method| {
+                let ov = lookup_override(method);
+                self.gen_method(method, None, type_name, false, None, ov.as_deref())
+            })
             .collect();
 
         let self_methods: Vec<JavaMethodInfo> = supported_methods
@@ -744,7 +849,17 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     .as_ref()
                     .map(|self_param| (*method, &self_param.ty))
             })
-            .map(|(method, self_type)| self.gen_method(method, Some(self_type), type_name, false, None))
+            .map(|(method, self_type)| {
+                let ov = name_overrides.get(&(method as *const Method)).cloned();
+                self.gen_method(
+                    method,
+                    Some(self_type),
+                    type_name,
+                    false,
+                    None,
+                    ov.as_deref(),
+                )
+            })
             .collect();
 
         // Collect all callback declarations from all methods
@@ -1038,8 +1153,17 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         owner_type_name: &str,
         is_error: bool,
         struct_fields: Option<&[JavaStructFieldInfo]>,
+        override_name: Option<&str>,
     ) -> JavaMethodInfo {
-        self.gen_method_inner(method, self_type, owner_type_name, is_error, struct_fields, true)
+        self.gen_method_inner(
+            method,
+            self_type,
+            owner_type_name,
+            is_error,
+            struct_fields,
+            true,
+            override_name,
+        )
     }
 
     /// Like gen_method, but with `honor_constructors = false` to suppress constructor syntax.
@@ -1048,8 +1172,17 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         method: &'cx Method,
         self_type: Option<&SelfType>,
         owner_type_name: &str,
+        override_name: Option<&str>,
     ) -> JavaMethodInfo {
-        self.gen_method_inner(method, self_type, owner_type_name, false, None, false)
+        self.gen_method_inner(
+            method,
+            self_type,
+            owner_type_name,
+            false,
+            None,
+            false,
+            override_name,
+        )
     }
 
     fn gen_method_inner(
@@ -1060,26 +1193,42 @@ impl<'cx> ItemGenContext<'_, 'cx> {
         is_error: bool,
         struct_fields: Option<&[JavaStructFieldInfo]>,
         honor_constructors: bool,
+        override_name: Option<&str>,
     ) -> JavaMethodInfo {
         let _guard = self.errors.set_context_method(method.name.as_str().into());
 
+        // An override name forces the method to render as a plain (static) method,
+        // demoting any constructor / named-constructor / other special-method
+        // syntax. Used to disambiguate Java signature collisions between
+        // methods that map onto identical Java types (e.g., Rust `i32` and
+        // `u32` both project to `int`).
+        let override_demoted = override_name.is_some();
         let is_constructor = honor_constructors
+            && !override_demoted
             && matches!(
                 method.attrs.special_method,
                 Some(SpecialMethod::Constructor)
             );
         let is_named_constructor = honor_constructors
+            && !override_demoted
             && matches!(
                 method.attrs.special_method,
                 Some(SpecialMethod::NamedConstructor(_))
             );
-        let is_iterator = matches!(method.attrs.special_method, Some(SpecialMethod::Iterator));
-        let is_iterable = matches!(method.attrs.special_method, Some(SpecialMethod::Iterable));
-        let is_indexer = matches!(method.attrs.special_method, Some(SpecialMethod::Indexer));
-        let is_stringifier = matches!(method.attrs.special_method, Some(SpecialMethod::Stringifier));
-        let is_comparator = matches!(method.attrs.special_method, Some(SpecialMethod::Comparison));
+        let is_iterator = !override_demoted
+            && matches!(method.attrs.special_method, Some(SpecialMethod::Iterator));
+        let is_iterable = !override_demoted
+            && matches!(method.attrs.special_method, Some(SpecialMethod::Iterable));
+        let is_indexer = !override_demoted
+            && matches!(method.attrs.special_method, Some(SpecialMethod::Indexer));
+        let is_stringifier = !override_demoted
+            && matches!(method.attrs.special_method, Some(SpecialMethod::Stringifier));
+        let is_comparator = !override_demoted
+            && matches!(method.attrs.special_method, Some(SpecialMethod::Comparison(false)));
 
-        let method_name: Cow<'_, str> = if is_constructor {
+        let method_name: Cow<'_, str> = if let Some(name) = override_name {
+            name.to_string().into()
+        } else if is_constructor {
             // Constructors use the class name, no method name needed
             owner_type_name.into()
         } else if is_named_constructor {
@@ -2916,10 +3065,16 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             .map(|method| self.gen_native_method_info(method))
             .collect();
 
+        let name_overrides =
+            self.build_java_method_name_overrides(&supported_methods, type_name, false);
+
         let companion_methods: Vec<JavaMethodInfo> = supported_methods
             .iter()
             .filter(|method| method.param_self.is_none())
-            .map(|method| self.gen_method_no_constructors(method, None, type_name))
+            .map(|method| {
+                let ov = name_overrides.get(&(*method as *const Method)).cloned();
+                self.gen_method_no_constructors(method, None, type_name, ov.as_deref())
+            })
             .collect();
 
         let self_methods: Vec<JavaMethodInfo> = supported_methods
@@ -2930,7 +3085,10 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     .as_ref()
                     .map(|self_param| (*method, &self_param.ty))
             })
-            .map(|(method, self_type)| self.gen_method_no_constructors(method, Some(self_type), type_name))
+            .map(|(method, self_type)| {
+                let ov = name_overrides.get(&(method as *const Method)).cloned();
+                self.gen_method_no_constructors(method, Some(self_type), type_name, ov.as_deref())
+            })
             .collect();
 
         #[derive(Template)]
@@ -3001,6 +3159,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
             .map(|method| self.gen_native_method_info(method))
             .collect();
 
+        let name_overrides =
+            self.build_java_method_name_overrides(&supported_methods, type_name, true);
+
         let constructor_methods: Vec<JavaMethodInfo> = supported_methods
             .iter()
             .filter(|method| {
@@ -3009,8 +3170,9 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                         method.attrs.special_method,
                         Some(SpecialMethod::Constructor)
                     )
+                    && !name_overrides.contains_key(&(**method as *const Method))
             })
-            .map(|method| self.gen_method(method, None, type_name, is_error, Some(&fields)))
+            .map(|method| self.gen_method(method, None, type_name, is_error, Some(&fields), None))
             .collect();
 
         let has_zero_arg_constructor = supported_methods.iter().any(|method| {
@@ -3020,18 +3182,23 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     Some(SpecialMethod::Constructor)
                 )
                 && method.params.is_empty()
+                && !name_overrides.contains_key(&(*method as *const Method))
         });
 
         let companion_methods: Vec<JavaMethodInfo> = supported_methods
             .iter()
             .filter(|method| {
                 method.param_self.is_none()
-                    && !matches!(
-                        method.attrs.special_method,
-                        Some(SpecialMethod::Constructor)
-                    )
+                    && (name_overrides.contains_key(&(**method as *const Method))
+                        || !matches!(
+                            method.attrs.special_method,
+                            Some(SpecialMethod::Constructor)
+                        ))
             })
-            .map(|method| self.gen_method(method, None, type_name, false, None))
+            .map(|method| {
+                let ov = name_overrides.get(&(*method as *const Method)).cloned();
+                self.gen_method(method, None, type_name, false, None, ov.as_deref())
+            })
             .collect();
 
         let self_methods: Vec<JavaMethodInfo> = supported_methods
@@ -3042,7 +3209,17 @@ impl<'cx> ItemGenContext<'_, 'cx> {
                     .as_ref()
                     .map(|self_param| (*method, &self_param.ty))
             })
-            .map(|(method, self_type)| self.gen_method(method, Some(self_type), type_name, false, None))
+            .map(|(method, self_type)| {
+                let ov = name_overrides.get(&(method as *const Method)).cloned();
+                self.gen_method(
+                    method,
+                    Some(self_type),
+                    type_name,
+                    false,
+                    None,
+                    ov.as_deref(),
+                )
+            })
             .collect();
 
         let has_constructors = !constructor_methods.is_empty();
@@ -3054,7 +3231,7 @@ impl<'cx> ItemGenContext<'_, 'cx> {
 
         let mut special_methods = JavaSpecialMethods::default();
         for method in &supported_methods {
-            if matches!(method.attrs.special_method, Some(SpecialMethod::Comparison)) {
+            if matches!(method.attrs.special_method, Some(SpecialMethod::Comparison(false))) {
                 special_methods.comparator = true;
             }
         }
@@ -4111,7 +4288,7 @@ mod test {
         let tk_stream = quote! {
             #[diplomat::bridge]
             mod ffi {
-                #[diplomat::opaque]
+                #[diplomat::opaque_mut]
                 struct MyIterator(());
 
                 impl MyIterator {
@@ -4131,7 +4308,7 @@ mod test {
         let tk_stream = quote! {
             #[diplomat::bridge]
             mod ffi {
-                #[diplomat::opaque]
+                #[diplomat::opaque_mut]
                 struct MyIterator(());
 
                 impl MyIterator {

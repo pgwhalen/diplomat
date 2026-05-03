@@ -262,7 +262,7 @@ pub mod test {
         let file = syn::parse2::<syn::File>(tk_stream).expect("failed to parse item");
         let mut attr_validator = hir::BasicAttributeValidator::new("java_test");
         attr_validator.support = super::super::attr_support();
-        match TypeContext::from_syn(&file, Default::default(), attr_validator) {
+        match TypeContext::from_syn(&file, Default::default(), attr_validator, None) {
             Ok(context) => context,
             Err(e) => {
                 for (_cx, err) in e {

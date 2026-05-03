@@ -26,9 +26,11 @@ public class MyStruct {
     private static final VarHandle VH_F = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("f"));
     private static final VarHandle VH_G = LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("g"));
     private static final MethodHandle MYSTRUCT_NEW;
+    private static final MethodHandle MYSTRUCT_NEW_OVERLOAD;
     private static final MethodHandle MYSTRUCT_TAKES_MUT;
     private static final MethodHandle MYSTRUCT_TAKES_CONST;
     private static final MethodHandle MYSTRUCT_INTO_A;
+    private static final MethodHandle MYSTRUCT_TAKE_REF_RET;
     private static final MethodHandle MYSTRUCT_RETURNS_ZST_RESULT;
     private static final MethodHandle MYSTRUCT_FAILS_ZST_RESULT;
     static final StructLayout MYSTRUCT_RETURNS_ZST_RESULT_RESULT = MemoryLayout.structLayout(
@@ -43,6 +45,10 @@ public class MyStruct {
             DiplomatLib.LIB.find("MyStruct_new").orElseThrow(),
             FunctionDescriptor.of(MyStruct.LAYOUT)
         );
+        MYSTRUCT_NEW_OVERLOAD = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyStruct_new_overload").orElseThrow(),
+            FunctionDescriptor.of(MyStruct.LAYOUT, ValueLayout.JAVA_INT)
+        );
         MYSTRUCT_TAKES_MUT = DiplomatLib.LINKER_SHARED.downcallHandle(
             DiplomatLib.LIB.find("MyStruct_takes_mut").orElseThrow(),
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
@@ -54,6 +60,10 @@ public class MyStruct {
         MYSTRUCT_INTO_A = DiplomatLib.LINKER_SHARED.downcallHandle(
             DiplomatLib.LIB.find("MyStruct_into_a").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.JAVA_BYTE, MyStruct.LAYOUT)
+        );
+        MYSTRUCT_TAKE_REF_RET = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyStruct_take_ref_ret").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.JAVA_BYTE, ValueLayout.ADDRESS)
         );
         MYSTRUCT_RETURNS_ZST_RESULT = DiplomatLib.LINKER_SHARED.downcallHandle(
             DiplomatLib.LIB.find("MyStruct_returns_zst_result").orElseThrow(),
@@ -85,6 +95,23 @@ public class MyStruct {
     public MyStruct() {
         try (var arena = Arena.ofConfined()) {
             var seg = (MemorySegment) MYSTRUCT_NEW.invokeExact((SegmentAllocator) arena);
+            this.a = (byte) VH_A.get(seg, 0L);
+            this.b = (boolean) VH_B.get(seg, 0L);
+            this.c = (byte) VH_C.get(seg, 0L);
+            this.d = (long) VH_D.get(seg, 0L);
+            this.e = (int) VH_E.get(seg, 0L);
+            this.f = (int) VH_F.get(seg, 0L);
+            this.g = MyEnum.fromNative((int) VH_G.get(seg, 0L));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public MyStruct(int i) {
+        try (var arena = Arena.ofConfined()) {
+            var seg = (MemorySegment) MYSTRUCT_NEW_OVERLOAD.invokeExact((SegmentAllocator) arena, i);
             this.a = (byte) VH_A.get(seg, 0L);
             this.b = (boolean) VH_B.get(seg, 0L);
             this.c = (byte) VH_C.get(seg, 0L);
@@ -195,6 +222,17 @@ public class MyStruct {
     public byte intoA() {
         try (var arena = Arena.ofConfined()) {
             return (byte) MYSTRUCT_INTO_A.invokeExact(this.toNative(arena));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public byte takeRefRet() {
+        try (var arena = Arena.ofConfined()) {
+            var selfSeg = this.toNative(arena);
+            return (byte) MYSTRUCT_TAKE_REF_RET.invokeExact(selfSeg);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {

@@ -11,6 +11,7 @@ public class MyString implements AutoCloseable {
     private static final MethodHandle MYSTRING_NEW_UNSAFE;
     private static final MethodHandle MYSTRING_NEW_OWNED;
     private static final MethodHandle MYSTRING_NEW_FROM_FIRST;
+    private static final MethodHandle MYSTRING_NEW_FROM_UTF16;
     private static final MethodHandle MYSTRING_SET_STR;
     private static final MethodHandle MYSTRING_GET_STR;
     private static final MethodHandle MYSTRING_STRING_TRANSFORM;
@@ -34,6 +35,10 @@ public class MyString implements AutoCloseable {
         );
         MYSTRING_NEW_FROM_FIRST = DiplomatLib.LINKER_SHARED.downcallHandle(
             DiplomatLib.LIB.find("MyString_new_from_first").orElseThrow(),
+            FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
+        );
+        MYSTRING_NEW_FROM_UTF16 = DiplomatLib.LINKER_SHARED.downcallHandle(
+            DiplomatLib.LIB.find("MyString_new_from_utf16").orElseThrow(),
             FunctionDescriptor.of(ValueLayout.ADDRESS, DiplomatLib.DIPLOMAT_STRING_VIEW)
         );
         MYSTRING_SET_STR = DiplomatLib.LINKER_SHARED.downcallHandle(
@@ -128,6 +133,27 @@ public class MyString implements AutoCloseable {
             DiplomatLib.VH_SV_DATA.set(vSlice, 0L, vSeg);
             DiplomatLib.VH_SV_LEN.set(vSlice, 0L, (long) v.length);
             return new MyString((MemorySegment) MYSTRING_NEW_FROM_FIRST.invokeExact(vSlice));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static MyString newFromUtf16(String[] v) {
+        try (var arena = Arena.ofConfined()) {
+            MemorySegment vSeg = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW, v.length);
+            for (int i = 0; i < v.length; i++) {
+                char[] vChars_i = v[i].toCharArray();
+                var vData_i = arena.allocateFrom(ValueLayout.JAVA_CHAR, vChars_i);
+                long vOff = i * 16L;
+                vSeg.set(ValueLayout.ADDRESS, vOff, vData_i);
+                vSeg.set(ValueLayout.JAVA_LONG, vOff + 8L, (long) vChars_i.length);
+            }
+            var vSlice = arena.allocate(DiplomatLib.DIPLOMAT_STRING_VIEW);
+            DiplomatLib.VH_SV_DATA.set(vSlice, 0L, vSeg);
+            DiplomatLib.VH_SV_LEN.set(vSlice, 0L, (long) v.length);
+            return new MyString((MemorySegment) MYSTRING_NEW_FROM_UTF16.invokeExact(vSlice));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Throwable ex) {
